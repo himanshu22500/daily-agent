@@ -1,0 +1,35 @@
+src/daily_agent/agents/assistant.py
+  s_801bce6afa93a1::t_e2fcb98ca9259e 1,3-6,12-13,17,19-21,26,28-29,35-52,56-57,60-65,68-70,73-75,78-80,82-84,86,88,90-91,96-97,99-100,102-159,161,164-165,169,172-173,175,178-180,183-189,194,197,199-200,203,205-207
+src/daily_agent/cli.py
+  s_801bce6afa93a1::t_7cb654ad319cce 26
+  s_801bce6afa93a1::t_6a39761e097b72 121,123,125,136-140,147
+src/daily_agent/sources/github.py
+  s_801bce6afa93a1::t_c4463f0f3d4604 6
+README.md
+  s_801bce6afa93a1::t_b70e57488a7e74 126
+  s_801bce6afa93a1::t_3416136e95e016 15-19
+  s_801bce6afa93a1::t_11c2e5072d768a 168
+  s_801bce6afa93a1::t_339a316296e3b0 85-89
+ROADMAP.md
+  s_801bce6afa93a1::t_8981d179e283c5 16-25
+src/daily_agent/agents/__init__.py
+  s_801bce6afa93a1::t_bb7a14fcfbb4e9 1
+src/daily_agent/agents/docs_qa.py
+  s_801bce6afa93a1::t_5616b42874d496 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "1b3263b90ac235002470301b7452d28e501a4ae0",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
