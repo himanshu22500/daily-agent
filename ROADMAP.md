@@ -13,6 +13,16 @@ in the README's "Done" list.
       `DAILY_AGENT_HULY_DEFAULT_PROJECT` (set to `ENG`) by default; pass a project
       explicitly to override, or `--projects` to list projects.
 
+## Conversational / cross-source Q&A
+
+- [x] **Generalized `ask`** — no longer pinned to one repo. A single assistant
+      agent (`agents/assistant.py`) with tools across repos/PRs, Huly, Outline,
+      the team map, and the latest digest. Answers free-form questions: "ask
+      about the report", "double-click on what <person> is working on", etc.
+      Optionally pin a repo with `--repo`. (Superseded the repo-only researcher.)
+      - Possible follow-up: an interactive `chat` REPL that keeps context for
+        "go deeper" follow-ups.
+
 ## Personal / task-centric Q&A
 
 - [x] **"What is <person> working on this week?"** — added the `brief [PERSON]`

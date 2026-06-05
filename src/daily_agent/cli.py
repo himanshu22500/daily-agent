@@ -23,9 +23,9 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
+from .agents.assistant import ask_anything
 from .agents.docs_qa import ask_docs
 from .agents.person_brief import summarize_person
-from .agents.researcher import research
 from .agents.summarizer import summarize
 from .deliver import render_markdown, write_file
 from .config import get_settings
@@ -117,13 +117,12 @@ def summary(
 
 @app.command()
 def ask(
-    repo: str = typer.Argument(..., help="Repo/project name to investigate."),
     question: str = typer.Argument(
-        "What is this project, and what's the current focus?",
-        help="What you want to understand.",
+        ..., help="Ask anything — about a person, a project, a topic, or the daily report."
     ),
+    repo: str = typer.Option(None, "--repo", help="Optional: pin the investigation to one repo."),
 ) -> None:
-    """Deep-dive into one project to understand its business-logic layer."""
+    """Ask anything; the agent investigates across repos, PRs, Huly tasks, docs, and people."""
     s = get_settings()
 
     async def _run() -> str:
@@ -134,14 +133,18 @@ def ask(
                 if s.outline_enabled else None
             )
             huly = await stack.enter_async_context(_huly()) if s.huly_enabled else None
-            return await research(s.model, gh, repo, question, huly=huly, outline=outline)
+            team = load_team(s.team_path)
+            return await ask_anything(
+                s.model, question, gh, settings=s, team=team,
+                huly=huly, outline=outline, repo_hint=repo,
+            )
 
     try:
         answer = asyncio.run(_run())
     except GitHubError as e:
         console.print(f"[red]GitHub error:[/red] {e}")
         raise typer.Exit(1)
-    console.print(Panel(Markdown(answer), title=f"Deep dive: {repo}", border_style="cyan"))
+    console.print(Panel(Markdown(answer), title="Answer", border_style="cyan"))
 
 
 @app.command()

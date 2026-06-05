@@ -1,6 +1,6 @@
 """Docs Q&A agent — ask a natural question, get an answer from Outline.
 
-Unlike the repo deep-dive (`researcher`), this agent is docs-first: given a
+Unlike the general `assistant`, this agent is docs-first: given a
 how-to / setup / "how does X work" question, it searches the Outline knowledge
 base, reads the most relevant documents in full, and synthesizes a concrete,
 step-by-step answer grounded in — and citing — those docs.
