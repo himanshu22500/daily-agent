@@ -20,8 +20,10 @@ in the README's "Done" list.
       PRs. Defaults to "me". Backed by a team identity map (`team.py` +
       gitignored `team.json`) mapping name ↔ Huly ↔ GitHub. `tasks --assignee me`
       / `--assignee <name>` resolve through the same map.
-      - Possible follow-up: an optional LLM synthesis ("X is focused on …")
-        rather than the current deterministic listing.
+      - [x] LLM synthesis: `brief` now leads with a synthesized summary
+        (`agents/person_brief.py`) of the person's themes/intent, with the
+        task/PR list kept below. `--no-ai` skips it. Degrades gracefully if the
+        model call fails.
 
 ## Reliable task ↔ PR mapping
 

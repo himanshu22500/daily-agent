@@ -102,9 +102,10 @@ uv run daily-agent tasks --assignee "Himanshu" --priority high
 # Show one task's details (status, assignee, description, linked PRs)
 uv run daily-agent task ENG-16845
 
-# What someone is working on lately (their Huly tasks + GitHub PRs)
+# What someone is working on lately — a synthesized briefing + their tasks/PRs
 uv run daily-agent brief                # me
 uv run daily-agent brief "Harshit"      # any teammate by name/handle
+uv run daily-agent brief "Sharad" --no-ai   # skip the LLM summary, list only
 uv run daily-agent tasks --assignee me  # filters also accept "me" / a name
 ```
 
@@ -120,7 +121,7 @@ uv run daily-agent tasks --assignee me  # filters also accept "me" / a name
 | `howto "question"` | Reads the relevant Outline docs and synthesizes a cited, step-by-step answer | Yes |
 | `tasks [PROJECT]` | List Huly issues (defaults to configured project; filter by `--status`/`--assignee`/`--priority`; `--projects` lists projects) | No |
 | `task ID` | Show one Huly task's details + linked GitHub PRs | No |
-| `brief [PERSON]` | What a person is working on lately: their Huly tasks + GitHub PRs (defaults to "me") | No |
+| `brief [PERSON]` | Synthesized briefing of what a person is working on + their Huly tasks/PRs (defaults to "me"; `--no-ai` to skip the summary) | Yes (unless `--no-ai`) |
 
 `collect` and `summary` are split on purpose: `collect` only touches GitHub and
 *accumulates* history in SQLite, so you can `summary` over any window later.
@@ -141,6 +142,7 @@ src/daily_agent/
     summarizer.py      Pydantic AI agent -> cross-project digest
     researcher.py      tool-using Pydantic AI agent -> repo deep dive
     docs_qa.py         docs-first Q&A agent -> answers from Outline
+    person_brief.py    synthesizes what one person is working on (for `brief`)
   team.py              team identity map (name <-> Huly <-> GitHub); powers `brief`
   cli.py               collect / summary / ask / repos / docs / howto / tasks / task / brief
 bridges/
