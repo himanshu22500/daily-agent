@@ -27,6 +27,9 @@ class Settings(BaseSettings):
 
     # --- LLM (provider-agnostic) ---
     model: str = "anthropic:claude-sonnet-4-5"
+    # Cheaper/faster model for bulk synthesis (summary, per-person briefs).
+    # Empty => use `model`. e.g. anthropic:claude-haiku-4-5
+    fast_model: str = ""
 
     # --- GitHub ---
     github_token: str = ""
@@ -77,6 +80,11 @@ class Settings(BaseSettings):
 
     def repo_allowlist(self) -> list[str]:
         return [r.strip() for r in self.github_repos.split(",") if r.strip()]
+
+    @property
+    def bulk_model(self) -> str:
+        """Model for high-volume synthesis (summary/briefs) — fast_model or model."""
+        return self.fast_model or self.model
 
     @property
     def outline_enabled(self) -> bool:
