@@ -1,0 +1,55 @@
+src/daily_agent/sources/huly.py
+  s_801bce6afa93a1::t_c99c8e63713534 45-46,55-56
+  s_801bce6afa93a1::t_6be348f01c8156 127-134,137-147
+  s_801bce6afa93a1::t_b591732b0e3b14 97-102
+  s_801bce6afa93a1::t_d9ecc6fa20caf2 18-19
+.env.example
+  s_801bce6afa93a1::t_c4a5e8a96f4fa3 55-62
+tests/test_cache.py
+  s_801bce6afa93a1::t_cff286842f2ec0 1-49
+README.md
+  s_801bce6afa93a1::t_9251f4c1575ed5 137
+  s_801bce6afa93a1::t_e3de5f57a05825 141-158
+  s_801bce6afa93a1::t_3dc9fad3279e79 194
+src/daily_agent/sources/github.py
+  s_801bce6afa93a1::t_3f8817e26fb782 26-28,34-35
+  s_801bce6afa93a1::t_a52e5e69cfa944 216,218-221,224-226,232,234-237
+  s_801bce6afa93a1::t_a034244b8e75f0 183-184
+  s_801bce6afa93a1::t_b703f50aaf9f97 15
+  s_801bce6afa93a1::t_164d900ea3dffc 89-91,94-97
+  s_801bce6afa93a1::t_8fca89df49c20f 189-191,197,199-202
+  s_801bce6afa93a1::t_f9a7e865a3f961 205-207
+  s_801bce6afa93a1::t_888e1ecc19f158 154-156
+ROADMAP.md
+  s_801bce6afa93a1::t_f9dbcb36109662 66-76
+src/daily_agent/sources/outline.py
+  s_801bce6afa93a1::t_dbb3a04ef64cf0 20-21
+  s_801bce6afa93a1::t_738ca01520de6c 32-34,40-41
+  s_801bce6afa93a1::t_bc2951aa6377e7 88-89,94-96,99,104-106
+  s_801bce6afa93a1::t_4df80da5efc902 73-75
+src/daily_agent/config.py
+  s_801bce6afa93a1::t_62ccadea470025 70-77
+src/daily_agent/cache.py
+  s_801bce6afa93a1::t_d56633fc1218eb 1-89
+src/daily_agent/cli.py
+  s_801bce6afa93a1::t_f343b6c0d6f10e 149,181,266,296
+  s_801bce6afa93a1::t_86d222f9d5ca77 559-577
+  s_801bce6afa93a1::t_5a44fb1c21bd50 30
+  s_801bce6afa93a1::t_d03c209f6b9735 51-55,58-61,69-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "d6c679943cceda780b19e2be1e4ec7a1d1b04027",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
