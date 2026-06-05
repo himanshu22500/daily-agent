@@ -41,6 +41,7 @@ const task = taskMod.default
 const SortingOrder = coreMod.SortingOrder
 
 const PRIORITY_LABELS = { 0: 'none', 1: 'urgent', 2: 'high', 3: 'medium', 4: 'low' }
+const PRIORITY_VALUES = { none: 0, urgent: 1, high: 2, medium: 3, low: 4 }
 
 function env (name) {
   return process.env['HULY_' + name] || process.env['DAILY_AGENT_HULY_' + name] || ''
@@ -128,15 +129,44 @@ async function listProjects (client) {
   }))
 }
 
-async function listIssues (client, project, limit) {
+async function listIssues (client, opts) {
+  const { project, status, assignee, priority } = opts
+  const limit = opts.limit || 50
   const statusMap = await buildStatusMap(client)
   const query = {}
   if (project) query.space = await resolveProjectId(client, project)
-  const issues = await client.findAll(tracker.class.Issue, query, {
-    limit: limit || 50,
+  if (status) {
+    const match = [...statusMap.entries()].find(
+      ([, v]) => v.name.toLowerCase() === status.toLowerCase()
+    )
+    if (!match) {
+      const names = [...new Set([...statusMap.values()].map((v) => v.name))].join(', ')
+      throw new Error(`Status not found: "${status}". Known: ${names}`)
+    }
+    query.status = match[0]
+  }
+  if (priority) {
+    const pv = PRIORITY_VALUES[priority.toLowerCase()]
+    if (pv === undefined) throw new Error(`Invalid priority: "${priority}" (none|urgent|high|medium|low)`)
+    query.priority = pv
+  }
+  // When filtering by assignee (a post-query name match), fetch a wider set
+  // first so the limit applies to the filtered results.
+  const fetchLimit = assignee ? Math.max(limit, 500) : limit
+  let issues = await client.findAll(tracker.class.Issue, query, {
+    limit: fetchLimit,
     sort: { modifiedOn: SortingOrder.Descending }
   })
   const assigneeMap = await buildAssigneeMap(client, issues)
+  if (assignee) {
+    const q = assignee.toLowerCase()
+    issues = issues
+      .filter((i) => {
+        const name = i.assignee ? assigneeMap.get(i.assignee) : null
+        return name && name.toLowerCase().includes(q)
+      })
+      .slice(0, limit)
+  }
   return issues.map((i) => issueRow(i, statusMap, assigneeMap))
 }
 
@@ -177,7 +207,13 @@ async function main () {
       out = await listProjects(client)
     } else if (cmd === 'issues') {
       const limit = flag(rest, '--limit')
-      out = await listIssues(client, flag(rest, '--project'), limit ? parseInt(limit, 10) : 50)
+      out = await listIssues(client, {
+        project: flag(rest, '--project'),
+        status: flag(rest, '--status'),
+        assignee: flag(rest, '--assignee'),
+        priority: flag(rest, '--priority'),
+        limit: limit ? parseInt(limit, 10) : 50
+      })
     } else if (cmd === 'issue') {
       if (!rest[0]) throw new Error('Usage: issue <IDENTIFIER>')
       out = await getIssue(client, rest[0])

@@ -86,6 +86,10 @@ uv run daily-agent tasks
 uv run daily-agent tasks ENG --limit 50   # a specific project
 uv run daily-agent tasks --projects       # list projects instead
 
+# Filter by status / assignee / priority (combinable)
+uv run daily-agent tasks --status "In Review"
+uv run daily-agent tasks --assignee "Himanshu" --priority high
+
 # Show one task's details (status, assignee, description, linked PRs)
 uv run daily-agent task ENG-16845
 ```
@@ -100,7 +104,7 @@ uv run daily-agent task ENG-16845
 | `ask REPO "question"` | Code-first deep dive into one project (repo + PRs + Outline docs) | Yes |
 | `docs "query"` | Fast full-text search of the Outline knowledge base (titles + links) | No |
 | `howto "question"` | Reads the relevant Outline docs and synthesizes a cited, step-by-step answer | Yes |
-| `tasks [PROJECT]` | List Huly issues (defaults to the configured project; `--projects` lists projects) | No |
+| `tasks [PROJECT]` | List Huly issues (defaults to configured project; filter by `--status`/`--assignee`/`--priority`; `--projects` lists projects) | No |
 | `task ID` | Show one Huly task's details + linked GitHub PRs | No |
 
 `collect` and `summary` are split on purpose: `collect` only touches GitHub and
