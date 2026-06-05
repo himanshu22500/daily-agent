@@ -1,0 +1,22 @@
+README.md
+  s_801bce6afa93a1::t_ecc9f2b04e0369 75-77
+src/daily_agent/cli.py
+  s_801bce6afa93a1::t_4a942b758e3731 24
+  s_801bce6afa93a1::t_236361517b7ddf 181-202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "2634b94f0c5fe992f10fa089cee3db5229d42709",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
