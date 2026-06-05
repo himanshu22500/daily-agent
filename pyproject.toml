@@ -1,0 +1,33 @@
+[project]
+name = "daily-agent"
+version = "0.1.0"
+description = "AI agents that watch your org's repos and summarize what's being worked on."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic-ai>=0.0.40",
+    "pydantic-settings>=2.5",
+    "httpx>=0.27",
+    "typer>=0.12",
+    "python-dotenv>=1.0",
+    "rich>=13.7",
+]
+
+[project.scripts]
+daily-agent = "daily_agent.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/daily_agent"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

@@ -22,3 +22,9 @@ build/
 
 # Logs
 *.log
+
+# Local agent data store
+*.db
+
+# Keep the example env committed (overrides .env.* above)
+!.env.example
