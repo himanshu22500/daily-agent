@@ -1,0 +1,38 @@
+scripts/install-launchd.sh
+  s_801bce6afa93a1::t_bb2c14aad37c08 1-43
+ROADMAP.md
+  s_801bce6afa93a1::t_84c237676381b4 46-53
+src/daily_agent/cli.py
+  s_801bce6afa93a1::t_4eab0477347500 320-382
+  s_801bce6afa93a1::t_ce3354667a8fe8 27,30
+scripts/run-daily.sh
+  s_801bce6afa93a1::t_c6eba84d46df70 1-10
+src/daily_agent/config.py
+  s_801bce6afa93a1::t_fc2bf2ebf44d78 67-69
+.gitignore
+  s_801bce6afa93a1::t_c473433161419e 35-37
+README.md
+  s_801bce6afa93a1::t_23c1d57322bbe5 128
+  s_801bce6afa93a1::t_99829e1148a327 105-107
+  s_801bce6afa93a1::t_f2e4a95ac91cc3 197-200,203-205
+  s_801bce6afa93a1::t_0fe4bb7fd7dad2 134-150
+  s_801bce6afa93a1::t_ed69b3209374a3 168-172
+src/daily_agent/deliver.py
+  s_801bce6afa93a1::t_82ba5e3a4b7ca6 1-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "81aee4942cdf4a90a6ea4b420b2e3de00b8615a3",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
