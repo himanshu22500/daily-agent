@@ -102,6 +102,9 @@ uv run daily-agent tasks --assignee "Himanshu" --priority high
 # Show one task's details (status, assignee, description, linked PRs)
 uv run daily-agent task ENG-16845
 
+# Run the full daily job: collect -> digest -> per-person briefs -> digests/<date>.md
+uv run daily-agent daily
+
 # What someone is working on lately — a synthesized briefing + their tasks/PRs
 uv run daily-agent brief                # me
 uv run daily-agent brief "Harshit"      # any teammate by name/handle
@@ -122,10 +125,28 @@ uv run daily-agent tasks --assignee me  # filters also accept "me" / a name
 | `tasks [PROJECT]` | List Huly issues (defaults to configured project; filter by `--status`/`--assignee`/`--priority`; `--projects` lists projects) | No |
 | `task ID` | Show one Huly task's details + linked GitHub PRs | No |
 | `brief [PERSON]` | Synthesized briefing of what a person is working on + their Huly tasks/PRs (defaults to "me"; `--no-ai` to skip the summary) | Yes (unless `--no-ai`) |
+| `daily` | The full daily job: collect → cross-project digest → per-person briefs → writes `digests/<date>.md` | Yes |
 
 `collect` and `summary` are split on purpose: `collect` only touches GitHub and
 *accumulates* history in SQLite, so you can `summary` over any window later.
 `ask`/`docs`/`howto` query their sources live and need no prior `collect`.
+
+## Scheduling (daily, via launchd)
+
+Run the daily job automatically each morning on macOS:
+
+```bash
+scripts/install-launchd.sh 9      # run at 09:00 (default 9)
+launchctl start com.daily-agent.daily   # test it now
+```
+
+The digest lands in `digests/<date>.md` (gitignored — it contains names + work
+summaries). Logs go to `digests/launchd.{out,err}.log`. The installer bakes your
+current `PATH` into the job so `uv` and `node` (the Huly bridge) resolve under
+launchd. Uninstall with `launchctl unload ~/Library/LaunchAgents/com.daily-agent.daily.plist`.
+
+> Runs only while your Mac is awake. For always-on cloud scheduling you'd move
+> secrets into a CI provider — deferred for now.
 
 ## Architecture
 
@@ -144,7 +165,11 @@ src/daily_agent/
     docs_qa.py         docs-first Q&A agent -> answers from Outline
     person_brief.py    synthesizes what one person is working on (for `brief`)
   team.py              team identity map (name <-> Huly <-> GitHub); powers `brief`
-  cli.py               collect / summary / ask / repos / docs / howto / tasks / task / brief
+  deliver.py           render a digest to Markdown + write digests/<date>.md
+  cli.py               collect / summary / ask / repos / docs / howto / tasks / task / brief / daily
+scripts/
+  run-daily.sh         wrapper the scheduler calls
+  install-launchd.sh   install the macOS launchd job
 bridges/
   huly/                Node bridge: reads Huly via @hcengineering SDK, emits JSON
 
@@ -169,13 +194,15 @@ and `howto` all run against real data today.
 - [x] OpenAI codex / Responses-API support (`openai-responses:` model prefix)
 - [x] Offline test suite (storage + Outline client via httpx mock)
 
+- [x] Person briefs (`brief`) + team identity mapping + synthesized summary
+- [x] **Daily job + scheduling** — `daily` (collect → digest → per-person briefs →
+      `digests/<date>.md`), scheduled via launchd (`scripts/install-launchd.sh`)
+
 ### Left
 
-- [ ] **Scheduling** — recurring `collect` + digest delivery (cron / CI / other —
-      deferred pending a delivery target: terminal, file, email, Slack…)
-- [ ] **Digest delivery & history** — write dated digests to a file/channel
-- [ ] Optional niceties — a one-shot `brief` (collect + summary), repo activity
-      ranking, per-command model selection (cheaper model for `summary`)
+- [ ] More delivery backends — Slack webhook / email (file delivery shipped)
+- [ ] Always-on cloud scheduling (CI) — needs secrets moved off this machine
+- [ ] Optional niceties — repo activity ranking, per-command model selection (cheaper model for `summary`)
 
 ## License
 

@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     # Canonical name (or handle) that "me" resolves to in `brief` / `--assignee me`.
     me: str = ""
 
+    # --- Daily digest ---
+    digest_dir: str = "digests"
+
     def repo_allowlist(self) -> list[str]:
         return [r.strip() for r in self.github_repos.split(",") if r.strip()]
 

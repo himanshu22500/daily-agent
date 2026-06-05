@@ -32,3 +32,6 @@ build/
 # Team mapping contains names/handles (PII) — keep local
 team.json
 !team.example.json
+
+# Generated daily digests (contain names/work summaries — PII)
+digests/
