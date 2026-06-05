@@ -1,0 +1,31 @@
+tests/test_huly.py
+  s_801bce6afa93a1::t_6ad9081b7b2f3c 47-55
+README.md
+  s_801bce6afa93a1::t_f24536d26eeb7a 107
+  s_801bce6afa93a1::t_d033db9de3c9d7 89-92
+src/daily_agent/sources/huly.py
+  s_801bce6afa93a1::t_d3b6d7d73e85ec 93-106,110-115
+bridges/huly/index.js
+  s_801bce6afa93a1::t_611274dfaa692a 44
+  s_801bce6afa93a1::t_a57a5fed32ffd1 132-134,138-157,161-169
+  s_801bce6afa93a1::t_3e6a332391764e 210-216
+src/daily_agent/cli.py
+  s_801bce6afa93a1::t_91fea5a2a20fc1 223-225,239-241
+  s_801bce6afa93a1::t_96957657b1b71a 255-258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "00cae6f596c37d4f3e2234ebc8aebda1b6ccefc4",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
