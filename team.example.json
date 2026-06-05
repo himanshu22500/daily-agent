@@ -1,0 +1,5 @@
+{
+  "_comment": "Copy to team.json (gitignored — it holds names/handles, i.e. PII). Maps a canonical display name to the person's Huly display name and GitHub login. Used by `brief` and `tasks --assignee me`.",
+  "Jane Doe": { "huly": "Jane Doe", "github": "janedoe" },
+  "John Smith": { "huly": "John Smith", "github": "jsmith-corp" }
+}

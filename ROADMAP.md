@@ -15,14 +15,13 @@ in the README's "Done" list.
 
 ## Personal / task-centric Q&A
 
-- [ ] **"What am I working on this week?"** No current command answers a
-      person-centric, time-windowed question well. `tasks ENG` lists everything;
-      `ask` is repo-first; `howto` is Outline-only.
-      → Add a `brief` / `mine` command (or a Huly-aware Q&A agent like `howto`
-      but over tasks) that pulls *my* Huly issues (open / in-review, modified
-      this week) and attaches their GitHub PRs.
-      → Needs an **identity mapping**: Huly "Himanshu Mishra" ↔ GitHub
-      `himanshu22500`. Ideally a small team-wide name↔login map for accuracy.
+- [x] **"What is <person> working on this week?"** — added the `brief [PERSON]`
+      command: pulls a person's Huly tasks (updated in the window) + their GitHub
+      PRs. Defaults to "me". Backed by a team identity map (`team.py` +
+      gitignored `team.json`) mapping name ↔ Huly ↔ GitHub. `tasks --assignee me`
+      / `--assignee <name>` resolve through the same map.
+      - Possible follow-up: an optional LLM synthesis ("X is focused on …")
+        rather than the current deterministic listing.
 
 ## Reliable task ↔ PR mapping
 

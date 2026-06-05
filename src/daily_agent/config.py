@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     huly_default_project: str = ""
     node_bin: str = "node"
 
+    # --- Team identity mapping ---
+    # Path to the (gitignored, PII) team.json mapping name <-> huly <-> github.
+    team_path: str = "team.json"
+    # Canonical name (or handle) that "me" resolves to in `brief` / `--assignee me`.
+    me: str = ""
+
     def repo_allowlist(self) -> list[str]:
         return [r.strip() for r in self.github_repos.split(",") if r.strip()]
 

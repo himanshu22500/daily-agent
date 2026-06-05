@@ -136,6 +136,38 @@ class GitHubClient:
             )
         return out
 
+    async def search_pull_requests(
+        self, author: str, since: datetime, *, limit: int = 50
+    ) -> list[PullRequest]:
+        """PRs across the org authored by `author` and updated since `since`."""
+        q = (
+            f"org:{self.org} type:pr author:{author} "
+            f"updated:>={since.date().isoformat()}"
+        )
+        resp = await self._get(
+            "/search/issues", q=q, sort="updated", order="desc",
+            per_page=min(limit, 100),
+        )
+        out: list[PullRequest] = []
+        for it in resp.json().get("items", [])[:limit]:
+            pr_meta = it.get("pull_request") or {}
+            repo = it.get("repository_url", "/").rsplit("/", 1)[-1]
+            out.append(
+                PullRequest(
+                    repo=repo,
+                    number=it["number"],
+                    title=it["title"],
+                    author=author,
+                    state=it["state"],
+                    merged=bool(pr_meta.get("merged_at")),
+                    created_at=_parse(it["created_at"]),
+                    merged_at=_parse(pr_meta["merged_at"]) if pr_meta.get("merged_at") else None,
+                    url=it["html_url"],
+                    body=(it.get("body") or "")[:1000],
+                )
+            )
+        return out
+
     # --- deep-dive helpers ----------------------------------------------- #
     async def readme(self, repo: str) -> str:
         try:
