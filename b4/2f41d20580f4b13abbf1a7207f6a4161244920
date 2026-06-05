@@ -1,0 +1,29 @@
+src/daily_agent/cli.py
+  s_801bce6afa93a1::t_3e91c711e48c25 321,323
+  s_801bce6afa93a1::t_8992717a39ed1c 364-367,376
+  s_801bce6afa93a1::t_7cf3cf98174ab8 368-375
+README.md
+  s_801bce6afa93a1::t_512070f602a406 105,108
+  s_801bce6afa93a1::t_0c7d545d8fcf6e 145
+  s_801bce6afa93a1::t_e7eae103472689 124
+src/daily_agent/agents/person_brief.py
+  s_801bce6afa93a1::t_a18b35c2274d82 1-65
+ROADMAP.md
+  s_801bce6afa93a1::t_9cbb147b2861c8 23-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "b42f41d20580f4b13abbf1a7207f6a4161244920",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
