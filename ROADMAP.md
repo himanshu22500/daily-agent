@@ -5,19 +5,13 @@ in the README's "Done" list.
 
 ## Known gaps / fixes
 
-- [ ] **No command to fetch a single task's details.** The Node bridge already
-      supports it (`node bridges/huly/index.js issue ENG-12345`, returns the full
-      issue incl. markdown description), and `sources/huly.py` exposes
-      `HulyClient.issue(identifier)` — it just isn't surfaced as a CLI command.
-      → Add a `task ENG-12345` command that prints the issue detail (status,
-      assignee, priority, description, linked PRs).
+- [x] **Single-task detail command** — added `task ENG-12345`: prints status,
+      assignee, priority, description (markdown), and extracts linked GitHub PR
+      URLs from the description.
 
-- [ ] **`tasks` (with no project) is redundant.** All work lives in a single
-      Huly project (`ENG`), so listing projects always returns just `ENG`.
-      → Make `tasks` default to listing `ENG` issues directly. Consider a
-      `DAILY_AGENT_HULY_DEFAULT_PROJECT=ENG` setting so the default project is
-      configurable, and keep an explicit `--projects` flag only if multi-project
-      ever happens.
+- [x] **`tasks` default project** — `tasks` now lists issues for
+      `DAILY_AGENT_HULY_DEFAULT_PROJECT` (set to `ENG`) by default; pass a project
+      explicitly to override, or `--projects` to list projects.
 
 ## Personal / task-centric Q&A
 
@@ -41,6 +35,8 @@ in the README's "Done" list.
       → Build a deterministic cross-linker:
         - Parse `ENG-\d+` from PR titles / branches / commit messages (GitHub side).
         - Parse GitHub PR URLs from Huly issue bodies/comments (Huly side).
+          *(Partially done: the `task` command already extracts PR URLs from an
+          issue's description via `_github_pr_links`.)*
         - Produce a real task ↔ PR(s) map that agents and `brief` can use directly,
           instead of relying on inference.
 

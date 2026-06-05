@@ -81,9 +81,13 @@ uv run daily-agent docs "settings v3 migration"
 # Ask a how-to / setup question answered from the docs (reads + synthesizes steps)
 uv run daily-agent howto "how do I set up the comms service?"
 
-# List Huly projects, or issues for a project
-uv run daily-agent tasks            # projects
-uv run daily-agent tasks ENG        # issues in project ENG
+# List Huly issues (defaults to DAILY_AGENT_HULY_DEFAULT_PROJECT)
+uv run daily-agent tasks
+uv run daily-agent tasks ENG --limit 50   # a specific project
+uv run daily-agent tasks --projects       # list projects instead
+
+# Show one task's details (status, assignee, description, linked PRs)
+uv run daily-agent task ENG-16845
 ```
 
 ### Commands
@@ -96,7 +100,8 @@ uv run daily-agent tasks ENG        # issues in project ENG
 | `ask REPO "question"` | Code-first deep dive into one project (repo + PRs + Outline docs) | Yes |
 | `docs "query"` | Fast full-text search of the Outline knowledge base (titles + links) | No |
 | `howto "question"` | Reads the relevant Outline docs and synthesizes a cited, step-by-step answer | Yes |
-| `tasks [PROJECT]` | List Huly projects, or issues for a project | No |
+| `tasks [PROJECT]` | List Huly issues (defaults to the configured project; `--projects` lists projects) | No |
+| `task ID` | Show one Huly task's details + linked GitHub PRs | No |
 
 `collect` and `summary` are split on purpose: `collect` only touches GitHub and
 *accumulates* history in SQLite, so you can `summary` over any window later.
@@ -117,7 +122,7 @@ src/daily_agent/
     summarizer.py      Pydantic AI agent -> cross-project digest
     researcher.py      tool-using Pydantic AI agent -> repo deep dive
     docs_qa.py         docs-first Q&A agent -> answers from Outline
-  cli.py               collect / summary / ask / repos / docs / howto / tasks
+  cli.py               collect / summary / ask / repos / docs / howto / tasks / task
 bridges/
   huly/                Node bridge: reads Huly via @hcengineering SDK, emits JSON
 

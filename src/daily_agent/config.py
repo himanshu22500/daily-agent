@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     huly_email: str = ""
     huly_password: str = ""
     huly_token: str = ""
+    # All work often lives in one project; set this so `tasks` lists its issues
+    # by default instead of the (single-item) project list.
+    huly_default_project: str = ""
     node_bin: str = "node"
 
     def repo_allowlist(self) -> list[str]:

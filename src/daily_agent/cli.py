@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from contextlib import AsyncExitStack
 from datetime import datetime, timedelta, timezone
 
@@ -215,10 +216,50 @@ def howto(
 
 @app.command()
 def tasks(
-    project: str = typer.Argument(None, help="Huly project identifier (e.g. ENG). Omit to list projects."),
+    project: str = typer.Argument(
+        None, help="Huly project identifier (e.g. ENG). Defaults to DAILY_AGENT_HULY_DEFAULT_PROJECT."
+    ),
     limit: int = typer.Option(30, help="Max issues to list."),
+    projects: bool = typer.Option(False, "--projects", "-p", help="List projects instead of issues."),
 ) -> None:
-    """List Huly projects, or issues for a project."""
+    """List Huly issues for a project (defaults to the configured project)."""
+    s = get_settings()
+    if not s.huly_enabled:
+        console.print("[red]Huly not configured[/red] (set DAILY_AGENT_HULY_WORKSPACE + creds).")
+        raise typer.Exit(1)
+    target = project or s.huly_default_project
+
+    async def _run():
+        async with _huly() as h:
+            if projects or not target:
+                return ("projects", await h.projects())
+            return ("issues", await h.issues(target, limit=limit))
+
+    try:
+        kind, rows = asyncio.run(_run())
+    except HulyError as e:
+        console.print(f"[red]Huly error:[/red] {e}")
+        raise typer.Exit(1)
+    if kind == "projects":
+        console.print(f"[bold]{len(rows)} Huly projects:[/bold]")
+        for p in rows:
+            console.print(f"  • [cyan]{p['identifier']}[/cyan] — {p['name']}")
+        if not target:
+            console.print("[dim]Tip: set DAILY_AGENT_HULY_DEFAULT_PROJECT to list its issues by default.[/dim]")
+        return
+    console.print(f"[bold]{len(rows)} issues in {target}:[/bold]")
+    for i in rows:
+        console.print(
+            f"  • [cyan]{i['identifier']}[/cyan] [{i['status']}] {i['title']}"
+            f"  [dim]({i['assignee'] or 'unassigned'})[/dim]"
+        )
+
+
+@app.command()
+def task(
+    identifier: str = typer.Argument(..., help="Huly issue identifier, e.g. ENG-16845."),
+) -> None:
+    """Show one Huly task's details (status, assignee, priority, description, PR links)."""
     s = get_settings()
     if not s.huly_enabled:
         console.print("[red]Huly not configured[/red] (set DAILY_AGENT_HULY_WORKSPACE + creds).")
@@ -226,24 +267,47 @@ def tasks(
 
     async def _run():
         async with _huly() as h:
-            return (await h.issues(project, limit=limit)) if project else (await h.projects())
+            return await h.issue(identifier)
 
     try:
-        rows = asyncio.run(_run())
+        issue = asyncio.run(_run())
     except HulyError as e:
         console.print(f"[red]Huly error:[/red] {e}")
         raise typer.Exit(1)
-    if not project:
-        console.print(f"[bold]{len(rows)} Huly projects:[/bold]")
-        for p in rows:
-            console.print(f"  • [cyan]{p['identifier']}[/cyan] — {p['name']}")
-        return
-    console.print(f"[bold]{len(rows)} issues in {project}:[/bold]")
-    for i in rows:
-        console.print(
-            f"  • [cyan]{i['identifier']}[/cyan] [{i['status']}] {i['title']}"
-            f"  [dim]({i['assignee'] or 'unassigned'})[/dim]"
-        )
+    if issue is None:
+        console.print(f"No Huly issue found: [bold]{identifier}[/bold]")
+        raise typer.Exit(1)
+
+    meta = (
+        f"[bold]{issue['identifier']}[/bold]  {issue['title']}\n\n"
+        f"Project: {issue.get('project', '?')}    Status: {issue['status']} "
+        f"({issue['statusCategory']})\n"
+        f"Assignee: {issue['assignee'] or 'unassigned'}    Priority: {issue['priority']}"
+        f"    Due: {issue.get('dueDate') or '—'}"
+    )
+    console.print(Panel(meta, title=f"Task {issue['identifier']}", border_style="yellow"))
+
+    desc = (issue.get("description") or "").strip()
+    if desc:
+        console.print(Panel(Markdown(desc), title="Description", border_style="blue"))
+        prs = _github_pr_links(desc)
+        if prs:
+            console.print("[bold]Linked GitHub PRs:[/bold]")
+            for url in prs:
+                console.print(f"  • {url}")
+    else:
+        console.print("[dim](no description)[/dim]")
+
+
+_PR_URL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/pull/\d+")
+
+
+def _github_pr_links(text: str) -> list[str]:
+    seen: list[str] = []
+    for m in _PR_URL_RE.findall(text):
+        if m not in seen:
+            seen.append(m)
+    return seen
 
 
 def _print_digest(digest: ActivityDigest) -> None:
