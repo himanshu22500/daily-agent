@@ -1,0 +1,33 @@
+ROADMAP.md
+  s_801bce6afa93a1::t_723af9cbd50ff5 38-39
+  s_801bce6afa93a1::t_c1fc412ee5f534 8-14
+src/daily_agent/config.py
+  s_801bce6afa93a1::t_bde6838cf57213 56-58
+src/daily_agent/cli.py
+  s_801bce6afa93a1::t_0b89847cdfe828 12
+  s_801bce6afa93a1::t_823589e8575fca 219-221,223,225,230,234-236,239,243,247-248,250,258-310
+.env.example
+  s_801bce6afa93a1::t_7a5c94444d6648 42-43
+README.md
+  s_801bce6afa93a1::t_f278c916e4675d 84-90
+  s_801bce6afa93a1::t_1b03aedb5d34d0 125
+  s_801bce6afa93a1::t_ef01e1ff967f37 103-104
+tests/test_huly.py
+  s_801bce6afa93a1::t_30cf7122917201 1-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "5ae967b0d12754871093b7242151dddba456c695",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
