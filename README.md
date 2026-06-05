@@ -1,26 +1,85 @@
 # daily-agent
 
-A personal project that uses AI agents to perform recurring tasks automatically on my behalf — helping with everyday life.
+AI agents that watch your organization's repos and tell you what's being worked
+on — plus an on-demand deep-dive that explains the **business-logic layer** of
+any project by pulling together code, tasks, and docs.
 
-## Vision
+## What it does
 
-Build a set of AI agents that run on a schedule (daily / regularly) to handle routine tasks so I don't have to do them manually. Examples might include summarizing inboxes, organizing calendars, drafting reminders, gathering information, and more (to be defined).
+1. **Watches your org's GitHub repos.** Collects recent pull requests and
+   commits and accumulates them in a local SQLite store, so you build up a
+   running history of activity over time.
+2. **Summarizes what's happening.** An LLM agent turns that raw activity into a
+   plain-language, cross-project digest: what's shipping, what's in flight, who's
+   driving each project.
+3. **Deep-dives on demand.** Point it at one project and ask a question; a
+   tool-using agent inspects the repo (README, structure, key files, recent PRs)
+   — and, once connected, Huly tasks and Outline docs — to explain the domain
+   and the *why* behind recent changes.
+
+The LLM is **provider-agnostic** (built on [Pydantic AI](https://ai.pydantic.dev)):
+pick any model via a `provider:model` string.
+
+## Setup
+
+Requires [`uv`](https://docs.astral.sh/uv/).
+
+```bash
+uv sync
+cp .env.example .env   # then fill in GitHub token/org and your LLM provider key
+```
+
+In `.env`, set at minimum:
+
+- `DAILY_AGENT_MODEL` — e.g. `anthropic:claude-sonnet-4-5` (and the matching
+  provider key, e.g. `ANTHROPIC_API_KEY`)
+- `DAILY_AGENT_GITHUB_TOKEN` — token with read access to the org's repos
+- `DAILY_AGENT_GITHUB_ORG` — your org login
+- `DAILY_AGENT_GITHUB_REPOS` — optional comma-separated allowlist (empty = all)
+
+## Usage
+
+```bash
+# See which repos are being watched
+uv run daily-agent repos
+
+# Gather recent activity into the store (run on a schedule)
+uv run daily-agent collect --days 1
+
+# Read a cross-project digest of accumulated activity
+uv run daily-agent summary --days 7
+
+# Deep-dive into one project's business logic
+uv run daily-agent ask payments-service "How does refund handling work, and what changed recently?"
+```
+
+## Architecture
+
+```
+src/daily_agent/
+  config.py            env-driven settings (DAILY_AGENT_* prefix)
+  models.py            Pydantic models: PullRequest, Commit, RepoActivity, ActivityDigest
+  storage.py           SQLite store (idempotent upsert; activity accrues over time)
+  sources/
+    github.py          GitHub REST collection (real)
+    huly.py            task tracker (stub — pending access)
+    outline.py         engineering docs (stub — pending access)
+  agents/
+    summarizer.py      Pydantic AI agent -> cross-project digest
+    researcher.py      tool-using Pydantic AI agent -> deep dive
+  cli.py               collect / summary / ask / repos
+```
 
 ## Status
 
-🚧 Early stage — setting up the project skeleton.
+🚧 Early but working: GitHub collection, summarization, and deep-dive run today.
 
-## Goals
-
-- [ ] Define the tasks agents should handle
-- [ ] Choose the agent framework / runtime
-- [ ] Implement the first agent
-- [ ] Add scheduling / recurring execution
-- [ ] Add integrations (email, calendar, etc.)
-
-## Getting Started
-
-_TBD — setup instructions will be added as the project takes shape._
+- [x] Choose framework/runtime — Python + Pydantic AI (provider-agnostic)
+- [x] First agent: GitHub activity collector + summarizer
+- [x] Deep-dive researcher (business-logic layer)
+- [ ] Huly (task tracking) integration — *needs API base URL + token*
+- [ ] Outline (engineering docs) integration — *needs API base URL + token*
+- [ ] Scheduling / recurring execution (deferred — decide cron vs CI vs other)
 
 ## License
 
