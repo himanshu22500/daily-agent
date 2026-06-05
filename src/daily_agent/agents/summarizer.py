@@ -9,7 +9,7 @@ from __future__ import annotations
 from pydantic_ai import Agent
 
 from ..models import ActivityDigest, RepoActivity
-from .model import build_model
+from .model import build_model, cache_settings
 
 _SYSTEM_PROMPT = """\
 You are an engineering-activity analyst for a software organization. You are
@@ -34,6 +34,7 @@ def build_summarizer(model: str) -> Agent[None, ActivityDigest]:
         build_model(model),
         output_type=ActivityDigest,
         system_prompt=_SYSTEM_PROMPT,
+        model_settings=cache_settings(model),
     )
 
 

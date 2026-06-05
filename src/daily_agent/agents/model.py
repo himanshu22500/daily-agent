@@ -19,3 +19,21 @@ def build_model(model: str) -> Union[Model, str]:
 
         return OpenAIResponsesModel(model.split(":", 1)[1])
     return model
+
+
+def cache_settings(model: str):
+    """Prompt-caching model settings for Anthropic models; None otherwise.
+
+    Caches the static prefix (system instructions + tool definitions) and the
+    conversation messages, so repeated `ask`/`chat` turns reuse the cached
+    prefix — cheaper and lower-latency. No-op for non-Anthropic providers.
+    """
+    if isinstance(model, str) and model.startswith("anthropic:"):
+        from pydantic_ai.models.anthropic import AnthropicModelSettings
+
+        return AnthropicModelSettings(
+            anthropic_cache_instructions=True,
+            anthropic_cache_tool_definitions=True,
+            anthropic_cache_messages=True,
+        )
+    return None
