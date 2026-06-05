@@ -220,6 +220,9 @@ def tasks(
         None, help="Huly project identifier (e.g. ENG). Defaults to DAILY_AGENT_HULY_DEFAULT_PROJECT."
     ),
     limit: int = typer.Option(30, help="Max issues to list."),
+    status: str = typer.Option(None, "--status", help="Filter by status name, e.g. 'In Review'."),
+    assignee: str = typer.Option(None, "--assignee", help="Filter by assignee name (substring match)."),
+    priority: str = typer.Option(None, "--priority", help="Filter by priority: none|urgent|high|medium|low."),
     projects: bool = typer.Option(False, "--projects", "-p", help="List projects instead of issues."),
 ) -> None:
     """List Huly issues for a project (defaults to the configured project)."""
@@ -233,7 +236,9 @@ def tasks(
         async with _huly() as h:
             if projects or not target:
                 return ("projects", await h.projects())
-            return ("issues", await h.issues(target, limit=limit))
+            return ("issues", await h.issues(
+                target, limit=limit, status=status, assignee=assignee, priority=priority
+            ))
 
     try:
         kind, rows = asyncio.run(_run())
@@ -247,7 +252,10 @@ def tasks(
         if not target:
             console.print("[dim]Tip: set DAILY_AGENT_HULY_DEFAULT_PROJECT to list its issues by default.[/dim]")
         return
-    console.print(f"[bold]{len(rows)} issues in {target}:[/bold]")
+    active = [f"{k}={v}" for k, v in
+              (("status", status), ("assignee", assignee), ("priority", priority)) if v]
+    suffix = f" [dim](filters: {', '.join(active)})[/dim]" if active else ""
+    console.print(f"[bold]{len(rows)} issues in {target}:[/bold]{suffix}")
     for i in rows:
         console.print(
             f"  • [cyan]{i['identifier']}[/cyan] [{i['status']}] {i['title']}"

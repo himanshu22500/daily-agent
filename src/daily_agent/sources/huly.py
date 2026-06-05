@@ -90,11 +90,29 @@ class HulyClient:
         """List Huly projects: [{identifier, name, description}]."""
         return await self._run("projects")  # type: ignore[return-value]
 
-    async def issues(self, project: str | None = None, *, limit: int = 50) -> list[dict]:
-        """List issues (optionally for one project), most-recently-modified first."""
+    async def issues(
+        self,
+        project: str | None = None,
+        *,
+        limit: int = 50,
+        status: str | None = None,
+        assignee: str | None = None,
+        priority: str | None = None,
+    ) -> list[dict]:
+        """List issues, most-recently-modified first.
+
+        Optional filters: ``project`` identifier, ``status`` name, ``assignee``
+        name (substring match), ``priority`` (none|urgent|high|medium|low).
+        """
         args = ["issues", "--limit", str(limit)]
         if project:
             args += ["--project", project]
+        if status:
+            args += ["--status", status]
+        if assignee:
+            args += ["--assignee", assignee]
+        if priority:
+            args += ["--priority", priority]
         return await self._run(*args)  # type: ignore[return-value]
 
     async def issue(self, identifier: str) -> dict | None:
