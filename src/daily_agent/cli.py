@@ -318,8 +318,9 @@ def task(
 def brief(
     person: str = typer.Argument(None, help="Person name/handle. Omit for 'me'."),
     days: int = typer.Option(7, help="Look back this many days ('this week')."),
+    no_ai: bool = typer.Option(False, "--no-ai", help="Skip the LLM summary; just list tasks/PRs."),
 ) -> None:
-    """What someone is working on lately: their Huly tasks + GitHub PRs."""
+    """What someone is working on lately: a synthesized briefing + their tasks/PRs."""
     s = get_settings()
     team = load_team(s.team_path)
     if not team:
@@ -359,6 +360,19 @@ def brief(
 
     title = f"{member.name} — last {days} days  [dim](huly: {member.huly} · gh: {member.github})[/dim]"
     console.print(Panel(title, border_style="magenta"))
+
+    # Lead with a synthesized briefing (unless --no-ai or there's nothing to summarize).
+    if not no_ai and (huly_issues or prs):
+        from .agents.person_brief import summarize_person
+
+        try:
+            pb = asyncio.run(summarize_person(s.model, member.name, prs, huly_issues))
+            body = f"**{pb.headline}**\n\n{pb.summary}"
+            if pb.themes:
+                body += "\n\n" + "\n".join(f"- {t}" for t in pb.themes)
+            console.print(Panel(Markdown(body), title="Summary", border_style="green"))
+        except Exception as e:  # model/transport hiccup — don't lose the listing below
+            console.print(f"[yellow]Summary unavailable ({type(e).__name__}); showing details only.[/yellow]")
 
     console.print(f"[bold]Huly tasks ({len(huly_issues)}):[/bold]")
     for i in huly_issues:
