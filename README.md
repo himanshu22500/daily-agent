@@ -134,10 +134,28 @@ uv run daily-agent tasks --assignee me  # filters also accept "me" / a name
 | `task ID` | Show one Huly task's details + linked GitHub PRs | No |
 | `brief [PERSON]` | Synthesized briefing of what a person is working on + their Huly tasks/PRs (defaults to "me"; `--no-ai` to skip the summary) | Yes (unless `--no-ai`) |
 | `daily` | The full daily job: collect → cross-project digest → per-person briefs → writes `digests/<date>.md` | Yes |
+| `cache [--clear]` | Inspect or clear the response cache | No |
 
 `collect` and `summary` are split on purpose: `collect` only touches GitHub and
 *accumulates* history in SQLite, so you can `summary` over any window later.
-`ask`/`docs`/`howto` query their sources live and need no prior `collect`.
+`ask`/`docs`/`howto` query their sources live (through the cache) and need no
+prior `collect`.
+
+### Caching
+
+Source responses are cached in SQLite so repeated calls don't re-pull. The TTL
+policy mirrors what can actually change:
+
+- **Terminal entities cache forever** — a **merged PR** and a **DONE Huly issue**
+  never change, so they're stored permanently.
+- **Everything else uses a TTL** — open issues, lists, and search results
+  (`DAILY_AGENT_HULY_CACHE_TTL` / `GITHUB_CACHE_TTL`, default 10 min).
+- **Outline docs use a long TTL** (`DAILY_AGENT_OUTLINE_CACHE_TTL`, default 7
+  days) since they rarely change.
+
+This also sidesteps the per-call Huly bridge spawn — a warm `tasks`/`brief` is
+several times faster. Inspect with `daily-agent cache`; reset with
+`daily-agent cache --clear`; disable with `DAILY_AGENT_CACHE_ENABLED=false`.
 
 ## Scheduling (daily, via launchd)
 
@@ -173,6 +191,7 @@ src/daily_agent/
     docs_qa.py         docs-first Q&A agent -> answers from Outline
     person_brief.py    synthesizes what one person is working on (for `brief`)
   team.py              team identity map (name <-> Huly <-> GitHub); powers `brief`
+  cache.py             SQLite response cache (terminal entities permanent; else TTL)
   deliver.py           render a digest to Markdown + write digests/<date>.md
   cli.py               collect / summary / ask / chat / repos / docs / howto / tasks / task / brief / daily
 scripts/

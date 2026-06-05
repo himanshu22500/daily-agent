@@ -27,6 +27,7 @@ from .agents.assistant import AssistantDeps, ask_anything, build_assistant
 from .agents.docs_qa import ask_docs
 from .agents.person_brief import summarize_person
 from .agents.summarizer import summarize
+from .cache import Cache
 from .deliver import render_markdown, write_file
 from .config import get_settings
 from .models import ActivityDigest
@@ -47,9 +48,17 @@ def _since(days: int) -> datetime:
     return datetime.now(timezone.utc) - timedelta(days=days)
 
 
+def _cache() -> Cache:
+    s = get_settings()
+    return Cache(s.db_path, enabled=s.cache_enabled)
+
+
 def _github() -> GitHubClient:
     s = get_settings()
-    return GitHubClient(token=s.github_token, org=s.github_org)
+    return GitHubClient(
+        token=s.github_token, org=s.github_org,
+        cache=_cache(), cache_ttl=s.github_cache_ttl,
+    )
 
 
 def _huly() -> HulyClient:
@@ -57,6 +66,14 @@ def _huly() -> HulyClient:
     return HulyClient(
         url=s.huly_url, workspace=s.huly_workspace, email=s.huly_email,
         password=s.huly_password, token=s.huly_token, node_bin=s.node_bin,
+        cache=_cache(), cache_ttl=s.huly_cache_ttl,
+    )
+
+
+def _outline() -> OutlineClient:
+    s = get_settings()
+    return OutlineClient(
+        s.outline_url, s.outline_token, cache=_cache(), cache_ttl=s.outline_cache_ttl,
     )
 
 
@@ -129,7 +146,7 @@ def ask(
         async with AsyncExitStack() as stack:
             gh = await stack.enter_async_context(_github())
             outline = (
-                await stack.enter_async_context(OutlineClient(s.outline_url, s.outline_token))
+                await stack.enter_async_context(_outline())
                 if s.outline_enabled else None
             )
             huly = await stack.enter_async_context(_huly()) if s.huly_enabled else None
@@ -161,7 +178,7 @@ def chat(
         async with AsyncExitStack() as stack:
             gh = await stack.enter_async_context(_github())
             outline = (
-                await stack.enter_async_context(OutlineClient(s.outline_url, s.outline_token))
+                await stack.enter_async_context(_outline())
                 if s.outline_enabled else None
             )
             huly = await stack.enter_async_context(_huly()) if s.huly_enabled else None
@@ -246,7 +263,7 @@ def docs(
         raise typer.Exit(1)
 
     async def _run() -> list[dict]:
-        async with OutlineClient(s.outline_url, s.outline_token) as ol:
+        async with _outline() as ol:
             return await ol.search(query, limit=10)
 
     try:
@@ -276,7 +293,7 @@ def howto(
         raise typer.Exit(1)
 
     async def _run() -> str:
-        async with OutlineClient(s.outline_url, s.outline_token) as ol:
+        async with _outline() as ol:
             return await ask_docs(s.model, ol, question)
 
     try:
@@ -537,6 +554,25 @@ def _github_pr_links(text: str) -> list[str]:
         if m not in seen:
             seen.append(m)
     return seen
+
+
+@app.command()
+def cache(
+    clear: bool = typer.Option(False, "--clear", help="Delete all cached entries."),
+) -> None:
+    """Inspect or clear the response cache."""
+    s = get_settings()
+    c = Cache(s.db_path, enabled=True)
+    if clear:
+        n = c.clear()
+        console.print(f"[green]Cleared[/green] {n} cached entries.")
+        return
+    total, perm = c.stats()
+    console.print(
+        f"Cache: [bold]{total}[/bold] entries ([bold]{perm}[/bold] permanent — "
+        f"merged PRs / DONE issues), {total - perm} on TTL. "
+        f"{'enabled' if s.cache_enabled else 'DISABLED'} in config."
+    )
 
 
 def _print_digest(digest: ActivityDigest) -> None:

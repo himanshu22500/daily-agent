@@ -63,6 +63,17 @@ in the README's "Done" list.
 - [ ] Always-on cloud scheduling (GitHub Actions) — requires moving secrets
       (incl. the Huly password) into CI + installing Node/the Huly bridge there.
 
+## Caching
+
+- [x] **Response cache** (`cache.py`, SQLite) so we don't re-pull external data
+      each time. Policy mirrors what can change: **merged PRs and DONE Huly
+      issues cache permanently**; open issues / lists / search use a TTL; Outline
+      docs use a long TTL. Also avoids the per-call Huly bridge spawn (warm
+      `tasks`/`brief` ~5× faster). `cache` / `cache --clear` to inspect/reset.
+  - Possible follow-up: unify with the `pull_requests` store as a single
+    read-through layer; a long-lived Huly bridge process; Anthropic prompt
+    caching for `chat`.
+
 ## Smaller niceties
 
 - [ ] One-shot `brief` that runs `collect` + `summary` together.

@@ -15,6 +15,8 @@ import json
 import os
 from pathlib import Path
 
+from ..cache import Cache
+
 
 class HulyError(RuntimeError):
     pass
@@ -40,6 +42,8 @@ class HulyClient:
         token: str = "",
         node_bin: str = "node",
         bridge_path: Path | None = None,
+        cache: Cache | None = None,
+        cache_ttl: int = 600,
     ) -> None:
         if not workspace or not (token or (email and password)):
             raise HulyNotConfigured(
@@ -48,6 +52,8 @@ class HulyClient:
             )
         self.node_bin = node_bin
         self.bridge_path = bridge_path or _default_bridge()
+        self._cache = cache
+        self._ttl = cache_ttl
         self._env = {
             **os.environ,
             "HULY_URL": url,
@@ -88,7 +94,12 @@ class HulyClient:
     # --- queries ---------------------------------------------------------- #
     async def projects(self) -> list[dict]:
         """List Huly projects: [{identifier, name, description}]."""
-        return await self._run("projects")  # type: ignore[return-value]
+        if self._cache and (hit := self._cache.get("huly:projects", self._ttl)) is not None:
+            return hit
+        result = await self._run("projects")
+        if self._cache:
+            self._cache.set("huly:projects", result)
+        return result  # type: ignore[return-value]
 
     async def issues(
         self,
@@ -113,8 +124,24 @@ class HulyClient:
             args += ["--assignee", assignee]
         if priority:
             args += ["--priority", priority]
-        return await self._run(*args)  # type: ignore[return-value]
+        # Lists can gain/lose members -> always TTL (no permanence).
+        key = "huly:issues:" + "|".join(args[1:])
+        if self._cache and (hit := self._cache.get(key, self._ttl)) is not None:
+            return hit
+        result = await self._run(*args)
+        if self._cache:
+            self._cache.set(key, result)
+        return result  # type: ignore[return-value]
 
     async def issue(self, identifier: str) -> dict | None:
-        """Fetch one issue's detail (incl. markdown description) by identifier."""
-        return await self._run("issue", identifier)  # type: ignore[return-value]
+        """Fetch one issue's detail (incl. markdown description) by identifier.
+
+        A DONE issue is terminal, so it's cached permanently; otherwise TTL.
+        """
+        key = f"huly:issue:{identifier.upper()}"
+        if self._cache and (hit := self._cache.get(key, self._ttl)) is not None:
+            return hit
+        result = await self._run("issue", identifier)
+        if self._cache and result:
+            self._cache.set(key, result, permanent=result.get("statusCategory") == "done")
+        return result  # type: ignore[return-value]
