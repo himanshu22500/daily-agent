@@ -21,6 +21,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
+from .agents.docs_qa import ask_docs
 from .agents.researcher import research
 from .agents.summarizer import summarize
 from .config import get_settings
@@ -175,6 +176,28 @@ def docs(
         if r["context"]:
             console.print(f"    [dim]{' '.join(r['context'].split())[:140]}[/dim]")
         console.print(f"    [dim]{r['url']}[/dim]")
+
+
+@app.command()
+def howto(
+    question: str = typer.Argument(..., help="A how-to / setup / 'how does X work' question."),
+) -> None:
+    """Answer a question from your Outline docs — finds, reads, and synthesizes steps."""
+    s = get_settings()
+    if not s.outline_enabled:
+        console.print("[red]Outline not configured[/red] (set DAILY_AGENT_OUTLINE_URL/TOKEN).")
+        raise typer.Exit(1)
+
+    async def _run() -> str:
+        async with OutlineClient(s.outline_url, s.outline_token) as ol:
+            return await ask_docs(s.model, ol, question)
+
+    try:
+        answer = asyncio.run(_run())
+    except OutlineError as e:
+        console.print(f"[red]Outline error:[/red] {e}")
+        raise typer.Exit(1)
+    console.print(Panel(Markdown(answer), title="From the docs", border_style="magenta"))
 
 
 def _print_digest(digest: ActivityDigest) -> None:

@@ -54,6 +54,9 @@ uv run daily-agent ask payments-service "How does refund handling work, and what
 
 # Search the engineering docs (Outline) directly
 uv run daily-agent docs "settings v3 migration"
+
+# Ask a how-to / setup question answered from the docs (reads + synthesizes steps)
+uv run daily-agent howto "how do I set up the comms service?"
 ```
 
 ## Architecture
@@ -69,8 +72,9 @@ src/daily_agent/
     huly.py            task tracker (stub — pending access)
   agents/
     summarizer.py      Pydantic AI agent -> cross-project digest
-    researcher.py      tool-using Pydantic AI agent -> deep dive
-  cli.py               collect / summary / ask / repos / docs
+    researcher.py      tool-using Pydantic AI agent -> repo deep dive
+    docs_qa.py         docs-first Q&A agent -> answers from Outline
+  cli.py               collect / summary / ask / repos / docs / howto
 ```
 
 ## Status
