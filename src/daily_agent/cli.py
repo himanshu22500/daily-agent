@@ -88,8 +88,16 @@ async def _collect(days: int) -> tuple[int, int, int]:
         names = [r["name"] for r in repos]
         if allow:
             names = [n for n in names if n in allow]
-        for name in names:
-            activity = await gh.repo_activity(name, since)
+
+        # Fetch repos concurrently (network-bound); write to SQLite serially after.
+        sem = asyncio.Semaphore(8)
+
+        async def fetch(name: str):
+            async with sem:
+                return name, await gh.repo_activity(name, since)
+
+        results = await asyncio.gather(*(fetch(n) for n in names))
+        for name, activity in results:
             if activity.is_empty:
                 continue
             n_pr, n_commit = store.save_activity(activity)
@@ -128,7 +136,7 @@ def summary(
     store = Store(s.db_path)
     activities = store.activity_since(_since(days))
     period = f"last {days} days"
-    digest: ActivityDigest = asyncio.run(summarize(s.model, activities, period))
+    digest: ActivityDigest = asyncio.run(summarize(s.bulk_model, activities, period))
     _print_digest(digest)
 
 
@@ -414,49 +422,57 @@ def daily(
     since = _since(window)
     date_str = datetime.now(timezone.utc).date().isoformat()
 
-    # 1. Collect recent activity into the store.
-    try:
-        asyncio.run(_collect(window))
-    except GitHubError as e:
-        console.print(f"[red]GitHub error during collect:[/red] {e}")
-        raise typer.Exit(1)
+    async def _impl():
+        # 1. Collect recent activity into the store.
+        await _collect(window)
 
-    # 2. Cross-project summary from the store.
-    store = Store(s.db_path)
-    activities = store.activity_since(since)
-    digest = asyncio.run(summarize(s.model, activities, f"last {window} day(s)"))
+        # 2. Cross-project summary (fast model).
+        store = Store(s.db_path)
+        activities = store.activity_since(since)
+        digest = await summarize(s.bulk_model, activities, f"last {window} day(s)")
 
-    # 3. Per-person briefs for contributors active in the window.
-    briefs = []
-    if people:
-        authors = {pr.author for a in activities for pr in a.pull_requests}
-        team = load_team(s.team_path)
-        active = [m for m in team.values() if m.github in authors]
+        # 3. Per-person briefs for active contributors — run concurrently.
+        briefs: list = []
+        if people:
+            authors = {pr.author for a in activities for pr in a.pull_requests}
+            team = load_team(s.team_path)
+            active = [m for m in team.values() if m.github in authors]
 
-        tasks_by_assignee: dict[str, list[dict]] = {}
-        if s.huly_enabled and active:
-            try:
-                async def _tasks():
+            tasks_by_assignee: dict[str, list[dict]] = {}
+            if s.huly_enabled and active:
+                try:
                     async with _huly() as h:
-                        return await h.issues(s.huly_default_project or None, limit=200)
+                        issues = await h.issues(s.huly_default_project or None, limit=200)
+                    for i in issues:
+                        if (i.get("modifiedOn") or "") >= since.isoformat():
+                            tasks_by_assignee.setdefault(i.get("assignee"), []).append(i)
+                except HulyError as e:
+                    console.print(f"[yellow]Huly unavailable for briefs: {e}[/yellow]")
 
-                for i in asyncio.run(_tasks()):
-                    if (i.get("modifiedOn") or "") >= since.isoformat():
-                        tasks_by_assignee.setdefault(i.get("assignee"), []).append(i)
-            except HulyError as e:
-                console.print(f"[yellow]Huly unavailable for briefs: {e}[/yellow]")
+            sem = asyncio.Semaphore(5)
 
-        for m in active:
-            person_prs = [
-                pr for a in activities for pr in a.pull_requests if pr.author == m.github
-            ]
-            try:
-                pb = asyncio.run(
-                    summarize_person(s.model, m.name, person_prs, tasks_by_assignee.get(m.huly, []))
-                )
-                briefs.append((m, pb))
-            except Exception as e:  # one bad brief shouldn't sink the whole digest
-                console.print(f"[yellow]Brief failed for {m.name} ({type(e).__name__})[/yellow]")
+            async def one(m):
+                async with sem:
+                    person_prs = [
+                        pr for a in activities for pr in a.pull_requests if pr.author == m.github
+                    ]
+                    try:
+                        pb = await summarize_person(
+                            s.bulk_model, m.name, person_prs, tasks_by_assignee.get(m.huly, [])
+                        )
+                        return (m, pb)
+                    except Exception as e:  # one bad brief shouldn't sink the digest
+                        console.print(f"[yellow]Brief failed for {m.name} ({type(e).__name__})[/yellow]")
+                        return None
+
+            briefs = [r for r in await asyncio.gather(*(one(m) for m in active)) if r]
+        return digest, briefs
+
+    try:
+        digest, briefs = asyncio.run(_impl())
+    except GitHubError as e:
+        console.print(f"[red]GitHub error during daily:[/red] {e}")
+        raise typer.Exit(1)
 
     # 4. Render + deliver.
     content = render_markdown(date_str, digest, briefs)
@@ -519,7 +535,7 @@ def brief(
         from .agents.person_brief import summarize_person
 
         try:
-            pb = asyncio.run(summarize_person(s.model, member.name, prs, huly_issues))
+            pb = asyncio.run(summarize_person(s.bulk_model, member.name, prs, huly_issues))
             body = f"**{pb.headline}**\n\n{pb.summary}"
             if pb.themes:
                 body += "\n\n" + "\n".join(f"- {t}" for t in pb.themes)

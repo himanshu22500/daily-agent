@@ -71,8 +71,16 @@ in the README's "Done" list.
       docs use a long TTL. Also avoids the per-call Huly bridge spawn (warm
       `tasks`/`brief` ~5× faster). `cache` / `cache --clear` to inspect/reset.
   - Possible follow-up: unify with the `pull_requests` store as a single
-    read-through layer; a long-lived Huly bridge process; Anthropic prompt
-    caching for `chat`.
+    read-through layer; a long-lived Huly bridge process.
+
+- [x] **Parallelism** — `collect` fetches repos concurrently; `daily` runs
+      per-person briefs concurrently (bounded) instead of sequentially.
+- [x] **Prompt caching** — Anthropic system prompt + tool schemas + messages
+      cached (`agents/model.py:cache_settings`), wired into all agents.
+- [x] **Model tiering** — `DAILY_AGENT_FAST_MODEL` (e.g. Haiku) for summary +
+      briefs; `ask`/`chat` stay on the strong `DAILY_AGENT_MODEL`.
+  - Possible follow-up: memoize LLM outputs (digest/brief by date) + cache
+    `list_repos`.
 
 ## Smaller niceties
 

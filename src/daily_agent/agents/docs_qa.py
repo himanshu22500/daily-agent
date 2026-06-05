@@ -11,6 +11,7 @@ from __future__ import annotations
 from pydantic_ai import Agent, RunContext
 
 from ..sources.outline import OutlineClient, OutlineError
+from .model import build_model, cache_settings
 
 _SYSTEM_PROMPT = """\
 You help engineers by answering their questions from the company's Outline
@@ -36,7 +37,10 @@ Rules:
 
 
 def build_docs_agent(model) -> Agent[OutlineClient, str]:
-    agent = Agent(model, deps_type=OutlineClient, system_prompt=_SYSTEM_PROMPT)
+    agent = Agent(
+        model, deps_type=OutlineClient, system_prompt=_SYSTEM_PROMPT,
+        model_settings=cache_settings(model if isinstance(model, str) else ""),
+    )
 
     @agent.tool
     async def search_docs(ctx: RunContext[OutlineClient], query: str) -> str:
@@ -65,8 +69,6 @@ def build_docs_agent(model) -> Agent[OutlineClient, str]:
 
 
 async def ask_docs(model, outline: OutlineClient, question: str) -> str:
-    from .model import build_model
-
     agent = build_docs_agent(build_model(model))
     result = await agent.run(question, deps=outline)
     return result.output

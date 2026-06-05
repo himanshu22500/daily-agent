@@ -40,6 +40,9 @@ In `.env`, set at minimum:
   provider key, e.g. `ANTHROPIC_API_KEY`). Any provider works via a
   `provider:model` string; OpenAI codex / gpt-5 reasoning models use the
   `openai-responses:` prefix (e.g. `openai-responses:gpt-5-codex`).
+- `DAILY_AGENT_FAST_MODEL` — optional cheaper/faster model for bulk synthesis
+  (`summary` + per-person briefs), e.g. `anthropic:claude-haiku-4-5`. Deep
+  `ask`/`chat` keep using `DAILY_AGENT_MODEL`.
 - `DAILY_AGENT_GITHUB_TOKEN` — token with read access to the org's repos.
   Tip: if you use the `gh` CLI, `gh auth token` prints a usable token.
 - `DAILY_AGENT_GITHUB_ORG` — your org login
@@ -156,6 +159,16 @@ policy mirrors what can actually change:
 This also sidesteps the per-call Huly bridge spawn — a warm `tasks`/`brief` is
 several times faster. Inspect with `daily-agent cache`; reset with
 `daily-agent cache --clear`; disable with `DAILY_AGENT_CACHE_ENABLED=false`.
+
+### Other performance
+
+- **Parallel collection & briefs** — `collect` fetches repos concurrently, and
+  `daily` runs the per-person briefs concurrently (bounded), so the report isn't
+  gated by N sequential LLM calls.
+- **Prompt caching** — for Anthropic models, the system prompt + tool schemas +
+  conversation are cached, cutting cost/latency on repeated `ask`/`chat` turns.
+- **Model tiering** — `DAILY_AGENT_FAST_MODEL` runs the high-volume synthesis
+  (summary/briefs) on a cheaper model while `ask`/`chat` stay on the strong one.
 
 ## Scheduling (daily, via launchd)
 

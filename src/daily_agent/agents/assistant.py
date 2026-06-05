@@ -19,7 +19,7 @@ from ..sources.github import GitHubClient
 from ..sources.huly import HulyClient, HulyError
 from ..sources.outline import OutlineClient, OutlineError
 from ..team import TeamMember, resolve_member
-from .model import build_model
+from .model import build_model, cache_settings
 
 
 @dataclass
@@ -54,7 +54,10 @@ file contents — explain.
 
 
 def build_assistant(model: str) -> Agent[AssistantDeps, str]:
-    agent = Agent(build_model(model), deps_type=AssistantDeps, system_prompt=_SYSTEM_PROMPT)
+    agent = Agent(
+        build_model(model), deps_type=AssistantDeps, system_prompt=_SYSTEM_PROMPT,
+        model_settings=cache_settings(model),
+    )
 
     @agent.tool
     async def list_repos(ctx: RunContext[AssistantDeps]) -> str:
