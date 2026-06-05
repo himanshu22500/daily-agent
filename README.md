@@ -16,6 +16,10 @@ any project by pulling together code, tasks, and docs.
    tool-using agent inspects the repo (README, structure, key files, recent PRs)
    and your Outline engineering docs — and, once connected, Huly tasks — to
    explain the domain and the *why* behind recent changes.
+4. **Answers from your docs.** Ask a how-to / setup / "how does X work" question
+   and a docs-first agent searches Outline, reads the relevant documents, and
+   synthesizes a cited, step-by-step answer (and tells you honestly when the
+   docs don't cover it).
 
 The LLM is **provider-agnostic** (built on [Pydantic AI](https://ai.pydantic.dev)):
 pick any model via a `provider:model` string.
@@ -31,11 +35,19 @@ cp .env.example .env   # then fill in GitHub token/org and your LLM provider key
 
 In `.env`, set at minimum:
 
-- `DAILY_AGENT_MODEL` — e.g. `anthropic:claude-sonnet-4-5` (and the matching
-  provider key, e.g. `ANTHROPIC_API_KEY`)
-- `DAILY_AGENT_GITHUB_TOKEN` — token with read access to the org's repos
+- `DAILY_AGENT_MODEL` — e.g. `anthropic:claude-sonnet-4-6` (and the matching
+  provider key, e.g. `ANTHROPIC_API_KEY`). Any provider works via a
+  `provider:model` string; OpenAI codex / gpt-5 reasoning models use the
+  `openai-responses:` prefix (e.g. `openai-responses:gpt-5-codex`).
+- `DAILY_AGENT_GITHUB_TOKEN` — token with read access to the org's repos.
+  Tip: if you use the `gh` CLI, `gh auth token` prints a usable token.
 - `DAILY_AGENT_GITHUB_ORG` — your org login
 - `DAILY_AGENT_GITHUB_REPOS` — optional comma-separated allowlist (empty = all)
+
+Optional, to enable the docs commands (`docs`, `howto`) and doc-grounded deep dives:
+
+- `DAILY_AGENT_OUTLINE_URL` — your Outline base URL (e.g. `https://outline.yourco.com`)
+- `DAILY_AGENT_OUTLINE_TOKEN` — an Outline API token (`ol_api_…`)
 
 ## Usage
 
@@ -59,6 +71,21 @@ uv run daily-agent docs "settings v3 migration"
 uv run daily-agent howto "how do I set up the comms service?"
 ```
 
+### Commands
+
+| Command | What it does | Hits the LLM? |
+|---|---|---|
+| `repos` | List the org repos being watched (active in the last N days) | No |
+| `collect --days N` | Fetch recent PRs + commits from GitHub into the local store (idempotent; run on a schedule) | No |
+| `summary --days N` | Synthesize accumulated activity into a cross-project digest | Yes |
+| `ask REPO "question"` | Code-first deep dive into one project (repo + PRs + Outline docs) | Yes |
+| `docs "query"` | Fast full-text search of the Outline knowledge base (titles + links) | No |
+| `howto "question"` | Reads the relevant Outline docs and synthesizes a cited, step-by-step answer | Yes |
+
+`collect` and `summary` are split on purpose: `collect` only touches GitHub and
+*accumulates* history in SQLite, so you can `summary` over any window later.
+`ask`/`docs`/`howto` query their sources live and need no prior `collect`.
+
 ## Architecture
 
 ```
@@ -79,14 +106,31 @@ src/daily_agent/
 
 ## Status
 
-🚧 Early but working: GitHub collection, summarization, and deep-dive run today.
+🚧 Early but working end-to-end: `repos`, `collect`, `summary`, `ask`, `docs`,
+and `howto` all run against real data today.
 
-- [x] Choose framework/runtime — Python + Pydantic AI (provider-agnostic)
-- [x] First agent: GitHub activity collector + summarizer
-- [x] Deep-dive researcher (business-logic layer)
-- [x] Outline (engineering docs) integration — search + read, wired into deep dive
-- [ ] Huly (task tracking) integration — *needs a small Node bridge (@hcengineering/api-client)*
-- [ ] Scheduling / recurring execution (deferred — decide cron vs CI vs other)
+### Done
+
+- [x] Framework/runtime — Python (uv) + Pydantic AI, provider-agnostic LLM
+- [x] GitHub source — list org repos, recent PRs/commits, README/tree/file readers
+- [x] SQLite store — idempotent upserts so activity accrues over time (tested)
+- [x] Summarizer agent — cross-project `ActivityDigest`
+- [x] Repo deep-dive researcher — business-logic layer (code + PRs + docs)
+- [x] Outline integration — search + read, wired into the deep dive
+- [x] Docs Q&A agent (`howto`) — finds, reads, and synthesizes answers from docs
+- [x] OpenAI codex / Responses-API support (`openai-responses:` model prefix)
+- [x] Offline test suite (storage + Outline client via httpx mock)
+
+### Left
+
+- [ ] **Huly (task tracking)** — needs a small Node bridge using
+      `@hcengineering/api-client` (no Python SDK exists); will add sprint/issue
+      context to digests and deep dives
+- [ ] **Scheduling** — recurring `collect` + digest delivery (cron / CI / other —
+      deferred pending a delivery target: terminal, file, email, Slack…)
+- [ ] **Digest delivery & history** — write dated digests to a file/channel
+- [ ] Optional niceties — a one-shot `brief` (collect + summary), repo activity
+      ranking, per-command model selection (cheaper model for `summary`)
 
 ## License
 
