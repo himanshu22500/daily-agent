@@ -3,6 +3,55 @@
 A running backlog of improvements, captured for later. Not yet built unless it's
 in the README's "Done" list.
 
+## ⭐ NEXT UP: Delivery feed (the big one)
+
+Reframe delivery from **one big batch report** (the current `daily` digest — a
+heavy, "haunting", hard-to-read wall) to a **paced feed**: small, readable bites
+pushed over time. This is considered the most important part of the project and
+must be **robust** (never lose or duplicate a message).
+
+**Decisions made (2026-06-06 brainstorm):**
+- **Channel:** Slack — a personal feed (DM, or a private just-me channel — TBD).
+- **Audience:** just me (leadership overview), tuned to what I care about.
+- **Cadence:** *hybrid* — a couple of checkpoints (morning kickoff / EOD wrap)
+  that flush queued bites, **plus** an event nudge when something notable lands
+  between them (a merge, a task → In-Review, a likely blocker).
+- **Bite unit:** **per-project** and **per-person** *rolling deltas* — each
+  message says only what's new about that subject since the last time we
+  messaged about it. (Not a raw event firehose.)
+- **Pacing:** even at a checkpoint, bites trickle (spaced, or grouped under one
+  Slack thread) so it never reads as a wall.
+
+**Design sketch:**
+- **Robustness core — an outbox** in SQLite:
+  `outbox(id, kind, subject, content, dedup_key, status, attempts, created_at, sent_at)`
+  plus `delivered_ledger(item_key)` and `watermark(subject -> last_sent_at)`.
+  Enqueue bites → a sender drains them → mark `sent` only on success → retry
+  with backoff → dedup via `dedup_key` + the ledger of item keys
+  (PR `repo#num`, task `ENG-x@status`) so nothing repeats. A crash mid-send
+  never double-sends or drops.
+- **Delta engine:** diff current activity vs the watermark/ledger to produce only
+  what's new per subject. This is what kills the noise.
+
+**Phased plan (small PRs):**
+1. Outbox + delivery ledger + delta engine — channel-agnostic, testable with a
+   file/console "channel" to verify deduped bites before any Slack setup.
+2. Slack delivery — render a bite as a Slack message; threading; quiet hours.
+3. Cadence engine — checkpoints + event nudges, wired to the scheduler.
+4. Reply-to-expand — react/reply to a bite → triggers `ask` on that subject
+   (entry point to the deep-dive tools).
+
+**Open questions to settle before building (user wanted to clarify):**
+- Is per-project + per-person delta the right bite model, or a morning narrative
+  that drips follow-ups?
+- Exact definition of a "notable" event worth interrupting the day.
+- Pacing specifics: bites/day, spacing, quiet hours, weekends.
+- Slack mechanism: private-channel webhook (simple) vs bot token (true DM,
+  enables reactions/reply-to-expand).
+- Robustness bar: at-least-once + dedup (assumed); acknowledgements?
+  edit-in-place vs new messages?
+- Is reply-to-expand core or a later nice-to-have?
+
 ## Known gaps / fixes
 
 - [x] **Single-task detail command** — added `task ENG-12345`: prints status,
