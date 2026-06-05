@@ -12,10 +12,11 @@ any project by pulling together code, tasks, and docs.
 2. **Summarizes what's happening.** An LLM agent turns that raw activity into a
    plain-language, cross-project digest: what's shipping, what's in flight, who's
    driving each project.
-3. **Deep-dives on demand.** Point it at one project and ask a question; a
-   tool-using agent inspects the repo (README, structure, key files, recent PRs),
-   your Outline engineering docs, and your Huly tasks to explain the domain and
-   the *why* behind recent changes.
+3. **Ask anything, on demand.** A tool-using agent answers free-form questions —
+   about a person, a project, a topic, or the daily report — by investigating
+   across repos (code + PRs), Huly tasks, and Outline docs, resolving people via
+   the team map. It finds the right sources itself; pin a repo with `--repo` if
+   you want.
 4. **Answers from your docs.** Ask a how-to / setup / "how does X work" question
    and a docs-first agent searches Outline, reads the relevant documents, and
    synthesizes a cited, step-by-step answer (and tells you honestly when the
@@ -81,8 +82,11 @@ uv run daily-agent collect --days 1
 # Read a cross-project digest of accumulated activity
 uv run daily-agent summary --days 7
 
-# Deep-dive into one project's business logic
-uv run daily-agent ask payments-service "How does refund handling work, and what changed recently?"
+# Ask anything — the agent finds the right repos/tasks/docs/people itself
+uv run daily-agent ask "How does refund handling work, and what changed recently?"
+uv run daily-agent ask "double-click on what Sharad is working on in Routing V2"
+uv run daily-agent ask "summarize the report and tell me who's blocked"
+uv run daily-agent ask "explain the v3 migration" --repo tranzact-v2   # optionally pin a repo
 
 # Search the engineering docs (Outline) directly
 uv run daily-agent docs "settings v3 migration"
@@ -119,7 +123,7 @@ uv run daily-agent tasks --assignee me  # filters also accept "me" / a name
 | `repos` | List the org repos being watched (active in the last N days) | No |
 | `collect --days N` | Fetch recent PRs + commits from GitHub into the local store (idempotent; run on a schedule) | No |
 | `summary --days N` | Synthesize accumulated activity into a cross-project digest | Yes |
-| `ask REPO "question"` | Code-first deep dive into one project (repo + PRs + Outline docs) | Yes |
+| `ask "question"` | Ask anything; the agent investigates across repos, PRs, Huly tasks, docs, and people (optionally pin `--repo`) | Yes |
 | `docs "query"` | Fast full-text search of the Outline knowledge base (titles + links) | No |
 | `howto "question"` | Reads the relevant Outline docs and synthesizes a cited, step-by-step answer | Yes |
 | `tasks [PROJECT]` | List Huly issues (defaults to configured project; filter by `--status`/`--assignee`/`--priority`; `--projects` lists projects) | No |
@@ -161,7 +165,7 @@ src/daily_agent/
     huly.py            task tracker — shells out to the Node bridge (real)
   agents/
     summarizer.py      Pydantic AI agent -> cross-project digest
-    researcher.py      tool-using Pydantic AI agent -> repo deep dive
+    assistant.py       tool-using agent -> ask anything (all sources + people)
     docs_qa.py         docs-first Q&A agent -> answers from Outline
     person_brief.py    synthesizes what one person is working on (for `brief`)
   team.py              team identity map (name <-> Huly <-> GitHub); powers `brief`

@@ -3,7 +3,7 @@
 Async ``httpx`` client that can:
   * list an org's repos (most-recently-pushed first),
   * pull recent PRs (with merge + diff stats) and commits for a repo,
-  * fetch a repo's README and tree for the deep-dive researcher.
+  * fetch a repo's README and tree for the deep-dive assistant.
 """
 
 from __future__ import annotations
