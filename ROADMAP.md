@@ -43,10 +43,14 @@ in the README's "Done" list.
 
 ## Scheduling & delivery
 
-- [ ] **Recurring execution** — run `collect` + a digest on a schedule
-      (cron / launchd / GitHub Actions — deferred pending a delivery target).
-- [ ] **Digest delivery & history** — write dated digests somewhere durable:
-      terminal, a markdown file, email, or Slack.
+- [x] **Daily job** — `daily` command: collect → cross-project digest →
+      per-person briefs → Markdown. (`cli.daily` + `deliver.py`)
+- [x] **File delivery & history** — writes `digests/<date>.md` (gitignored, PII).
+- [x] **Recurring execution** — macOS launchd job (`scripts/install-launchd.sh`,
+      `scripts/run-daily.sh`). Runs while the Mac is awake.
+- [ ] More delivery backends — Slack incoming webhook, email (SMTP/Gmail).
+- [ ] Always-on cloud scheduling (GitHub Actions) — requires moving secrets
+      (incl. the Huly password) into CI + installing Node/the Huly bridge there.
 
 ## Smaller niceties
 

@@ -24,8 +24,10 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 
 from .agents.docs_qa import ask_docs
+from .agents.person_brief import summarize_person
 from .agents.researcher import research
 from .agents.summarizer import summarize
+from .deliver import render_markdown, write_file
 from .config import get_settings
 from .models import ActivityDigest
 from .sources.github import GitHubClient, GitHubError
@@ -312,6 +314,70 @@ def task(
                 console.print(f"  • {url}")
     else:
         console.print("[dim](no description)[/dim]")
+
+
+@app.command()
+def daily(
+    days: int = typer.Option(None, help="Window in days (default from config lookback_days)."),
+    people: bool = typer.Option(True, help="Include per-person briefs for active contributors."),
+) -> None:
+    """Full daily job: collect -> cross-project digest -> per-person briefs -> Markdown file."""
+    s = get_settings()
+    window = days if days is not None else s.lookback_days
+    since = _since(window)
+    date_str = datetime.now(timezone.utc).date().isoformat()
+
+    # 1. Collect recent activity into the store.
+    try:
+        asyncio.run(_collect(window))
+    except GitHubError as e:
+        console.print(f"[red]GitHub error during collect:[/red] {e}")
+        raise typer.Exit(1)
+
+    # 2. Cross-project summary from the store.
+    store = Store(s.db_path)
+    activities = store.activity_since(since)
+    digest = asyncio.run(summarize(s.model, activities, f"last {window} day(s)"))
+
+    # 3. Per-person briefs for contributors active in the window.
+    briefs = []
+    if people:
+        authors = {pr.author for a in activities for pr in a.pull_requests}
+        team = load_team(s.team_path)
+        active = [m for m in team.values() if m.github in authors]
+
+        tasks_by_assignee: dict[str, list[dict]] = {}
+        if s.huly_enabled and active:
+            try:
+                async def _tasks():
+                    async with _huly() as h:
+                        return await h.issues(s.huly_default_project or None, limit=200)
+
+                for i in asyncio.run(_tasks()):
+                    if (i.get("modifiedOn") or "") >= since.isoformat():
+                        tasks_by_assignee.setdefault(i.get("assignee"), []).append(i)
+            except HulyError as e:
+                console.print(f"[yellow]Huly unavailable for briefs: {e}[/yellow]")
+
+        for m in active:
+            person_prs = [
+                pr for a in activities for pr in a.pull_requests if pr.author == m.github
+            ]
+            try:
+                pb = asyncio.run(
+                    summarize_person(s.model, m.name, person_prs, tasks_by_assignee.get(m.huly, []))
+                )
+                briefs.append((m, pb))
+            except Exception as e:  # one bad brief shouldn't sink the whole digest
+                console.print(f"[yellow]Brief failed for {m.name} ({type(e).__name__})[/yellow]")
+
+    # 4. Render + deliver.
+    content = render_markdown(date_str, digest, briefs)
+    path = write_file(content, s.digest_dir, date_str)
+    console.print(
+        f"[green]Wrote digest[/green] {path}  "
+        f"({len(digest.projects)} projects, {len(briefs)} people)"
+    )
 
 
 @app.command()
