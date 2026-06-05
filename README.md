@@ -88,6 +88,9 @@ uv run daily-agent ask "double-click on what Sharad is working on in Routing V2"
 uv run daily-agent ask "summarize the report and tell me who's blocked"
 uv run daily-agent ask "explain the v3 migration" --repo tranzact-v2   # optionally pin a repo
 
+# Interactive session — follow-ups keep context ("go deeper on that")
+uv run daily-agent chat
+
 # Search the engineering docs (Outline) directly
 uv run daily-agent docs "settings v3 migration"
 
@@ -124,6 +127,7 @@ uv run daily-agent tasks --assignee me  # filters also accept "me" / a name
 | `collect --days N` | Fetch recent PRs + commits from GitHub into the local store (idempotent; run on a schedule) | No |
 | `summary --days N` | Synthesize accumulated activity into a cross-project digest | Yes |
 | `ask "question"` | Ask anything; the agent investigates across repos, PRs, Huly tasks, docs, and people (optionally pin `--repo`) | Yes |
+| `chat` | Interactive session over the same tools; follow-ups keep context (`/reset` to clear, `exit` to leave) | Yes |
 | `docs "query"` | Fast full-text search of the Outline knowledge base (titles + links) | No |
 | `howto "question"` | Reads the relevant Outline docs and synthesizes a cited, step-by-step answer | Yes |
 | `tasks [PROJECT]` | List Huly issues (defaults to configured project; filter by `--status`/`--assignee`/`--priority`; `--projects` lists projects) | No |
@@ -165,12 +169,12 @@ src/daily_agent/
     huly.py            task tracker — shells out to the Node bridge (real)
   agents/
     summarizer.py      Pydantic AI agent -> cross-project digest
-    assistant.py       tool-using agent -> ask anything (all sources + people)
+    assistant.py       tool-using agent -> ask anything (all sources + people); powers `ask` + `chat`
     docs_qa.py         docs-first Q&A agent -> answers from Outline
     person_brief.py    synthesizes what one person is working on (for `brief`)
   team.py              team identity map (name <-> Huly <-> GitHub); powers `brief`
   deliver.py           render a digest to Markdown + write digests/<date>.md
-  cli.py               collect / summary / ask / repos / docs / howto / tasks / task / brief / daily
+  cli.py               collect / summary / ask / chat / repos / docs / howto / tasks / task / brief / daily
 scripts/
   run-daily.sh         wrapper the scheduler calls
   install-launchd.sh   install the macOS launchd job

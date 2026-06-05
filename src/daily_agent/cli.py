@@ -23,7 +23,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from .agents.assistant import ask_anything
+from .agents.assistant import AssistantDeps, ask_anything, build_assistant
 from .agents.docs_qa import ask_docs
 from .agents.person_brief import summarize_person
 from .agents.summarizer import summarize
@@ -145,6 +145,73 @@ def ask(
         console.print(f"[red]GitHub error:[/red] {e}")
         raise typer.Exit(1)
     console.print(Panel(Markdown(answer), title="Answer", border_style="cyan"))
+
+
+@app.command()
+def chat(
+    repo: str = typer.Option(None, "--repo", help="Optional: focus the session on one repo."),
+) -> None:
+    """Interactive session — ask follow-up questions with the conversation remembered.
+
+    Commands: 'exit'/'quit' to leave, '/reset' to clear the conversation.
+    """
+    s = get_settings()
+
+    async def _run() -> None:
+        async with AsyncExitStack() as stack:
+            gh = await stack.enter_async_context(_github())
+            outline = (
+                await stack.enter_async_context(OutlineClient(s.outline_url, s.outline_token))
+                if s.outline_enabled else None
+            )
+            huly = await stack.enter_async_context(_huly()) if s.huly_enabled else None
+            agent = build_assistant(s.model)
+            deps = AssistantDeps(
+                github=gh, settings=s, team=load_team(s.team_path), huly=huly, outline=outline
+            )
+            history: list = []
+            loop = asyncio.get_event_loop()
+
+            console.print(Panel(
+                "Interactive chat. Ask about people, projects, tasks, docs, or the daily report.\n"
+                "Follow-ups keep context — say \"go deeper on that\". "
+                "[dim]exit/quit to leave · /reset to clear history[/dim]",
+                title="daily-agent chat", border_style="cyan",
+            ))
+            first = True
+            while True:
+                try:
+                    user = await loop.run_in_executor(
+                        None, lambda: console.input("[bold green]you ›[/bold green] ")
+                    )
+                except (EOFError, KeyboardInterrupt):
+                    break
+                user = user.strip()
+                if not user:
+                    continue
+                if user.lower() in ("exit", "quit", ":q"):
+                    break
+                if user.lower() in ("/reset", "reset"):
+                    history, first = [], True
+                    console.print("[dim]history cleared[/dim]")
+                    continue
+                if first and repo:
+                    user = f"(Focus on the repo: {repo})\n\n{user}"
+                first = False
+                try:
+                    with console.status("[dim]thinking…[/dim]"):
+                        result = await agent.run(user, deps=deps, message_history=history)
+                    history = result.all_messages()
+                    console.print(Panel(Markdown(result.output), border_style="cyan"))
+                except Exception as e:  # noqa: BLE001 - keep the session alive on errors
+                    console.print(f"[red]Error:[/red] {type(e).__name__}: {e}")
+            console.print("[dim]bye[/dim]")
+
+    try:
+        asyncio.run(_run())
+    except GitHubError as e:
+        console.print(f"[red]GitHub error:[/red] {e}")
+        raise typer.Exit(1)
 
 
 @app.command()

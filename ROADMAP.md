@@ -20,8 +20,9 @@ in the README's "Done" list.
       the team map, and the latest digest. Answers free-form questions: "ask
       about the report", "double-click on what <person> is working on", etc.
       Optionally pin a repo with `--repo`. (Superseded the repo-only researcher.)
-      - Possible follow-up: an interactive `chat` REPL that keeps context for
-        "go deeper" follow-ups.
+- [x] **Interactive `chat`** — REPL over the same assistant agent that keeps
+      conversation history, so follow-ups ("go deeper on that") have context.
+      `/reset` clears history; `exit`/`quit` leaves. Optional `--repo` focus.
 
 ## Personal / task-centric Q&A
 
