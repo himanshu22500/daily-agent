@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from ..cache import Cache
 from ..models import Commit, PullRequest, RepoActivity
 
 _API = "https://api.github.com"
@@ -22,12 +23,16 @@ class GitHubError(RuntimeError):
 
 
 class GitHubClient:
-    def __init__(self, token: str, org: str) -> None:
+    def __init__(
+        self, token: str, org: str, *, cache: Cache | None = None, cache_ttl: int = 600
+    ) -> None:
         if not token:
             raise GitHubError("No GitHub token configured (DAILY_AGENT_GITHUB_TOKEN).")
         if not org:
             raise GitHubError("No GitHub org configured (DAILY_AGENT_GITHUB_ORG).")
         self.org = org
+        self._cache = cache
+        self._ttl = cache_ttl
         self._client = httpx.AsyncClient(
             base_url=_API,
             headers={
@@ -81,9 +86,15 @@ class GitHubClient:
 
     # --- activity --------------------------------------------------------- #
     async def repo_activity(self, repo: str, since: datetime) -> RepoActivity:
+        key = f"gh:activity:{repo}:{since.date().isoformat()}"
+        if self._cache and (hit := self._cache.get(key, self._ttl)) is not None:
+            return RepoActivity.model_validate(hit)
         prs = await self._recent_pulls(repo, since)
         commits = await self._recent_commits(repo, since)
-        return RepoActivity(repo=repo, pull_requests=prs, commits=commits)
+        activity = RepoActivity(repo=repo, pull_requests=prs, commits=commits)
+        if self._cache:
+            self._cache.set(key, activity.model_dump(mode="json"))
+        return activity
 
     async def _recent_pulls(self, repo: str, since: datetime) -> list[PullRequest]:
         # PRs sorted by last update desc; stop once we pass the window.
@@ -140,6 +151,9 @@ class GitHubClient:
         self, author: str, since: datetime, *, limit: int = 50
     ) -> list[PullRequest]:
         """PRs across the org authored by `author` and updated since `since`."""
+        key = f"gh:authorprs:{author}:{since.date().isoformat()}:{limit}"
+        if self._cache and (hit := self._cache.get(key, self._ttl)) is not None:
+            return [PullRequest.model_validate(x) for x in hit]
         q = (
             f"org:{self.org} type:pr author:{author} "
             f"updated:>={since.date().isoformat()}"
@@ -166,20 +180,31 @@ class GitHubClient:
                     body=(it.get("body") or "")[:1000],
                 )
             )
+        if self._cache:
+            self._cache.set(key, [pr.model_dump(mode="json") for pr in out])
         return out
 
     # --- deep-dive helpers ----------------------------------------------- #
     async def readme(self, repo: str) -> str:
+        key = f"gh:readme:{repo}"
+        if self._cache and (hit := self._cache.get(key, self._ttl)) is not None:
+            return hit
         try:
             resp = await self._get(
                 f"/repos/{self.org}/{repo}/readme",
                 headers={"Accept": "application/vnd.github.raw+json"},
             )
-            return resp.text[:8000]
+            text = resp.text[:8000]
         except GitHubError:
-            return ""
+            text = ""
+        if self._cache:
+            self._cache.set(key, text)
+        return text
 
     async def file_tree(self, repo: str, *, limit: int = 300) -> list[str]:
+        key = f"gh:tree:{repo}:{limit}"
+        if self._cache and (hit := self._cache.get(key, self._ttl)) is not None:
+            return hit
         try:
             repo_info = (await self._get(f"/repos/{self.org}/{repo}")).json()
             branch = repo_info.get("default_branch", "main")
@@ -188,19 +213,28 @@ class GitHubClient:
                     f"/repos/{self.org}/{repo}/git/trees/{branch}", recursive="1"
                 )
             ).json()
-            return [t["path"] for t in tree.get("tree", []) if t["type"] == "blob"][:limit]
+            paths = [t["path"] for t in tree.get("tree", []) if t["type"] == "blob"][:limit]
         except GitHubError:
-            return []
+            paths = []
+        if self._cache:
+            self._cache.set(key, paths)
+        return paths
 
     async def read_file(self, repo: str, path: str) -> str:
+        key = f"gh:file:{repo}:{path}"
+        if self._cache and (hit := self._cache.get(key, self._ttl)) is not None:
+            return hit
         try:
             resp = await self._get(
                 f"/repos/{self.org}/{repo}/contents/{path}",
                 headers={"Accept": "application/vnd.github.raw+json"},
             )
-            return resp.text[:12000]
+            text = resp.text[:12000]
         except GitHubError:
-            return ""
+            text = ""
+        if self._cache:
+            self._cache.set(key, text)
+        return text
 
 
 # --------------------------------------------------------------------------- #

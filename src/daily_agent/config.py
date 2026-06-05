@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     # --- Daily digest ---
     digest_dir: str = "digests"
 
+    # --- Response cache ---
+    # Terminal entities (merged PRs, DONE Huly issues) are cached permanently;
+    # everything else uses these TTLs (seconds). Docs change rarely -> long TTL.
+    cache_enabled: bool = True
+    github_cache_ttl: int = 600       # 10 min
+    huly_cache_ttl: int = 600         # 10 min (non-DONE issues / lists)
+    outline_cache_ttl: int = 604800   # 7 days
+
     def repo_allowlist(self) -> list[str]:
         return [r.strip() for r in self.github_repos.split(",") if r.strip()]
 
