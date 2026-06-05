@@ -32,6 +32,7 @@ from .sources.github import GitHubClient, GitHubError
 from .sources.huly import HulyClient, HulyError
 from .sources.outline import OutlineClient, OutlineError
 from .storage import Store
+from .team import load_team, resolve_member
 
 app = typer.Typer(
     add_completion=False,
@@ -232,6 +233,12 @@ def tasks(
         raise typer.Exit(1)
     target = project or s.huly_default_project
 
+    # Resolve an assignee name/handle (e.g. "me", "harshit") to a Huly name.
+    if assignee:
+        member = resolve_member(load_team(s.team_path), assignee, me=s.me)
+        if member:
+            assignee = member.huly
+
     async def _run():
         async with _huly() as h:
             if projects or not target:
@@ -305,6 +312,70 @@ def task(
                 console.print(f"  • {url}")
     else:
         console.print("[dim](no description)[/dim]")
+
+
+@app.command()
+def brief(
+    person: str = typer.Argument(None, help="Person name/handle. Omit for 'me'."),
+    days: int = typer.Option(7, help="Look back this many days ('this week')."),
+) -> None:
+    """What someone is working on lately: their Huly tasks + GitHub PRs."""
+    s = get_settings()
+    team = load_team(s.team_path)
+    if not team:
+        console.print(
+            f"[red]No team map[/red] at {s.team_path}. Copy team.example.json to team.json."
+        )
+        raise typer.Exit(1)
+    member = resolve_member(team, person or "me", me=s.me)
+    if member is None:
+        who = person or "me"
+        hint = "set DAILY_AGENT_ME" if who == "me" else "known: " + ", ".join(team)
+        console.print(f"[red]Couldn't resolve '{who}'[/red] ({hint}).")
+        raise typer.Exit(1)
+
+    since = _since(days)
+    since_iso = since.isoformat()
+
+    async def _run():
+        huly_issues: list[dict] = []
+        if s.huly_enabled:
+            async with _huly() as h:
+                issues = await h.issues(
+                    s.huly_default_project or None, assignee=member.huly, limit=100
+                )
+            huly_issues = [i for i in issues if (i.get("modifiedOn") or "") >= since_iso]
+        prs: list = []
+        if member.github:
+            async with _github() as gh:
+                prs = await gh.search_pull_requests(member.github, since, limit=50)
+        return huly_issues, prs
+
+    try:
+        huly_issues, prs = asyncio.run(_run())
+    except (HulyError, GitHubError) as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    title = f"{member.name} — last {days} days  [dim](huly: {member.huly} · gh: {member.github})[/dim]"
+    console.print(Panel(title, border_style="magenta"))
+
+    console.print(f"[bold]Huly tasks ({len(huly_issues)}):[/bold]")
+    for i in huly_issues:
+        console.print(
+            f"  • [cyan]{i['identifier']}[/cyan] [{i['status']}] {i['title']}"
+            f"  [dim]({i['priority']})[/dim]"
+        )
+    if not huly_issues:
+        console.print("  [dim](none updated in window)[/dim]")
+
+    console.print(f"\n[bold]GitHub PRs ({len(prs)}):[/bold]")
+    for pr in prs:
+        state = "merged" if pr.merged else pr.state
+        console.print(f"  • [cyan]{pr.repo}#{pr.number}[/cyan] [{state}] {pr.title}")
+        console.print(f"    [dim]{pr.url}[/dim]")
+    if not prs:
+        console.print("  [dim](no PRs in window)[/dim]")
 
 
 _PR_URL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/pull/\d+")
