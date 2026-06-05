@@ -17,7 +17,7 @@ from pydantic_ai import Agent, RunContext
 
 from ..sources.github import GitHubClient
 from ..sources.huly import HulyClient, HulyNotConfigured
-from ..sources.outline import OutlineClient, OutlineNotConfigured
+from ..sources.outline import OutlineClient, OutlineError, OutlineNotConfigured
 from .model import build_model
 
 
@@ -83,14 +83,34 @@ def build_researcher(model: str) -> Agent[ResearchDeps, str]:
 
     @agent.tool
     async def search_docs(ctx: RunContext[ResearchDeps], query: str) -> str:
-        """Search engineering docs (Outline) for the given query."""
+        """Search engineering docs (Outline) — PRDs, ERDs, SOWs, runbooks, etc.
+
+        Returns matching document titles, ids, and context snippets. Use the id
+        with `read_doc` to read a document's full content.
+        """
         if ctx.deps.outline is None:
             return "(Outline docs not configured)"
         try:
-            results = await ctx.deps.outline.search(query)
-        except (OutlineNotConfigured, NotImplementedError) as e:
+            results = await ctx.deps.outline.search(query, limit=8)
+        except (OutlineNotConfigured, OutlineError) as e:
             return f"(Outline unavailable: {e})"
-        return str(results)
+        if not results:
+            return f"(no docs found for '{query}')"
+        return "\n".join(
+            f"- {r['title']} (id: {r['id']})\n    {' '.join((r['context'] or '').split())[:200]}"
+            for r in results
+        )
+
+    @agent.tool
+    async def read_doc(ctx: RunContext[ResearchDeps], doc_id: str) -> str:
+        """Read an Outline document's full content by its id (from search_docs)."""
+        if ctx.deps.outline is None:
+            return "(Outline docs not configured)"
+        try:
+            doc = await ctx.deps.outline.read_document(doc_id)
+        except (OutlineNotConfigured, OutlineError) as e:
+            return f"(Outline unavailable: {e})"
+        return f"# {doc['title']}\n({doc['url']})\n\n{doc['text']}"
 
     @agent.tool
     async def project_tasks(ctx: RunContext[ResearchDeps], project: str) -> str:

@@ -43,8 +43,16 @@ class Settings(BaseSettings):
     # --- Storage ---
     db_path: str = "daily_agent.db"
 
+    # --- Outline (engineering docs) ---
+    outline_url: str = ""
+    outline_token: str = ""
+
     def repo_allowlist(self) -> list[str]:
         return [r.strip() for r in self.github_repos.split(",") if r.strip()]
+
+    @property
+    def outline_enabled(self) -> bool:
+        return bool(self.outline_url and self.outline_token)
 
 
 @lru_cache

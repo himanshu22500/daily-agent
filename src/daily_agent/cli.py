@@ -26,6 +26,7 @@ from .agents.summarizer import summarize
 from .config import get_settings
 from .models import ActivityDigest
 from .sources.github import GitHubClient, GitHubError
+from .sources.outline import OutlineClient, OutlineError
 from .storage import Store
 
 app = typer.Typer(
@@ -112,6 +113,9 @@ def ask(
 
     async def _run() -> str:
         async with _github() as gh:
+            if s.outline_enabled:
+                async with OutlineClient(s.outline_url, s.outline_token) as ol:
+                    return await research(s.model, gh, repo, question, outline=ol)
             return await research(s.model, gh, repo, question)
 
     try:
@@ -141,6 +145,36 @@ def repos() -> None:
     console.print(f"[bold]{len(names)} repos watched:[/bold]")
     for n in names:
         console.print(f"  • {n}")
+
+
+@app.command()
+def docs(
+    query: str = typer.Argument(..., help="Search the engineering docs (Outline)."),
+) -> None:
+    """Search your Outline knowledge base directly."""
+    s = get_settings()
+    if not s.outline_enabled:
+        console.print("[red]Outline not configured[/red] (set DAILY_AGENT_OUTLINE_URL/TOKEN).")
+        raise typer.Exit(1)
+
+    async def _run() -> list[dict]:
+        async with OutlineClient(s.outline_url, s.outline_token) as ol:
+            return await ol.search(query, limit=10)
+
+    try:
+        results = asyncio.run(_run())
+    except OutlineError as e:
+        console.print(f"[red]Outline error:[/red] {e}")
+        raise typer.Exit(1)
+    if not results:
+        console.print(f"No docs found for '{query}'.")
+        return
+    console.print(f"[bold]{len(results)} docs for '{query}':[/bold]")
+    for r in results:
+        console.print(f"  • [cyan]{r['title']}[/cyan]")
+        if r["context"]:
+            console.print(f"    [dim]{' '.join(r['context'].split())[:140]}[/dim]")
+        console.print(f"    [dim]{r['url']}[/dim]")
 
 
 def _print_digest(digest: ActivityDigest) -> None:

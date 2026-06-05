@@ -14,8 +14,8 @@ any project by pulling together code, tasks, and docs.
    driving each project.
 3. **Deep-dives on demand.** Point it at one project and ask a question; a
    tool-using agent inspects the repo (README, structure, key files, recent PRs)
-   — and, once connected, Huly tasks and Outline docs — to explain the domain
-   and the *why* behind recent changes.
+   and your Outline engineering docs — and, once connected, Huly tasks — to
+   explain the domain and the *why* behind recent changes.
 
 The LLM is **provider-agnostic** (built on [Pydantic AI](https://ai.pydantic.dev)):
 pick any model via a `provider:model` string.
@@ -51,6 +51,9 @@ uv run daily-agent summary --days 7
 
 # Deep-dive into one project's business logic
 uv run daily-agent ask payments-service "How does refund handling work, and what changed recently?"
+
+# Search the engineering docs (Outline) directly
+uv run daily-agent docs "settings v3 migration"
 ```
 
 ## Architecture
@@ -62,12 +65,12 @@ src/daily_agent/
   storage.py           SQLite store (idempotent upsert; activity accrues over time)
   sources/
     github.py          GitHub REST collection (real)
+    outline.py         engineering docs — Outline API (real)
     huly.py            task tracker (stub — pending access)
-    outline.py         engineering docs (stub — pending access)
   agents/
     summarizer.py      Pydantic AI agent -> cross-project digest
     researcher.py      tool-using Pydantic AI agent -> deep dive
-  cli.py               collect / summary / ask / repos
+  cli.py               collect / summary / ask / repos / docs
 ```
 
 ## Status
@@ -77,8 +80,8 @@ src/daily_agent/
 - [x] Choose framework/runtime — Python + Pydantic AI (provider-agnostic)
 - [x] First agent: GitHub activity collector + summarizer
 - [x] Deep-dive researcher (business-logic layer)
-- [ ] Huly (task tracking) integration — *needs API base URL + token*
-- [ ] Outline (engineering docs) integration — *needs API base URL + token*
+- [x] Outline (engineering docs) integration — search + read, wired into deep dive
+- [ ] Huly (task tracking) integration — *needs a small Node bridge (@hcengineering/api-client)*
 - [ ] Scheduling / recurring execution (deferred — decide cron vs CI vs other)
 
 ## License
