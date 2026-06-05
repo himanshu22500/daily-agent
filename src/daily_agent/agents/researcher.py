@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pydantic_ai import Agent, RunContext
 
 from ..sources.github import GitHubClient
-from ..sources.huly import HulyClient, HulyNotConfigured
+from ..sources.huly import HulyClient, HulyError, HulyNotConfigured
 from ..sources.outline import OutlineClient, OutlineError, OutlineNotConfigured
 from .model import build_model
 
@@ -113,15 +113,36 @@ def build_researcher(model: str) -> Agent[ResearchDeps, str]:
         return f"# {doc['title']}\n({doc['url']})\n\n{doc['text']}"
 
     @agent.tool
-    async def project_tasks(ctx: RunContext[ResearchDeps], project: str) -> str:
-        """Fetch tasks/issues for a project from the task tracker (Huly)."""
+    async def huly_projects(ctx: RunContext[ResearchDeps]) -> str:
+        """List projects in the Huly task tracker (identifier + name)."""
         if ctx.deps.huly is None:
             return "(Huly task tracker not configured)"
         try:
-            tasks = await ctx.deps.huly.project_tasks(project)
-        except (HulyNotConfigured, NotImplementedError) as e:
+            projects = await ctx.deps.huly.projects()
+        except (HulyNotConfigured, HulyError) as e:
             return f"(Huly unavailable: {e})"
-        return str(tasks)
+        return "\n".join(f"- {p['identifier']}: {p['name']}" for p in projects) or "(no projects)"
+
+    @agent.tool
+    async def huly_issues(ctx: RunContext[ResearchDeps], project: str, limit: int = 30) -> str:
+        """List recent issues for a Huly project identifier (e.g. 'ENG').
+
+        Use this to learn what's planned / in progress / in review for the work
+        behind the code — the "why" and status that GitHub alone doesn't show.
+        """
+        if ctx.deps.huly is None:
+            return "(Huly task tracker not configured)"
+        try:
+            issues = await ctx.deps.huly.issues(project, limit=limit)
+        except (HulyNotConfigured, HulyError) as e:
+            return f"(Huly unavailable: {e})"
+        if not issues:
+            return f"(no issues for project '{project}')"
+        return "\n".join(
+            f"- {i['identifier']} [{i['status']}/{i['statusCategory']}] {i['title']} "
+            f"(assignee: {i['assignee'] or 'none'}, priority: {i['priority']})"
+            for i in issues
+        )
 
     return agent
 

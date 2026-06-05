@@ -1,36 +1,102 @@
-"""Huly (task tracking) source — STUB.
+"""Huly (task tracking) source.
 
-Awaiting access details before wiring up for real. Huly self-hosted/cloud
-exposes an API; once you provide a base URL + token I'll implement:
-  * issues / tasks by project,
-  * recent status changes,
-  * linking a GitHub repo to its Huly project.
+Huly has no Python SDK and no plain REST resource API — data is only practically
+readable through the official TypeScript SDK against its typed document model.
+So we keep a tiny Node bridge (``bridges/huly/index.js``) that talks to Huly and
+emits JSON, and this client shells out to it.
 
-For now this raises a clear NotConfigured so the rest of the system runs and
-the deep-dive agent simply notes Huly is unavailable.
+Run ``yarn install`` once inside ``bridges/huly/`` to install the bridge's deps.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+import json
+import os
+from pathlib import Path
+
+
+class HulyError(RuntimeError):
+    pass
 
 
 class HulyNotConfigured(RuntimeError):
     pass
 
 
-@dataclass
+def _default_bridge() -> Path:
+    # src/daily_agent/sources/huly.py -> repo root is parents[3]
+    return Path(__file__).resolve().parents[3] / "bridges" / "huly" / "index.js"
+
+
 class HulyClient:
-    base_url: str = ""
-    token: str = ""
-
-    def _require(self) -> None:
-        if not self.base_url or not self.token:
+    def __init__(
+        self,
+        *,
+        workspace: str,
+        url: str = "https://huly.app",
+        email: str = "",
+        password: str = "",
+        token: str = "",
+        node_bin: str = "node",
+        bridge_path: Path | None = None,
+    ) -> None:
+        if not workspace or not (token or (email and password)):
             raise HulyNotConfigured(
-                "Huly is not configured yet. Provide DAILY_AGENT_HULY_URL and "
-                "DAILY_AGENT_HULY_TOKEN to enable task-tracker context."
+                "Huly is not configured. Set DAILY_AGENT_HULY_WORKSPACE and either "
+                "DAILY_AGENT_HULY_TOKEN or DAILY_AGENT_HULY_EMAIL + DAILY_AGENT_HULY_PASSWORD."
             )
+        self.node_bin = node_bin
+        self.bridge_path = bridge_path or _default_bridge()
+        self._env = {
+            **os.environ,
+            "HULY_URL": url,
+            "HULY_WORKSPACE": workspace,
+            "HULY_EMAIL": email,
+            "HULY_PASSWORD": password,
+            "HULY_TOKEN": token,
+        }
 
-    async def project_tasks(self, project: str) -> list[dict]:
-        self._require()
-        raise NotImplementedError("Huly integration pending access details.")
+    async def __aenter__(self) -> "HulyClient":
+        return self
+
+    async def __aexit__(self, *exc) -> None:
+        return None
+
+    async def _run(self, *args: str) -> object:
+        if not self.bridge_path.exists():
+            raise HulyError(f"Huly bridge not found at {self.bridge_path}")
+        if not (self.bridge_path.parent / "node_modules").exists():
+            raise HulyError(
+                f"Huly bridge deps not installed. Run: (cd {self.bridge_path.parent} && yarn install)"
+            )
+        proc = await asyncio.create_subprocess_exec(
+            self.node_bin, str(self.bridge_path), *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=self._env,
+        )
+        out, err = await proc.communicate()
+        if proc.returncode != 0:
+            msg = err.decode().strip().splitlines()[-1] if err else "unknown error"
+            raise HulyError(f"huly bridge failed: {msg}")
+        try:
+            return json.loads(out.decode())
+        except json.JSONDecodeError as e:
+            raise HulyError(f"huly bridge returned invalid JSON: {e}")
+
+    # --- queries ---------------------------------------------------------- #
+    async def projects(self) -> list[dict]:
+        """List Huly projects: [{identifier, name, description}]."""
+        return await self._run("projects")  # type: ignore[return-value]
+
+    async def issues(self, project: str | None = None, *, limit: int = 50) -> list[dict]:
+        """List issues (optionally for one project), most-recently-modified first."""
+        args = ["issues", "--limit", str(limit)]
+        if project:
+            args += ["--project", project]
+        return await self._run(*args)  # type: ignore[return-value]
+
+    async def issue(self, identifier: str) -> dict | None:
+        """Fetch one issue's detail (incl. markdown description) by identifier."""
+        return await self._run("issue", identifier)  # type: ignore[return-value]

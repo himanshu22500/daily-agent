@@ -47,12 +47,25 @@ class Settings(BaseSettings):
     outline_url: str = ""
     outline_token: str = ""
 
+    # --- Huly (task tracking, via the Node bridge) ---
+    huly_url: str = "https://huly.app"
+    huly_workspace: str = ""
+    huly_email: str = ""
+    huly_password: str = ""
+    huly_token: str = ""
+    node_bin: str = "node"
+
     def repo_allowlist(self) -> list[str]:
         return [r.strip() for r in self.github_repos.split(",") if r.strip()]
 
     @property
     def outline_enabled(self) -> bool:
         return bool(self.outline_url and self.outline_token)
+
+    @property
+    def huly_enabled(self) -> bool:
+        has_auth = bool(self.huly_token or (self.huly_email and self.huly_password))
+        return bool(self.huly_workspace and has_auth)
 
 
 @lru_cache

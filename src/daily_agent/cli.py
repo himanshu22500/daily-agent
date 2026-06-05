@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import AsyncExitStack
 from datetime import datetime, timedelta, timezone
 
 import typer
@@ -27,6 +28,7 @@ from .agents.summarizer import summarize
 from .config import get_settings
 from .models import ActivityDigest
 from .sources.github import GitHubClient, GitHubError
+from .sources.huly import HulyClient, HulyError
 from .sources.outline import OutlineClient, OutlineError
 from .storage import Store
 
@@ -44,6 +46,14 @@ def _since(days: int) -> datetime:
 def _github() -> GitHubClient:
     s = get_settings()
     return GitHubClient(token=s.github_token, org=s.github_org)
+
+
+def _huly() -> HulyClient:
+    s = get_settings()
+    return HulyClient(
+        url=s.huly_url, workspace=s.huly_workspace, email=s.huly_email,
+        password=s.huly_password, token=s.huly_token, node_bin=s.node_bin,
+    )
 
 
 async def _collect(days: int) -> tuple[int, int, int]:
@@ -113,11 +123,14 @@ def ask(
     s = get_settings()
 
     async def _run() -> str:
-        async with _github() as gh:
-            if s.outline_enabled:
-                async with OutlineClient(s.outline_url, s.outline_token) as ol:
-                    return await research(s.model, gh, repo, question, outline=ol)
-            return await research(s.model, gh, repo, question)
+        async with AsyncExitStack() as stack:
+            gh = await stack.enter_async_context(_github())
+            outline = (
+                await stack.enter_async_context(OutlineClient(s.outline_url, s.outline_token))
+                if s.outline_enabled else None
+            )
+            huly = await stack.enter_async_context(_huly()) if s.huly_enabled else None
+            return await research(s.model, gh, repo, question, huly=huly, outline=outline)
 
     try:
         answer = asyncio.run(_run())
@@ -198,6 +211,39 @@ def howto(
         console.print(f"[red]Outline error:[/red] {e}")
         raise typer.Exit(1)
     console.print(Panel(Markdown(answer), title="From the docs", border_style="magenta"))
+
+
+@app.command()
+def tasks(
+    project: str = typer.Argument(None, help="Huly project identifier (e.g. ENG). Omit to list projects."),
+    limit: int = typer.Option(30, help="Max issues to list."),
+) -> None:
+    """List Huly projects, or issues for a project."""
+    s = get_settings()
+    if not s.huly_enabled:
+        console.print("[red]Huly not configured[/red] (set DAILY_AGENT_HULY_WORKSPACE + creds).")
+        raise typer.Exit(1)
+
+    async def _run():
+        async with _huly() as h:
+            return (await h.issues(project, limit=limit)) if project else (await h.projects())
+
+    try:
+        rows = asyncio.run(_run())
+    except HulyError as e:
+        console.print(f"[red]Huly error:[/red] {e}")
+        raise typer.Exit(1)
+    if not project:
+        console.print(f"[bold]{len(rows)} Huly projects:[/bold]")
+        for p in rows:
+            console.print(f"  • [cyan]{p['identifier']}[/cyan] — {p['name']}")
+        return
+    console.print(f"[bold]{len(rows)} issues in {project}:[/bold]")
+    for i in rows:
+        console.print(
+            f"  • [cyan]{i['identifier']}[/cyan] [{i['status']}] {i['title']}"
+            f"  [dim]({i['assignee'] or 'unassigned'})[/dim]"
+        )
 
 
 def _print_digest(digest: ActivityDigest) -> None:
