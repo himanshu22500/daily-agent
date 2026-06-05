@@ -13,9 +13,9 @@ any project by pulling together code, tasks, and docs.
    plain-language, cross-project digest: what's shipping, what's in flight, who's
    driving each project.
 3. **Deep-dives on demand.** Point it at one project and ask a question; a
-   tool-using agent inspects the repo (README, structure, key files, recent PRs)
-   and your Outline engineering docs — and, once connected, Huly tasks — to
-   explain the domain and the *why* behind recent changes.
+   tool-using agent inspects the repo (README, structure, key files, recent PRs),
+   your Outline engineering docs, and your Huly tasks to explain the domain and
+   the *why* behind recent changes.
 4. **Answers from your docs.** Ask a how-to / setup / "how does X work" question
    and a docs-first agent searches Outline, reads the relevant documents, and
    synthesizes a cited, step-by-step answer (and tells you honestly when the
@@ -49,6 +49,17 @@ Optional, to enable the docs commands (`docs`, `howto`) and doc-grounded deep di
 - `DAILY_AGENT_OUTLINE_URL` — your Outline base URL (e.g. `https://outline.yourco.com`)
 - `DAILY_AGENT_OUTLINE_TOKEN` — an Outline API token (`ol_api_…`)
 
+Optional, to enable the Huly task tracker (`tasks` command + task context in deep dives).
+Huly has no Python SDK, so this uses a small Node bridge — install it once:
+
+```bash
+cd bridges/huly && yarn install && cd -
+```
+
+- `DAILY_AGENT_HULY_WORKSPACE` — your workspace name (from the workspace URL)
+- `DAILY_AGENT_HULY_EMAIL` + `DAILY_AGENT_HULY_PASSWORD` — or `DAILY_AGENT_HULY_TOKEN`
+- `DAILY_AGENT_HULY_URL` — defaults to `https://huly.app`
+
 ## Usage
 
 ```bash
@@ -69,6 +80,10 @@ uv run daily-agent docs "settings v3 migration"
 
 # Ask a how-to / setup question answered from the docs (reads + synthesizes steps)
 uv run daily-agent howto "how do I set up the comms service?"
+
+# List Huly projects, or issues for a project
+uv run daily-agent tasks            # projects
+uv run daily-agent tasks ENG        # issues in project ENG
 ```
 
 ### Commands
@@ -81,6 +96,7 @@ uv run daily-agent howto "how do I set up the comms service?"
 | `ask REPO "question"` | Code-first deep dive into one project (repo + PRs + Outline docs) | Yes |
 | `docs "query"` | Fast full-text search of the Outline knowledge base (titles + links) | No |
 | `howto "question"` | Reads the relevant Outline docs and synthesizes a cited, step-by-step answer | Yes |
+| `tasks [PROJECT]` | List Huly projects, or issues for a project | No |
 
 `collect` and `summary` are split on purpose: `collect` only touches GitHub and
 *accumulates* history in SQLite, so you can `summary` over any window later.
@@ -96,12 +112,15 @@ src/daily_agent/
   sources/
     github.py          GitHub REST collection (real)
     outline.py         engineering docs — Outline API (real)
-    huly.py            task tracker (stub — pending access)
+    huly.py            task tracker — shells out to the Node bridge (real)
   agents/
     summarizer.py      Pydantic AI agent -> cross-project digest
     researcher.py      tool-using Pydantic AI agent -> repo deep dive
     docs_qa.py         docs-first Q&A agent -> answers from Outline
-  cli.py               collect / summary / ask / repos / docs / howto
+  cli.py               collect / summary / ask / repos / docs / howto / tasks
+bridges/
+  huly/                Node bridge: reads Huly via @hcengineering SDK, emits JSON
+
 ```
 
 ## Status
@@ -118,14 +137,13 @@ and `howto` all run against real data today.
 - [x] Repo deep-dive researcher — business-logic layer (code + PRs + docs)
 - [x] Outline integration — search + read, wired into the deep dive
 - [x] Docs Q&A agent (`howto`) — finds, reads, and synthesizes answers from docs
+- [x] Huly (task tracking) — Node bridge (`@hcengineering` SDK) + `tasks` command,
+      wired into the deep dive for issue/status context
 - [x] OpenAI codex / Responses-API support (`openai-responses:` model prefix)
 - [x] Offline test suite (storage + Outline client via httpx mock)
 
 ### Left
 
-- [ ] **Huly (task tracking)** — needs a small Node bridge using
-      `@hcengineering/api-client` (no Python SDK exists); will add sprint/issue
-      context to digests and deep dives
 - [ ] **Scheduling** — recurring `collect` + digest delivery (cron / CI / other —
       deferred pending a delivery target: terminal, file, email, Slack…)
 - [ ] **Digest delivery & history** — write dated digests to a file/channel
