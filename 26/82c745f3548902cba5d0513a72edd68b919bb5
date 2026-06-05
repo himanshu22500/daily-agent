@@ -1,0 +1,22 @@
+README.md
+  s_801bce6afa93a1::t_dd5c16ae528555 74-88
+  s_801bce6afa93a1::t_9b69ae70ac8da8 109-133
+  s_801bce6afa93a1::t_52e39f64832e16 38-43,47-50
+  s_801bce6afa93a1::t_f2a2e6a405128d 19-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "2682c745f3548902cba5d0513a72edd68b919bb5",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
