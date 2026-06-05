@@ -1,0 +1,43 @@
+src/daily_agent/sources/github.py
+  s_801bce6afa93a1::t_ed412eeaf79443 139-170
+tests/test_team.py
+  s_801bce6afa93a1::t_9681d23ba77138 1,9,12-13,25,34,39,44
+  s_801bce6afa93a1::t_e2f5a760aec2e3 2-8,10-11,14-24,26-33,35-38,40-43,45-54
+team.example.json
+  s_801bce6afa93a1::t_0486f114282dc6 1-5
+src/daily_agent/team.py
+  s_801bce6afa93a1::t_4ffecb7ab09028 1-57
+src/daily_agent/config.py
+  s_801bce6afa93a1::t_2e23e530c3db8d 61-66
+src/daily_agent/cli.py
+  s_801bce6afa93a1::t_25d6db74b755d2 35
+  s_801bce6afa93a1::t_620f52d2f1d138 236-241
+  s_801bce6afa93a1::t_e767ecebe2e9eb 317-380
+.gitignore
+  s_801bce6afa93a1::t_a59da5a5f9ddb4 31-34
+.env.example
+  s_801bce6afa93a1::t_eb85afb8555094 49-54
+README.md
+  s_801bce6afa93a1::t_410e6d537185f3 104-108
+  s_801bce6afa93a1::t_9559e9fb795bc7 144-145
+  s_801bce6afa93a1::t_b862c0d67ab38e 123
+  s_801bce6afa93a1::t_726c64ebe6ec19 63-71
+ROADMAP.md
+  s_801bce6afa93a1::t_84d827df6cc38d 18-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "6c427bcc33a57de07c66ed8acd6f42e138a08630",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
