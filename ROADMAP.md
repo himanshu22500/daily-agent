@@ -22,16 +22,79 @@ must be **robust** (never lose or duplicate a message).
 - **Pacing:** even at a checkpoint, bites trickle (spaced, or grouped under one
   Slack thread) so it never reads as a wall.
 
-**Design sketch:**
-- **Robustness core — an outbox** in SQLite:
-  `outbox(id, kind, subject, content, dedup_key, status, attempts, created_at, sent_at)`
-  plus `delivered_ledger(item_key)` and `watermark(subject -> last_sent_at)`.
-  Enqueue bites → a sender drains them → mark `sent` only on success → retry
-  with backoff → dedup via `dedup_key` + the ledger of item keys
-  (PR `repo#num`, task `ENG-x@status`) so nothing repeats. A crash mid-send
-  never double-sends or drops.
-- **Delta engine:** diff current activity vs the watermark/ledger to produce only
-  what's new per subject. This is what kills the noise.
+**Architecture — a staged pipeline over SQLite (2026-06-06 brainstorm):**
+
+The data-flow is `pull → store → detect-new → generate → pace → deliver`, but the
+key decision is to make it a **pipeline of durable, idempotent stages**, NOT one
+linear job. Each arrow is a table; each stage only reads the previous table and
+writes its own; any stage can crash and resume without redoing the others.
+
+```
+ collectors        differ        renderer       pacer        sender
+ GitHub ─┐        (pure SQL,    (LLM, once     (policy      (Slack,
+ Huly  ──┼─► raw_facts ─► deltas ──► per delta) ─► outbox ──► over outbox) ─► ledger
+ Outline ┘  (mirror)   (what's new)  bites          (queue)                  +watermark
+```
+
+Why staged, not monolithic — the traps it avoids:
+- **Generation must not sit on the delivery retry path.** LLM output is slow,
+  costs money, nondeterministic. Render once → persist text → deliver the *stored*
+  text. A failed Slack send retries the send, never re-calls the model.
+- **"Generate from all pulled info" duplicates everything.** The **differ** (pure,
+  cheap, no LLM) is what decides *what's new* — diff `raw_facts` vs
+  watermark/ledger. This is the difference between a feed and a digest.
+- **One stable dedup key flows end-to-end** (`PR repo#num@merged`,
+  `ENG-1234@in-review`) so any stage re-running collapses onto the same row.
+- **Per-source isolation:** each collector advances its own watermark; Huly down →
+  GitHub bites still flow.
+
+Tables:
+- `raw_facts` — normalized source mirror, upserted by natural key
+  (`source, external_id, updated_at`). The existing `pull_requests`/`commits`
+  store is the seed of this.
+- `source_state` — `source → last_polled, cursor, last_error` (watermark +
+  isolation + visible failure).
+- `deltas` — candidate bites: `(dedup_key UNIQUE, subject, kind, payload_json,
+  detected_at, status)`. Re-running the differ is a no-op via the unique key.
+- `bites` — rendered text: `(dedup_key, content, content_hash, model,
+  rendered_at)`. Memoized by content hash → never pay the LLM twice.
+- `outbox` — `(id, dedup_key, channel, content, status, attempts, not_before,
+  created_at, sent_at, last_error)`. Queue + retry/backoff (`not_before` =
+  next-attempt time). Status state machine:
+  `pending → rendered → released → sent | failed → dead`.
+- `delivered_ledger(item_key PRIMARY KEY, sent_at)` — exact "already sent" guard.
+- `watermark(subject PRIMARY KEY, last_sent_at)` — what the differ diffs against.
+
+**Control:** a single scheduler tick runs the stages in order
+(`collect → diff → render → pace → send`), each draining its input table. Because
+every stage is idempotent + durable, the tick can crash anywhere and the next tick
+resumes correctly. Start with this **single sequenced tick**; split into
+independent per-stage loops later (more robust, more moving parts) *without changing
+the tables*.
+
+**Can it all be done in SQL? — Yes, and it should be.** This is durable queues +
+state machines + dedup + watermarks, exactly what a transactional relational store
+is for. SQLite is ideal (single user, single host, zero ops, ACID):
+- queue+status → `status` column + `UPDATE … WHERE status=…`
+- dedup / never-duplicate → `UNIQUE(dedup_key)` + `INSERT … ON CONFLICT DO NOTHING`
+- at-least-once → mark `sent` **and** insert ledger row in the *same transaction*
+- retry/backoff → `attempts` + `not_before`; sender picks
+  `status='pending' AND not_before <= now`
+No broker (Kafka/Rabbit/Redis) — those solve multi-consumer, multi-host, high
+throughput; we have one consumer, one host, low volume. Keep the sender
+single-threaded (or add a `claimed_by`/`claimed_at` lease) so two ticks can't
+drain the same row.
+
+**Is Qdrant / a vector DB relevant? — Not for delivery. No.** Delivery is *exact,
+deterministic identity* (dedup by `repo#num@merged`), the opposite of vector
+*similarity*. Fuzzy matching would make "never duplicate / never lose" worse and
+add an embedding-model + server dependency for zero gain on the delivery path.
+Vector search, *if ever*, belongs in the **Q&A / retrieval layer**, not here:
+semantic search over Outline docs (only if Outline's own search proves too weak),
+recall over months of historical `raw_facts`, or semantic anti-repeat (exact-key
+ledger already covers the real cases). **Defer Qdrant until there's a concrete
+retrieval problem keyword search can't solve** — adding it now is complexity
+shopping for a problem we don't have.
 
 **Phased plan (small PRs):**
 1. Outbox + delivery ledger + delta engine — channel-agnostic, testable with a
