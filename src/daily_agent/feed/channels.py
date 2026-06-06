@@ -104,3 +104,56 @@ class SlackChannel:
 
     def close(self) -> None:
         self._client.close()
+
+
+class TelegramError(RuntimeError):
+    """A Telegram API call returned ``ok: false`` or a transport error."""
+
+
+class TelegramChannel:
+    """Delivers each bite as a Telegram message via a bot token.
+
+    Needs no org/admin approval, so it's a good interim channel for testing the
+    feed end-to-end. ``chat_id`` is your numeric Telegram user ID (the bot can
+    only message you after you've sent it ``/start`` once — bots can't initiate
+    conversations).
+
+    ``send`` raises on any failure (transport error, or a logical ``ok: false``
+    such as ``chat not found`` / ``bot was blocked``) so the outbox retries with
+    backoff rather than dropping the bite. The token sits in the URL path per the
+    Telegram Bot API.
+    """
+
+    name = "telegram"
+
+    def __init__(
+        self, token: str, chat_id: str, *, client: httpx.Client | None = None
+    ) -> None:
+        self.token = token
+        self.chat_id = chat_id
+        self._client = client or httpx.Client(timeout=10.0)
+
+    def _post(self, text: str) -> None:
+        resp = self._client.post(
+            f"https://api.telegram.org/bot{self.token}/sendMessage",
+            json={"chat_id": self.chat_id, "text": text, "disable_web_page_preview": True},
+        )
+        # Telegram returns a useful `description` even on 4xx, so read the body
+        # before treating the status as fatal.
+        try:
+            data = resp.json()
+        except ValueError:
+            resp.raise_for_status()
+            raise TelegramError(f"non-JSON response (HTTP {resp.status_code})")
+        if not data.get("ok"):
+            raise TelegramError(data.get("description") or f"HTTP {resp.status_code}")
+
+    def send(self, item: OutboxItem) -> None:
+        self._post(item.content)
+
+    def send_text(self, text: str) -> None:
+        """Post an arbitrary message — used for connectivity checks."""
+        self._post(text)
+
+    def close(self) -> None:
+        self._client.close()

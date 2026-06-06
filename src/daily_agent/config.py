@@ -70,12 +70,24 @@ class Settings(BaseSettings):
     # --- Daily digest ---
     digest_dir: str = "digests"
 
+    # --- Feed delivery ---
+    # Default channel for `feed` (and scheduled runs) when no --to-* flag is
+    # passed. One of: console | telegram | slack | file. Repo default is the
+    # zero-config console; set DAILY_AGENT_FEED_CHANNEL=telegram to push by default.
+    feed_channel: str = "console"
+
     # --- Slack delivery (feed channel) ---
     # Bot User OAuth token (xoxb-...) with the chat:write scope.
     slack_bot_token: str = ""
     # Where to deliver: a Slack user ID (U.../W...) to DM you (most reliable
     # notification), or a channel ID to post to a channel.
     slack_destination: str = ""
+
+    # --- Telegram delivery (no-approval feed channel) ---
+    # Bot token from @BotFather.
+    telegram_bot_token: str = ""
+    # Your numeric chat ID (DM the bot /start first; get the ID via @userinfobot).
+    telegram_chat_id: str = ""
 
     # --- Response cache ---
     # Terminal entities (merged PRs, DONE Huly issues) are cached permanently;
@@ -96,6 +108,10 @@ class Settings(BaseSettings):
     @property
     def slack_enabled(self) -> bool:
         return bool(self.slack_bot_token and self.slack_destination)
+
+    @property
+    def telegram_enabled(self) -> bool:
+        return bool(self.telegram_bot_token and self.telegram_chat_id)
 
     @property
     def outline_enabled(self) -> bool:

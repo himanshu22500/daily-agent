@@ -11,7 +11,24 @@ pushed over time. This is considered the most important part of the project and
 must be **robust** (never lose or duplicate a message).
 
 **Decisions made (2026-06-06 brainstorm):**
-- **Channel:** Slack — a personal feed (DM, or a private just-me channel — TBD).
+- **Channel: Telegram is the primary (and intended *only*) channel.** Decided
+  after Slack hit a workspace-admin install gate. Reasons it's the right primary,
+  not just a fallback:
+    - No org/admin approval; one bot token is the entire credential; only
+      outbound HTTPS to `api.telegram.org` (no ports, no public URL).
+    - **Privacy:** the feed will grow to include personal/leadership notifications
+      the user does *not* want on a shared workspace. A dedicated bot + a Telegram
+      account used for nothing else keeps it fully isolated. **Do not route this
+      feed through Slack or any shared workspace.**
+    - More capable for this use case: inline buttons (clean reply-to-expand),
+      `disable_notification` (built-in quiet hours), `editMessageText` (in-place
+      rolling deltas), slash commands.
+  - **Slack:** parked. The `SlackChannel` stays in the tree as an optional/team
+    facing channel, but is not the path. (`feed_channel` defaults to `console` in
+    the repo; the user sets `DAILY_AGENT_FEED_CHANNEL=telegram`.)
+  - Telegram account hygiene (the user keeps this account single-purpose) is done
+    by the user in the Telegram app — bot tokens are sandboxed and cannot touch
+    account contacts/notifications. NOT something this project automates.
 - **Audience:** just me (leadership overview), tuned to what I care about.
 - **Cadence:** *hybrid* — a couple of checkpoints (morning kickoff / EOD wrap)
   that flush queued bites, **plus** an event nudge when something notable lands
@@ -31,7 +48,7 @@ writes its own; any stage can crash and resume without redoing the others.
 
 ```
  collectors        differ        renderer       pacer        sender
- GitHub ─┐        (pure SQL,    (LLM, once     (policy      (Slack,
+ GitHub ─┐        (pure SQL,    (LLM, once     (policy     (Telegram,
  Huly  ──┼─► raw_facts ─► deltas ──► per delta) ─► outbox ──► over outbox) ─► ledger
  Outline ┘  (mirror)   (what's new)  bites          (queue)                  +watermark
 ```
@@ -39,7 +56,7 @@ writes its own; any stage can crash and resume without redoing the others.
 Why staged, not monolithic — the traps it avoids:
 - **Generation must not sit on the delivery retry path.** LLM output is slow,
   costs money, nondeterministic. Render once → persist text → deliver the *stored*
-  text. A failed Slack send retries the send, never re-calls the model.
+  text. A failed send retries the send, never re-calls the model.
 - **"Generate from all pulled info" duplicates everything.** The **differ** (pure,
   cheap, no LLM) is what decides *what's new* — diff `raw_facts` vs
   watermark/ledger. This is the difference between a feed and a digest.
@@ -116,25 +133,37 @@ shopping for a problem we don't have.
      renderer stage in the architecture): the differ still finds *what's new*
      deterministically; a rich generator turns those raw deltas into a narrated,
      contextual bite (pulling in Huly tasks, Outline docs, PR bodies, history).
-2. [x] **Slack delivery** — `SlackChannel` (bot token, `chat.postMessage`,
-   DMs the user for reliable notifications) wired in as another `Channel`:
-   `feed --to-slack` delivers through the outbox (failures retry, never
-   duplicate); `slack-check` confirms setup. Config: `slack_bot_token` +
-   `slack_destination`. *(Threading / quiet hours deferred to phase 3.)*
-3. Cadence engine — checkpoints + event nudges, wired to the scheduler.
-4. Reply-to-expand — react/reply to a bite → triggers `ask` on that subject
-   (entry point to the deep-dive tools).
+2. [x] **Delivery channels.**
+   - [x] **Telegram — the PRIMARY channel.** `TelegramChannel` + `feed
+     --to-telegram` + `telegram-check`. No org/admin approval; one bot token;
+     same outbox guarantees. `feed_channel` (`DAILY_AGENT_FEED_CHANNEL`) selects
+     the default channel when no flag is passed — set to `telegram` so bare
+     `feed` and scheduled runs push to Telegram. Config: `telegram_bot_token` +
+     `telegram_chat_id`. Live-verified (bot `@himanshu_daily_agent_bot`).
+   - [x] **Slack — parked/optional.** `SlackChannel` + `feed --to-slack` +
+     `slack-check` exist (bot token, `chat.postMessage` DM) but Slack is **not**
+     the path — workspace-admin gate + the feed will carry personal content that
+     must not live on a shared workspace. Kept for a possible team-facing variant.
+3. Cadence engine — checkpoints + event nudges, wired to the scheduler. On
+   Telegram: use `disable_notification` for low-priority/quiet-hours bites
+   (built-in silent delivery) rather than holding them back entirely.
+4. Reply-to-expand — **on Telegram, via inline keyboard buttons + a long-poll
+   loop** (`getUpdates`, outbound-only — no public webhook needed). Attach
+   buttons to a bite (`[Dig deeper] [Mute project] [Snooze]`); a tap → a
+   `callback_query` → triggers `ask` on that subject and replies in-thread.
+   Slash commands (`/brief`, `/ask`, `/mute`) via `setMyCommands`. This is the
+   one phase that needs a persistent daemon (launchd KeepAlive); everything up
+   to here is fire-and-exit.
 
 **Open questions to settle before building (user wanted to clarify):**
 - Is per-project + per-person delta the right bite model, or a morning narrative
   that drips follow-ups?
 - Exact definition of a "notable" event worth interrupting the day.
 - Pacing specifics: bites/day, spacing, quiet hours, weekends.
-- Slack mechanism: private-channel webhook (simple) vs bot token (true DM,
-  enables reactions/reply-to-expand).
 - Robustness bar: at-least-once + dedup (assumed); acknowledgements?
   edit-in-place vs new messages?
 - Is reply-to-expand core or a later nice-to-have?
+- *(Resolved: channel = Telegram, primary & only — see "Decisions made".)*
 
 ## Known gaps / fixes
 
