@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     # --- Daily digest ---
     digest_dir: str = "digests"
 
+    # --- Slack delivery (feed channel) ---
+    # Bot User OAuth token (xoxb-...) with the chat:write scope.
+    slack_bot_token: str = ""
+    # Where to deliver: a Slack user ID (U.../W...) to DM you (most reliable
+    # notification), or a channel ID to post to a channel.
+    slack_destination: str = ""
+
     # --- Response cache ---
     # Terminal entities (merged PRs, DONE Huly issues) are cached permanently;
     # everything else uses these TTLs (seconds). Docs change rarely -> long TTL.
@@ -85,6 +92,10 @@ class Settings(BaseSettings):
     def bulk_model(self) -> str:
         """Model for high-volume synthesis (summary/briefs) — fast_model or model."""
         return self.fast_model or self.model
+
+    @property
+    def slack_enabled(self) -> bool:
+        return bool(self.slack_bot_token and self.slack_destination)
 
     @property
     def outline_enabled(self) -> bool:
