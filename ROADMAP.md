@@ -103,6 +103,19 @@ shopping for a problem we don't have.
    `@opened`/`@merged` bites with stable keys), console + file channels, and the
    `feed` command. Verified end-to-end: re-running never repeats a bite.
    *(LLM-narrated + per-person rollups and commit bites are deliberately later.)*
+   - [ ] **⚠️ REVISIT — make the feed content rich & business-level (the user's
+     next focus).** Phase 1 bites are mechanical ("PR opened", "PR merged") —
+     they say *what changed in git*, not *what's happening with the product*.
+     That's not interesting or useful. The generation layer needs to become a
+     genuinely helpful agent: synthesize what the change *means* for the product
+     / business, connect related activity (this PR + that task + that doc),
+     surface intent, risk, and "why should you care". **LLM cost is NOT a
+     constraint** — spend tokens freely to make each bite informative. The user
+     has specific ideas and wants to design this in detail before building.
+     This sits *between* the delta engine and the outbox (the `bites` /
+     renderer stage in the architecture): the differ still finds *what's new*
+     deterministically; a rich generator turns those raw deltas into a narrated,
+     contextual bite (pulling in Huly tasks, Outline docs, PR bodies, history).
 2. Slack delivery — render a bite as a Slack message; threading; quiet hours.
 3. Cadence engine — checkpoints + event nudges, wired to the scheduler.
 4. Reply-to-expand — react/reply to a bite → triggers `ask` on that subject
