@@ -635,13 +635,24 @@ def feed(
         )
         return
 
-    if to_slack and not s.slack_enabled:
+    # An explicit --to-* flag wins; otherwise fall back to the configured
+    # default channel (DAILY_AGENT_FEED_CHANNEL).
+    if to_slack:
+        choice = "slack"
+    elif to_telegram:
+        choice = "telegram"
+    elif to_file:
+        choice = "file"
+    else:
+        choice = (s.feed_channel or "console").lower()
+
+    if choice == "slack" and not s.slack_enabled:
         console.print(
             "[red]Slack not configured.[/red] Set DAILY_AGENT_SLACK_BOT_TOKEN and "
             "DAILY_AGENT_SLACK_DESTINATION, then run `daily-agent slack-check`."
         )
         raise typer.Exit(1)
-    if to_telegram and not s.telegram_enabled:
+    if choice == "telegram" and not s.telegram_enabled:
         console.print(
             "[red]Telegram not configured.[/red] Set DAILY_AGENT_TELEGRAM_BOT_TOKEN "
             "and DAILY_AGENT_TELEGRAM_CHAT_ID, then run `daily-agent telegram-check`."
@@ -652,15 +663,16 @@ def feed(
     activities = store.activity_since(_since(days))
     new = outbox.enqueue_all(bites_for_activity(activities))
 
-    if to_slack:
+    if choice == "slack":
         channel: Channel = SlackChannel(s.slack_bot_token, s.slack_destination)
         dest = "Slack"
-    elif to_telegram:
+    elif choice == "telegram":
         channel = TelegramChannel(s.telegram_bot_token, s.telegram_chat_id)
         dest = "Telegram"
-    elif to_file:
-        channel = FileChannel(to_file)
-        dest = to_file
+    elif choice == "file":
+        path = to_file or f"{s.digest_dir}/feed.log"
+        channel = FileChannel(path)
+        dest = path
     else:
         channel = ConsoleChannel(console)
         dest = "console"

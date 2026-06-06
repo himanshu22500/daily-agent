@@ -70,6 +70,12 @@ class Settings(BaseSettings):
     # --- Daily digest ---
     digest_dir: str = "digests"
 
+    # --- Feed delivery ---
+    # Default channel for `feed` (and scheduled runs) when no --to-* flag is
+    # passed. One of: console | telegram | slack | file. Repo default is the
+    # zero-config console; set DAILY_AGENT_FEED_CHANNEL=telegram to push by default.
+    feed_channel: str = "console"
+
     # --- Slack delivery (feed channel) ---
     # Bot User OAuth token (xoxb-...) with the chat:write scope.
     slack_bot_token: str = ""
