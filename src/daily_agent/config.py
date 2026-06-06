@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     # notification), or a channel ID to post to a channel.
     slack_destination: str = ""
 
+    # --- Telegram delivery (no-approval feed channel) ---
+    # Bot token from @BotFather.
+    telegram_bot_token: str = ""
+    # Your numeric chat ID (DM the bot /start first; get the ID via @userinfobot).
+    telegram_chat_id: str = ""
+
     # --- Response cache ---
     # Terminal entities (merged PRs, DONE Huly issues) are cached permanently;
     # everything else uses these TTLs (seconds). Docs change rarely -> long TTL.
@@ -96,6 +102,10 @@ class Settings(BaseSettings):
     @property
     def slack_enabled(self) -> bool:
         return bool(self.slack_bot_token and self.slack_destination)
+
+    @property
+    def telegram_enabled(self) -> bool:
+        return bool(self.telegram_bot_token and self.telegram_chat_id)
 
     @property
     def outline_enabled(self) -> bool:

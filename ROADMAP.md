@@ -121,6 +121,10 @@ shopping for a problem we don't have.
    `feed --to-slack` delivers through the outbox (failures retry, never
    duplicate); `slack-check` confirms setup. Config: `slack_bot_token` +
    `slack_destination`. *(Threading / quiet hours deferred to phase 3.)*
+   - [x] **Telegram channel** — `TelegramChannel` + `feed --to-telegram` +
+     `telegram-check`. Needs no org/admin approval, so it's the interim live-test
+     channel while the Slack app awaits workspace approval. Config:
+     `telegram_bot_token` + `telegram_chat_id`. Same outbox guarantees.
 3. Cadence engine — checkpoints + event nudges, wired to the scheduler.
 4. Reply-to-expand — react/reply to a bite → triggers `ask` on that subject
    (entry point to the deep-dive tools).

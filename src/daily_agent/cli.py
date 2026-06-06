@@ -31,7 +31,14 @@ from .agents.summarizer import summarize
 from .cache import Cache
 from .deliver import render_markdown, write_file
 from .config import get_settings
-from .feed.channels import ConsoleChannel, FileChannel, SlackChannel, SlackError
+from .feed.channels import (
+    ConsoleChannel,
+    FileChannel,
+    SlackChannel,
+    SlackError,
+    TelegramChannel,
+    TelegramError,
+)
 from .feed.delta import bites_for_activity
 from .feed.outbox import Channel, Outbox
 from .models import ActivityDigest
@@ -601,6 +608,9 @@ def feed(
     to_slack: bool = typer.Option(
         False, "--to-slack", help="Deliver bites to Slack (uses configured bot token + destination)."
     ),
+    to_telegram: bool = typer.Option(
+        False, "--to-telegram", help="Deliver bites to Telegram (uses configured bot token + chat ID)."
+    ),
     to_file: str = typer.Option(
         None, "--to-file", help="Append bites to this file instead of the console."
     ),
@@ -611,8 +621,8 @@ def feed(
 
     Idempotent: enqueuing re-derives stable keys and the outbox skips anything
     already queued or delivered, so running `feed` repeatedly never repeats a
-    bite. Delivers to the console by default; `--to-slack` DMs them to you,
-    `--to-file` appends them to a transcript.
+    bite. Delivers to the console by default; `--to-slack` / `--to-telegram` push
+    them to you, `--to-file` appends them to a transcript.
     """
     s = get_settings()
     outbox = Outbox(s.db_path)
@@ -631,6 +641,12 @@ def feed(
             "DAILY_AGENT_SLACK_DESTINATION, then run `daily-agent slack-check`."
         )
         raise typer.Exit(1)
+    if to_telegram and not s.telegram_enabled:
+        console.print(
+            "[red]Telegram not configured.[/red] Set DAILY_AGENT_TELEGRAM_BOT_TOKEN "
+            "and DAILY_AGENT_TELEGRAM_CHAT_ID, then run `daily-agent telegram-check`."
+        )
+        raise typer.Exit(1)
 
     store = Store(s.db_path)
     activities = store.activity_since(_since(days))
@@ -639,6 +655,9 @@ def feed(
     if to_slack:
         channel: Channel = SlackChannel(s.slack_bot_token, s.slack_destination)
         dest = "Slack"
+    elif to_telegram:
+        channel = TelegramChannel(s.telegram_bot_token, s.telegram_chat_id)
+        dest = "Telegram"
     elif to_file:
         channel = FileChannel(to_file)
         dest = to_file
@@ -649,7 +668,7 @@ def feed(
     try:
         result = outbox.drain(channel, limit=limit)
     finally:
-        if isinstance(channel, SlackChannel):
+        if hasattr(channel, "close"):
             channel.close()
 
     console.print(
@@ -685,6 +704,32 @@ def slack_check() -> None:
     finally:
         channel.close()
     console.print(f"[green]Sent[/green] a test message to {s.slack_destination}. Check Slack.")
+
+
+@app.command(name="telegram-check")
+def telegram_check() -> None:
+    """Send a test message to confirm the Telegram bot token + chat ID work."""
+    s = get_settings()
+    if not s.telegram_enabled:
+        console.print(
+            "[red]Telegram not configured.[/red] Set DAILY_AGENT_TELEGRAM_BOT_TOKEN "
+            "(from @BotFather) and DAILY_AGENT_TELEGRAM_CHAT_ID (your numeric ID — "
+            "send the bot /start, then get the ID from @userinfobot)."
+        )
+        raise typer.Exit(1)
+    channel = TelegramChannel(s.telegram_bot_token, s.telegram_chat_id)
+    try:
+        channel.send_text("👋 daily-agent is connected — your feed will arrive here.")
+    except TelegramError as e:
+        console.print(
+            f"[red]Telegram rejected the message:[/red] {e}\n"
+            "Common fixes: wrong token, wrong chat ID, or you haven't sent the bot "
+            "/start yet (bots can't message you until you start the chat)."
+        )
+        raise typer.Exit(1)
+    finally:
+        channel.close()
+    console.print(f"[green]Sent[/green] a test message to chat {s.telegram_chat_id}. Check Telegram.")
 
 
 def _print_digest(digest: ActivityDigest) -> None:
