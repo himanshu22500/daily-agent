@@ -97,8 +97,12 @@ retrieval problem keyword search can't solve** — adding it now is complexity
 shopping for a problem we don't have.
 
 **Phased plan (small PRs):**
-1. Outbox + delivery ledger + delta engine — channel-agnostic, testable with a
-   file/console "channel" to verify deduped bites before any Slack setup.
+1. [x] **Outbox + delivery ledger + delta engine** — channel-agnostic core
+   (`feed/`): `Outbox` (at-least-once + dedup via `UNIQUE(dedup_key)` + ledger,
+   retry/backoff, dead-letter), `DeltaEngine` (`bites_for_activity`: PR-level
+   `@opened`/`@merged` bites with stable keys), console + file channels, and the
+   `feed` command. Verified end-to-end: re-running never repeats a bite.
+   *(LLM-narrated + per-person rollups and commit bites are deliberately later.)*
 2. Slack delivery — render a bite as a Slack message; threading; quiet hours.
 3. Cadence engine — checkpoints + event nudges, wired to the scheduler.
 4. Reply-to-expand — react/reply to a bite → triggers `ask` on that subject

@@ -4,6 +4,7 @@
   daily-agent summary            Summarize accumulated activity into a digest.
   daily-agent ask REPO "..."     Deep-dive into one project (business logic).
   daily-agent repos              List the org repos currently being watched.
+  daily-agent feed               Deliver accumulated activity as deduped bites.
 """
 
 from __future__ import annotations
@@ -30,6 +31,9 @@ from .agents.summarizer import summarize
 from .cache import Cache
 from .deliver import render_markdown, write_file
 from .config import get_settings
+from .feed.channels import ConsoleChannel, FileChannel
+from .feed.delta import bites_for_activity
+from .feed.outbox import Channel, Outbox
 from .models import ActivityDigest
 from .sources.github import GitHubClient, GitHubError
 from .sources.huly import HulyClient, HulyError
@@ -588,6 +592,49 @@ def cache(
         f"Cache: [bold]{total}[/bold] entries ([bold]{perm}[/bold] permanent — "
         f"merged PRs / DONE issues), {total - perm} on TTL. "
         f"{'enabled' if s.cache_enabled else 'DISABLED'} in config."
+    )
+
+
+@app.command()
+def feed(
+    days: int = typer.Option(7, help="Build bites from activity in the last N days."),
+    to_file: str = typer.Option(
+        None, "--to-file", help="Append bites to this file instead of the console."
+    ),
+    limit: int = typer.Option(None, help="Deliver at most N bites this run."),
+    status: bool = typer.Option(False, "--status", help="Show outbox stats and exit."),
+) -> None:
+    """Turn accumulated activity into deduped bites and deliver them.
+
+    Idempotent: enqueuing re-derives stable keys and the outbox skips anything
+    already queued or delivered, so running `feed` repeatedly never repeats a
+    bite. This is the channel-agnostic Phase 1 core (console / file channels).
+    """
+    s = get_settings()
+    outbox = Outbox(s.db_path)
+    if status:
+        st = outbox.stats()
+        console.print(
+            f"Outbox: [bold]{st['pending']}[/bold] pending, {st['failed']} retrying, "
+            f"[green]{st['sent']}[/green] sent, [red]{st['dead']}[/red] dead — "
+            f"{st['delivered']} in the delivered ledger."
+        )
+        return
+
+    store = Store(s.db_path)
+    activities = store.activity_since(_since(days))
+    new = outbox.enqueue_all(bites_for_activity(activities))
+
+    channel: Channel = FileChannel(to_file) if to_file else ConsoleChannel(console)
+    result = outbox.drain(channel, limit=limit)
+
+    dest = to_file if to_file else "console"
+    console.print(
+        f"[green]Feed[/green] queued {new} new bite(s); delivered "
+        f"[bold]{result.sent}[/bold] to {dest}"
+        + (f", {result.failed} deferred" if result.failed else "")
+        + (f", [red]{result.dead} dead[/red]" if result.dead else "")
+        + "."
     )
 
 
