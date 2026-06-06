@@ -48,6 +48,25 @@ class RepoActivity(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
+# Delivery feed
+# --------------------------------------------------------------------------- #
+class Bite(BaseModel):
+    """One bite-sized, deliverable update — the atom of the feed.
+
+    ``dedup_key`` is its stable identity: the same real-world fact always produces
+    the same key, so re-running the delta engine never enqueues or delivers it
+    twice (e.g. ``pr:api#12@merged``). ``subject`` is what the bite is *about*
+    (``repo:api``, ``person:alice``) and is what the rolling-delta watermark
+    tracks. ``content`` is the text to deliver.
+    """
+
+    dedup_key: str = Field(description="Stable identity, e.g. 'pr:api#12@merged'.")
+    subject: str = Field(description="Rolling-delta subject, e.g. 'repo:api'.")
+    kind: str = Field(description="Event kind, e.g. 'pr_merged' | 'pr_opened'.")
+    content: str = Field(description="Human-readable text of the update.")
+
+
+# --------------------------------------------------------------------------- #
 # LLM outputs
 # --------------------------------------------------------------------------- #
 class ProjectSummary(BaseModel):
