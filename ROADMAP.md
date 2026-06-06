@@ -116,7 +116,11 @@ shopping for a problem we don't have.
      renderer stage in the architecture): the differ still finds *what's new*
      deterministically; a rich generator turns those raw deltas into a narrated,
      contextual bite (pulling in Huly tasks, Outline docs, PR bodies, history).
-2. Slack delivery — render a bite as a Slack message; threading; quiet hours.
+2. [x] **Slack delivery** — `SlackChannel` (bot token, `chat.postMessage`,
+   DMs the user for reliable notifications) wired in as another `Channel`:
+   `feed --to-slack` delivers through the outbox (failures retry, never
+   duplicate); `slack-check` confirms setup. Config: `slack_bot_token` +
+   `slack_destination`. *(Threading / quiet hours deferred to phase 3.)*
 3. Cadence engine — checkpoints + event nudges, wired to the scheduler.
 4. Reply-to-expand — react/reply to a bite → triggers `ask` on that subject
    (entry point to the deep-dive tools).

@@ -31,7 +31,7 @@ from .agents.summarizer import summarize
 from .cache import Cache
 from .deliver import render_markdown, write_file
 from .config import get_settings
-from .feed.channels import ConsoleChannel, FileChannel
+from .feed.channels import ConsoleChannel, FileChannel, SlackChannel, SlackError
 from .feed.delta import bites_for_activity
 from .feed.outbox import Channel, Outbox
 from .models import ActivityDigest
@@ -598,6 +598,9 @@ def cache(
 @app.command()
 def feed(
     days: int = typer.Option(7, help="Build bites from activity in the last N days."),
+    to_slack: bool = typer.Option(
+        False, "--to-slack", help="Deliver bites to Slack (uses configured bot token + destination)."
+    ),
     to_file: str = typer.Option(
         None, "--to-file", help="Append bites to this file instead of the console."
     ),
@@ -608,7 +611,8 @@ def feed(
 
     Idempotent: enqueuing re-derives stable keys and the outbox skips anything
     already queued or delivered, so running `feed` repeatedly never repeats a
-    bite. This is the channel-agnostic Phase 1 core (console / file channels).
+    bite. Delivers to the console by default; `--to-slack` DMs them to you,
+    `--to-file` appends them to a transcript.
     """
     s = get_settings()
     outbox = Outbox(s.db_path)
@@ -621,14 +625,33 @@ def feed(
         )
         return
 
+    if to_slack and not s.slack_enabled:
+        console.print(
+            "[red]Slack not configured.[/red] Set DAILY_AGENT_SLACK_BOT_TOKEN and "
+            "DAILY_AGENT_SLACK_DESTINATION, then run `daily-agent slack-check`."
+        )
+        raise typer.Exit(1)
+
     store = Store(s.db_path)
     activities = store.activity_since(_since(days))
     new = outbox.enqueue_all(bites_for_activity(activities))
 
-    channel: Channel = FileChannel(to_file) if to_file else ConsoleChannel(console)
-    result = outbox.drain(channel, limit=limit)
+    if to_slack:
+        channel: Channel = SlackChannel(s.slack_bot_token, s.slack_destination)
+        dest = "Slack"
+    elif to_file:
+        channel = FileChannel(to_file)
+        dest = to_file
+    else:
+        channel = ConsoleChannel(console)
+        dest = "console"
 
-    dest = to_file if to_file else "console"
+    try:
+        result = outbox.drain(channel, limit=limit)
+    finally:
+        if isinstance(channel, SlackChannel):
+            channel.close()
+
     console.print(
         f"[green]Feed[/green] queued {new} new bite(s); delivered "
         f"[bold]{result.sent}[/bold] to {dest}"
@@ -636,6 +659,32 @@ def feed(
         + (f", [red]{result.dead} dead[/red]" if result.dead else "")
         + "."
     )
+
+
+@app.command(name="slack-check")
+def slack_check() -> None:
+    """Send a test DM to confirm the Slack bot token + destination work."""
+    s = get_settings()
+    if not s.slack_enabled:
+        console.print(
+            "[red]Slack not configured.[/red] Set DAILY_AGENT_SLACK_BOT_TOKEN "
+            "(xoxb-… with chat:write) and DAILY_AGENT_SLACK_DESTINATION (your "
+            "Slack user ID to DM, or a channel ID)."
+        )
+        raise typer.Exit(1)
+    channel = SlackChannel(s.slack_bot_token, s.slack_destination)
+    try:
+        channel.send_text(":wave: daily-agent is connected — your feed will arrive here.")
+    except SlackError as e:
+        console.print(
+            f"[red]Slack rejected the message:[/red] {e}\n"
+            "Common fixes: invalid/expired token, missing chat:write scope, or the "
+            "destination ID is wrong (DM = your user ID, not a channel name)."
+        )
+        raise typer.Exit(1)
+    finally:
+        channel.close()
+    console.print(f"[green]Sent[/green] a test message to {s.slack_destination}. Check Slack.")
 
 
 def _print_digest(digest: ActivityDigest) -> None:

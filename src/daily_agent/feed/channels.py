@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
 from rich.console import Console
 from rich.panel import Panel
 
@@ -54,3 +55,52 @@ class FileChannel:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(block)
+
+
+class SlackError(RuntimeError):
+    """A Slack API call returned ``ok: false`` or a transport error."""
+
+
+class SlackChannel:
+    """Delivers each bite as a Slack message via a bot token.
+
+    ``destination`` is where to post: a user ID (``U…``/``W…``) DMs that user —
+    the most reliable notification, treated like any direct message — or a
+    channel ID posts to that channel. Uses ``chat.postMessage``, which opens the
+    DM automatically, so the only scope needed is ``chat:write``.
+
+    ``send`` raises on any failure (transport error, or a logical ``ok: false``
+    such as ``not_in_channel`` / ``channel_not_found``) so the outbox retries
+    with backoff rather than silently dropping the bite.
+    """
+
+    name = "slack"
+    _URL = "https://slack.com/api/chat.postMessage"
+
+    def __init__(
+        self, token: str, destination: str, *, client: httpx.Client | None = None
+    ) -> None:
+        self.token = token
+        self.destination = destination
+        self._client = client or httpx.Client(timeout=10.0)
+
+    def _post(self, text: str) -> None:
+        resp = self._client.post(
+            self._URL,
+            headers={"Authorization": f"Bearer {self.token}"},
+            json={"channel": self.destination, "text": text, "mrkdwn": True},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if not data.get("ok"):
+            raise SlackError(data.get("error", "unknown_error"))
+
+    def send(self, item: OutboxItem) -> None:
+        self._post(item.content)
+
+    def send_text(self, text: str) -> None:
+        """Post an arbitrary message — used for connectivity checks."""
+        self._post(text)
+
+    def close(self) -> None:
+        self._client.close()
