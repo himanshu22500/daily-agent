@@ -1,10 +1,10 @@
 """Command-line interface.
 
-  daily-agent collect            Gather recent repo activity into the store.
-  daily-agent summary            Summarize accumulated activity into a digest.
-  daily-agent ask REPO "..."     Deep-dive into one project (business logic).
-  daily-agent repos              List the org repos currently being watched.
-  daily-agent feed               Deliver accumulated activity as deduped bites.
+daily-agent collect            Gather recent repo activity into the store.
+daily-agent summary            Summarize accumulated activity into a digest.
+daily-agent ask REPO "..."     Deep-dive into one project (business logic).
+daily-agent repos              List the org repos currently being watched.
+daily-agent feed               Deliver accumulated activity as deduped bites.
 """
 
 from __future__ import annotations
@@ -70,24 +70,34 @@ def _cache() -> Cache:
 def _github() -> GitHubClient:
     s = get_settings()
     return GitHubClient(
-        token=s.github_token, org=s.github_org,
-        cache=_cache(), cache_ttl=s.github_cache_ttl,
+        token=s.github_token,
+        org=s.github_org,
+        cache=_cache(),
+        cache_ttl=s.github_cache_ttl,
     )
 
 
 def _huly() -> HulyClient:
     s = get_settings()
     return HulyClient(
-        url=s.huly_url, workspace=s.huly_workspace, email=s.huly_email,
-        password=s.huly_password, token=s.huly_token, node_bin=s.node_bin,
-        cache=_cache(), cache_ttl=s.huly_cache_ttl,
+        url=s.huly_url,
+        workspace=s.huly_workspace,
+        email=s.huly_email,
+        password=s.huly_password,
+        token=s.huly_token,
+        node_bin=s.node_bin,
+        cache=_cache(),
+        cache_ttl=s.huly_cache_ttl,
     )
 
 
 def _outline() -> OutlineClient:
     s = get_settings()
     return OutlineClient(
-        s.outline_url, s.outline_token, cache=_cache(), cache_ttl=s.outline_cache_ttl,
+        s.outline_url,
+        s.outline_token,
+        cache=_cache(),
+        cache_ttl=s.outline_cache_ttl,
     )
 
 
@@ -125,7 +135,9 @@ async def _collect(days: int) -> tuple[int, int, int]:
 
 @app.command()
 def collect(
-    days: int = typer.Option(None, help="Lookback window in days (default from config)."),
+    days: int = typer.Option(
+        None, help="Lookback window in days (default from config)."
+    ),
 ) -> None:
     """Gather recent repo activity from GitHub into the local store."""
     s = get_settings()
@@ -157,9 +169,12 @@ def summary(
 @app.command()
 def ask(
     question: str = typer.Argument(
-        ..., help="Ask anything — about a person, a project, a topic, or the daily report."
+        ...,
+        help="Ask anything — about a person, a project, a topic, or the daily report.",
     ),
-    repo: str = typer.Option(None, "--repo", help="Optional: pin the investigation to one repo."),
+    repo: str = typer.Option(
+        None, "--repo", help="Optional: pin the investigation to one repo."
+    ),
 ) -> None:
     """Ask anything; the agent investigates across repos, PRs, Huly tasks, docs, and people."""
     s = get_settings()
@@ -169,13 +184,20 @@ def ask(
             gh = await stack.enter_async_context(_github())
             outline = (
                 await stack.enter_async_context(_outline())
-                if s.outline_enabled else None
+                if s.outline_enabled
+                else None
             )
             huly = await stack.enter_async_context(_huly()) if s.huly_enabled else None
             team = load_team(s.team_path)
             return await ask_anything(
-                s.model, question, gh, settings=s, team=team,
-                huly=huly, outline=outline, repo_hint=repo,
+                s.model,
+                question,
+                gh,
+                settings=s,
+                team=team,
+                huly=huly,
+                outline=outline,
+                repo_hint=repo,
             )
 
     try:
@@ -188,7 +210,9 @@ def ask(
 
 @app.command()
 def chat(
-    repo: str = typer.Option(None, "--repo", help="Optional: focus the session on one repo."),
+    repo: str = typer.Option(
+        None, "--repo", help="Optional: focus the session on one repo."
+    ),
 ) -> None:
     """Interactive session — ask follow-up questions with the conversation remembered.
 
@@ -201,22 +225,30 @@ def chat(
             gh = await stack.enter_async_context(_github())
             outline = (
                 await stack.enter_async_context(_outline())
-                if s.outline_enabled else None
+                if s.outline_enabled
+                else None
             )
             huly = await stack.enter_async_context(_huly()) if s.huly_enabled else None
             agent = build_assistant(s.model)
             deps = AssistantDeps(
-                github=gh, settings=s, team=load_team(s.team_path), huly=huly, outline=outline
+                github=gh,
+                settings=s,
+                team=load_team(s.team_path),
+                huly=huly,
+                outline=outline,
             )
             history: list = []
             loop = asyncio.get_event_loop()
 
-            console.print(Panel(
-                "Interactive chat. Ask about people, projects, tasks, docs, or the daily report.\n"
-                "Follow-ups keep context — say \"go deeper on that\". "
-                "[dim]exit/quit to leave · /reset to clear history[/dim]",
-                title="daily-agent chat", border_style="cyan",
-            ))
+            console.print(
+                Panel(
+                    "Interactive chat. Ask about people, projects, tasks, docs, or the daily report.\n"
+                    'Follow-ups keep context — say "go deeper on that". '
+                    "[dim]exit/quit to leave · /reset to clear history[/dim]",
+                    title="daily-agent chat",
+                    border_style="cyan",
+                )
+            )
             first = True
             while True:
                 try:
@@ -239,7 +271,9 @@ def chat(
                 first = False
                 try:
                     with console.status("[dim]thinking…[/dim]"):
-                        result = await agent.run(user, deps=deps, message_history=history)
+                        result = await agent.run(
+                            user, deps=deps, message_history=history
+                        )
                     history = result.all_messages()
                     console.print(Panel(Markdown(result.output), border_style="cyan"))
                 except Exception as e:  # noqa: BLE001 - keep the session alive on errors
@@ -281,7 +315,9 @@ def docs(
     """Search your Outline knowledge base directly."""
     s = get_settings()
     if not s.outline_enabled:
-        console.print("[red]Outline not configured[/red] (set DAILY_AGENT_OUTLINE_URL/TOKEN).")
+        console.print(
+            "[red]Outline not configured[/red] (set DAILY_AGENT_OUTLINE_URL/TOKEN)."
+        )
         raise typer.Exit(1)
 
     async def _run() -> list[dict]:
@@ -306,12 +342,16 @@ def docs(
 
 @app.command()
 def howto(
-    question: str = typer.Argument(..., help="A how-to / setup / 'how does X work' question."),
+    question: str = typer.Argument(
+        ..., help="A how-to / setup / 'how does X work' question."
+    ),
 ) -> None:
     """Answer a question from your Outline docs — finds, reads, and synthesizes steps."""
     s = get_settings()
     if not s.outline_enabled:
-        console.print("[red]Outline not configured[/red] (set DAILY_AGENT_OUTLINE_URL/TOKEN).")
+        console.print(
+            "[red]Outline not configured[/red] (set DAILY_AGENT_OUTLINE_URL/TOKEN)."
+        )
         raise typer.Exit(1)
 
     async def _run() -> str:
@@ -323,24 +363,37 @@ def howto(
     except OutlineError as e:
         console.print(f"[red]Outline error:[/red] {e}")
         raise typer.Exit(1)
-    console.print(Panel(Markdown(answer), title="From the docs", border_style="magenta"))
+    console.print(
+        Panel(Markdown(answer), title="From the docs", border_style="magenta")
+    )
 
 
 @app.command()
 def tasks(
     project: str = typer.Argument(
-        None, help="Huly project identifier (e.g. ENG). Defaults to DAILY_AGENT_HULY_DEFAULT_PROJECT."
+        None,
+        help="Huly project identifier (e.g. ENG). Defaults to DAILY_AGENT_HULY_DEFAULT_PROJECT.",
     ),
     limit: int = typer.Option(30, help="Max issues to list."),
-    status: str = typer.Option(None, "--status", help="Filter by status name, e.g. 'In Review'."),
-    assignee: str = typer.Option(None, "--assignee", help="Filter by assignee name (substring match)."),
-    priority: str = typer.Option(None, "--priority", help="Filter by priority: none|urgent|high|medium|low."),
-    projects: bool = typer.Option(False, "--projects", "-p", help="List projects instead of issues."),
+    status: str = typer.Option(
+        None, "--status", help="Filter by status name, e.g. 'In Review'."
+    ),
+    assignee: str = typer.Option(
+        None, "--assignee", help="Filter by assignee name (substring match)."
+    ),
+    priority: str = typer.Option(
+        None, "--priority", help="Filter by priority: none|urgent|high|medium|low."
+    ),
+    projects: bool = typer.Option(
+        False, "--projects", "-p", help="List projects instead of issues."
+    ),
 ) -> None:
     """List Huly issues for a project (defaults to the configured project)."""
     s = get_settings()
     if not s.huly_enabled:
-        console.print("[red]Huly not configured[/red] (set DAILY_AGENT_HULY_WORKSPACE + creds).")
+        console.print(
+            "[red]Huly not configured[/red] (set DAILY_AGENT_HULY_WORKSPACE + creds)."
+        )
         raise typer.Exit(1)
     target = project or s.huly_default_project
 
@@ -354,9 +407,16 @@ def tasks(
         async with _huly() as h:
             if projects or not target:
                 return ("projects", await h.projects())
-            return ("issues", await h.issues(
-                target, limit=limit, status=status, assignee=assignee, priority=priority
-            ))
+            return (
+                "issues",
+                await h.issues(
+                    target,
+                    limit=limit,
+                    status=status,
+                    assignee=assignee,
+                    priority=priority,
+                ),
+            )
 
     try:
         kind, rows = asyncio.run(_run())
@@ -368,10 +428,15 @@ def tasks(
         for p in rows:
             console.print(f"  • [cyan]{p['identifier']}[/cyan] — {p['name']}")
         if not target:
-            console.print("[dim]Tip: set DAILY_AGENT_HULY_DEFAULT_PROJECT to list its issues by default.[/dim]")
+            console.print(
+                "[dim]Tip: set DAILY_AGENT_HULY_DEFAULT_PROJECT to list its issues by default.[/dim]"
+            )
         return
-    active = [f"{k}={v}" for k, v in
-              (("status", status), ("assignee", assignee), ("priority", priority)) if v]
+    active = [
+        f"{k}={v}"
+        for k, v in (("status", status), ("assignee", assignee), ("priority", priority))
+        if v
+    ]
     suffix = f" [dim](filters: {', '.join(active)})[/dim]" if active else ""
     console.print(f"[bold]{len(rows)} issues in {target}:[/bold]{suffix}")
     for i in rows:
@@ -383,12 +448,16 @@ def tasks(
 
 @app.command()
 def task(
-    identifier: str = typer.Argument(..., help="Huly issue identifier, e.g. ENG-16845."),
+    identifier: str = typer.Argument(
+        ..., help="Huly issue identifier, e.g. ENG-16845."
+    ),
 ) -> None:
     """Show one Huly task's details (status, assignee, priority, description, PR links)."""
     s = get_settings()
     if not s.huly_enabled:
-        console.print("[red]Huly not configured[/red] (set DAILY_AGENT_HULY_WORKSPACE + creds).")
+        console.print(
+            "[red]Huly not configured[/red] (set DAILY_AGENT_HULY_WORKSPACE + creds)."
+        )
         raise typer.Exit(1)
 
     async def _run():
@@ -411,7 +480,9 @@ def task(
         f"Assignee: {issue['assignee'] or 'unassigned'}    Priority: {issue['priority']}"
         f"    Due: {issue.get('dueDate') or '—'}"
     )
-    console.print(Panel(meta, title=f"Task {issue['identifier']}", border_style="yellow"))
+    console.print(
+        Panel(meta, title=f"Task {issue['identifier']}", border_style="yellow")
+    )
 
     desc = (issue.get("description") or "").strip()
     if desc:
@@ -427,8 +498,12 @@ def task(
 
 @app.command()
 def daily(
-    days: int = typer.Option(None, help="Window in days (default from config lookback_days)."),
-    people: bool = typer.Option(True, help="Include per-person briefs for active contributors."),
+    days: int = typer.Option(
+        None, help="Window in days (default from config lookback_days)."
+    ),
+    people: bool = typer.Option(
+        True, help="Include per-person briefs for active contributors."
+    ),
 ) -> None:
     """Full daily job: collect -> cross-project digest -> per-person briefs -> Markdown file."""
     s = get_settings()
@@ -456,10 +531,14 @@ def daily(
             if s.huly_enabled and active:
                 try:
                     async with _huly() as h:
-                        issues = await h.issues(s.huly_default_project or None, limit=200)
+                        issues = await h.issues(
+                            s.huly_default_project or None, limit=200
+                        )
                     for i in issues:
                         if (i.get("modifiedOn") or "") >= since.isoformat():
-                            tasks_by_assignee.setdefault(i.get("assignee"), []).append(i)
+                            tasks_by_assignee.setdefault(i.get("assignee"), []).append(
+                                i
+                            )
                 except HulyError as e:
                     console.print(f"[yellow]Huly unavailable for briefs: {e}[/yellow]")
 
@@ -468,15 +547,23 @@ def daily(
             async def one(m):
                 async with sem:
                     person_prs = [
-                        pr for a in activities for pr in a.pull_requests if pr.author == m.github
+                        pr
+                        for a in activities
+                        for pr in a.pull_requests
+                        if pr.author == m.github
                     ]
                     try:
                         pb = await summarize_person(
-                            s.bulk_model, m.name, person_prs, tasks_by_assignee.get(m.huly, [])
+                            s.bulk_model,
+                            m.name,
+                            person_prs,
+                            tasks_by_assignee.get(m.huly, []),
                         )
                         return (m, pb)
                     except Exception as e:  # one bad brief shouldn't sink the digest
-                        console.print(f"[yellow]Brief failed for {m.name} ({type(e).__name__})[/yellow]")
+                        console.print(
+                            f"[yellow]Brief failed for {m.name} ({type(e).__name__})[/yellow]"
+                        )
                         return None
 
             briefs = [r for r in await asyncio.gather(*(one(m) for m in active)) if r]
@@ -501,7 +588,9 @@ def daily(
 def brief(
     person: str = typer.Argument(None, help="Person name/handle. Omit for 'me'."),
     days: int = typer.Option(7, help="Look back this many days ('this week')."),
-    no_ai: bool = typer.Option(False, "--no-ai", help="Skip the LLM summary; just list tasks/PRs."),
+    no_ai: bool = typer.Option(
+        False, "--no-ai", help="Skip the LLM summary; just list tasks/PRs."
+    ),
 ) -> None:
     """What someone is working on lately: a synthesized briefing + their tasks/PRs."""
     s = get_settings()
@@ -528,7 +617,9 @@ def brief(
                 issues = await h.issues(
                     s.huly_default_project or None, assignee=member.huly, limit=100
                 )
-            huly_issues = [i for i in issues if (i.get("modifiedOn") or "") >= since_iso]
+            huly_issues = [
+                i for i in issues if (i.get("modifiedOn") or "") >= since_iso
+            ]
         prs: list = []
         if member.github:
             async with _github() as gh:
@@ -549,13 +640,17 @@ def brief(
         from .agents.person_brief import summarize_person
 
         try:
-            pb = asyncio.run(summarize_person(s.bulk_model, member.name, prs, huly_issues))
+            pb = asyncio.run(
+                summarize_person(s.bulk_model, member.name, prs, huly_issues)
+            )
             body = f"**{pb.headline}**\n\n{pb.summary}"
             if pb.themes:
                 body += "\n\n" + "\n".join(f"- {t}" for t in pb.themes)
             console.print(Panel(Markdown(body), title="Summary", border_style="green"))
         except Exception as e:  # model/transport hiccup — don't lose the listing below
-            console.print(f"[yellow]Summary unavailable ({type(e).__name__}); showing details only.[/yellow]")
+            console.print(
+                f"[yellow]Summary unavailable ({type(e).__name__}); showing details only.[/yellow]"
+            )
 
     console.print(f"[bold]Huly tasks ({len(huly_issues)}):[/bold]")
     for i in huly_issues:
@@ -609,10 +704,14 @@ def cache(
 def feed(
     days: int = typer.Option(7, help="Build bites from activity in the last N days."),
     to_slack: bool = typer.Option(
-        False, "--to-slack", help="Deliver bites to Slack (uses configured bot token + destination)."
+        False,
+        "--to-slack",
+        help="Deliver bites to Slack (uses configured bot token + destination).",
     ),
     to_telegram: bool = typer.Option(
-        False, "--to-telegram", help="Deliver bites to Telegram (uses configured bot token + chat ID)."
+        False,
+        "--to-telegram",
+        help="Deliver bites to Telegram (uses configured bot token + chat ID).",
     ),
     to_file: str = typer.Option(
         None, "--to-file", help="Append bites to this file instead of the console."
@@ -665,7 +764,11 @@ def feed(
         )
         raise typer.Exit(1)
 
-    prs = [pr for a in Store(s.db_path).activity_since(_since(days)) for pr in a.pull_requests]
+    prs = [
+        pr
+        for a in Store(s.db_path).activity_since(_since(days))
+        for pr in a.pull_requests
+    ]
     if s.huly_enabled and prs:
         # Rich feed: PRs → initiatives → plain-language storyline chapters.
         async def _build():
@@ -742,8 +845,11 @@ def feed_preview(
         project = s.huly_default_project or "ENG"
         async with _huly() as huly:
             issues = await huly.issues(project, limit=500)
-        prs = [pr for a in Store(s.db_path).activity_since(_since(days))
-               for pr in a.pull_requests]
+        prs = [
+            pr
+            for a in Store(s.db_path).activity_since(_since(days))
+            for pr in a.pull_requests
+        ]
         if not prs:
             return [], 0
         store = InitiativeStore(s.db_path)
@@ -752,9 +858,13 @@ def feed_preview(
 
     chapters, n_prs = asyncio.run(_run())
     if not chapters:
-        console.print("[yellow]No PR activity in the window. Run `collect` first.[/yellow]")
+        console.print(
+            "[yellow]No PR activity in the window. Run `collect` first.[/yellow]"
+        )
         return
-    console.print(f"[dim]Rendered top {len(chapters)} initiatives from {n_prs} PRs (last {days}d):[/dim]\n")
+    console.print(
+        f"[dim]Rendered top {len(chapters)} initiatives from {n_prs} PRs (last {days}d):[/dim]\n"
+    )
     for rc in chapters:
         console.print(Panel(rc.content, border_style="cyan"))
 
@@ -772,7 +882,9 @@ def slack_check() -> None:
         raise typer.Exit(1)
     channel = SlackChannel(s.slack_bot_token, s.slack_destination)
     try:
-        channel.send_text(":wave: daily-agent is connected — your feed will arrive here.")
+        channel.send_text(
+            ":wave: daily-agent is connected — your feed will arrive here."
+        )
     except SlackError as e:
         console.print(
             f"[red]Slack rejected the message:[/red] {e}\n"
@@ -782,7 +894,9 @@ def slack_check() -> None:
         raise typer.Exit(1)
     finally:
         channel.close()
-    console.print(f"[green]Sent[/green] a test message to {s.slack_destination}. Check Slack.")
+    console.print(
+        f"[green]Sent[/green] a test message to {s.slack_destination}. Check Slack."
+    )
 
 
 @app.command(name="telegram-check")
@@ -808,11 +922,19 @@ def telegram_check() -> None:
         raise typer.Exit(1)
     finally:
         channel.close()
-    console.print(f"[green]Sent[/green] a test message to chat {s.telegram_chat_id}. Check Telegram.")
+    console.print(
+        f"[green]Sent[/green] a test message to chat {s.telegram_chat_id}. Check Telegram."
+    )
 
 
 def _print_digest(digest: ActivityDigest) -> None:
-    console.print(Panel(digest.overview, title=f"Activity digest — {digest.period}", border_style="green"))
+    console.print(
+        Panel(
+            digest.overview,
+            title=f"Activity digest — {digest.period}",
+            border_style="green",
+        )
+    )
     for proj in digest.projects:
         body = [f"[bold]{proj.headline}[/bold]", "", proj.whats_happening]
         if proj.notable_changes:

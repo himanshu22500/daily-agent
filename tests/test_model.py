@@ -24,5 +24,7 @@ def test_bulk_model_falls_back_to_model():
 
 
 def test_bulk_model_prefers_fast_model():
-    s = Settings(model="anthropic:claude-sonnet-4-6", fast_model="anthropic:claude-haiku-4-5")
+    s = Settings(
+        model="anthropic:claude-sonnet-4-6", fast_model="anthropic:claude-haiku-4-5"
+    )
     assert s.bulk_model == "anthropic:claude-haiku-4-5"

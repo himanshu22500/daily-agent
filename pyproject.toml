@@ -27,7 +27,17 @@ packages = ["src/daily_agent"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "ruff>=0.15.16",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint.per-file-ignores]
+# cli.py calls load_dotenv() before later imports on purpose, so provider SDKs
+# see their API keys at import time — that requires imports after it.
+"src/daily_agent/cli.py" = ["E402"]

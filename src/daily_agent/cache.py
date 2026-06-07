@@ -85,5 +85,7 @@ class Cache:
             return (0, 0)
         with self._conn() as conn:
             total = conn.execute("SELECT COUNT(*) FROM cache").fetchone()[0]
-            perm = conn.execute("SELECT COUNT(*) FROM cache WHERE permanent = 1").fetchone()[0]
+            perm = conn.execute(
+                "SELECT COUNT(*) FROM cache WHERE permanent = 1"
+            ).fetchone()[0]
         return (total, perm)

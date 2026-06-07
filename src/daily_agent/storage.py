@@ -90,11 +90,20 @@ class Store:
                       changed_files=excluded.changed_files
                     """,
                     (
-                        pr.repo, pr.number, pr.title, pr.author, pr.state,
-                        int(pr.merged), pr.created_at.isoformat(),
+                        pr.repo,
+                        pr.number,
+                        pr.title,
+                        pr.author,
+                        pr.state,
+                        int(pr.merged),
+                        pr.created_at.isoformat(),
                         pr.merged_at.isoformat() if pr.merged_at else None,
-                        pr.url, pr.body, pr.additions, pr.deletions,
-                        pr.changed_files, seen,
+                        pr.url,
+                        pr.body,
+                        pr.additions,
+                        pr.deletions,
+                        pr.changed_files,
+                        seen,
                     ),
                 )
             for c in activity.commits:
@@ -104,8 +113,15 @@ class Store:
                     VALUES (?,?,?,?,?,?,?)
                     ON CONFLICT(repo, sha) DO NOTHING
                     """,
-                    (c.repo, c.sha, c.author, c.message, c.date.isoformat(),
-                     c.url, seen),
+                    (
+                        c.repo,
+                        c.sha,
+                        c.author,
+                        c.message,
+                        c.date.isoformat(),
+                        c.url,
+                        seen,
+                    ),
                 )
         return len(activity.pull_requests), len(activity.commits)
 
@@ -121,7 +137,9 @@ class Store:
                 (cutoff, cutoff),
             ):
                 pr = _row_to_pr(row)
-                by_repo.setdefault(pr.repo, RepoActivity(repo=pr.repo)).pull_requests.append(pr)
+                by_repo.setdefault(
+                    pr.repo, RepoActivity(repo=pr.repo)
+                ).pull_requests.append(pr)
             for row in conn.execute(
                 "SELECT * FROM commits WHERE date >= ? ORDER BY date", (cutoff,)
             ):
@@ -132,18 +150,30 @@ class Store:
 
 def _row_to_pr(row: sqlite3.Row) -> PullRequest:
     return PullRequest(
-        repo=row["repo"], number=row["number"], title=row["title"],
-        author=row["author"], state=row["state"], merged=bool(row["merged"]),
+        repo=row["repo"],
+        number=row["number"],
+        title=row["title"],
+        author=row["author"],
+        state=row["state"],
+        merged=bool(row["merged"]),
         created_at=datetime.fromisoformat(row["created_at"]),
-        merged_at=datetime.fromisoformat(row["merged_at"]) if row["merged_at"] else None,
-        url=row["url"], body=row["body"], additions=row["additions"],
-        deletions=row["deletions"], changed_files=row["changed_files"],
+        merged_at=datetime.fromisoformat(row["merged_at"])
+        if row["merged_at"]
+        else None,
+        url=row["url"],
+        body=row["body"],
+        additions=row["additions"],
+        deletions=row["deletions"],
+        changed_files=row["changed_files"],
     )
 
 
 def _row_to_commit(row: sqlite3.Row) -> Commit:
     return Commit(
-        repo=row["repo"], sha=row["sha"], author=row["author"],
-        message=row["message"], date=datetime.fromisoformat(row["date"]),
+        repo=row["repo"],
+        sha=row["sha"],
+        author=row["author"],
+        message=row["message"],
+        date=datetime.fromisoformat(row["date"]),
         url=row["url"],
     )

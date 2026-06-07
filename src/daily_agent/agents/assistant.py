@@ -55,7 +55,9 @@ file contents — explain.
 
 def build_assistant(model: str) -> Agent[AssistantDeps, str]:
     agent = Agent(
-        build_model(model), deps_type=AssistantDeps, system_prompt=_SYSTEM_PROMPT,
+        build_model(model),
+        deps_type=AssistantDeps,
+        system_prompt=_SYSTEM_PROMPT,
         model_settings=cache_settings(model),
     )
 
@@ -107,7 +109,11 @@ def build_assistant(model: str) -> Agent[AssistantDeps, str]:
             known = ", ".join(ctx.deps.team) or "(team map empty)"
             return f"(unknown person '{name}'. Known: {known})"
         since = datetime.now(timezone.utc) - timedelta(days=14)
-        lines = [f"{member.name} (huly: {member.huly}, github: {member.github})", "", "Recent PRs:"]
+        lines = [
+            f"{member.name} (huly: {member.huly}, github: {member.github})",
+            "",
+            "Recent PRs:",
+        ]
         prs = await ctx.deps.github.search_pull_requests(member.github, since, limit=40)
         lines += [
             f"- {pr.repo}#{pr.number} [{'merged' if pr.merged else pr.state}] {pr.title}"
@@ -116,17 +122,25 @@ def build_assistant(model: str) -> Agent[AssistantDeps, str]:
         if ctx.deps.huly:
             try:
                 issues = await ctx.deps.huly.issues(
-                    ctx.deps.settings.huly_default_project or None, assignee=member.huly, limit=50
+                    ctx.deps.settings.huly_default_project or None,
+                    assignee=member.huly,
+                    limit=50,
                 )
                 lines += ["", "Huly tasks:"] + (
-                    [f"- {i['identifier']} [{i['status']}] {i['title']}" for i in issues] or ["(none)"]
+                    [
+                        f"- {i['identifier']} [{i['status']}] {i['title']}"
+                        for i in issues
+                    ]
+                    or ["(none)"]
                 )
             except (HulyError, Exception) as e:  # noqa: BLE001 - degrade gracefully
                 lines.append(f"(Huly unavailable: {e})")
         return "\n".join(lines)
 
     @agent.tool
-    async def huly_issues(ctx: RunContext[AssistantDeps], project: str = "", status: str = "") -> str:
+    async def huly_issues(
+        ctx: RunContext[AssistantDeps], project: str = "", status: str = ""
+    ) -> str:
         """List Huly issues, optionally filtered by project and status name."""
         if ctx.deps.huly is None:
             return "(Huly not configured)"
@@ -135,10 +149,13 @@ def build_assistant(model: str) -> Agent[AssistantDeps, str]:
             issues = await ctx.deps.huly.issues(proj, status=status or None, limit=50)
         except HulyError as e:
             return f"(Huly error: {e})"
-        return "\n".join(
-            f"- {i['identifier']} [{i['status']}] {i['title']} ({i['assignee'] or 'unassigned'})"
-            for i in issues
-        ) or "(no issues)"
+        return (
+            "\n".join(
+                f"- {i['identifier']} [{i['status']}] {i['title']} ({i['assignee'] or 'unassigned'})"
+                for i in issues
+            )
+            or "(no issues)"
+        )
 
     @agent.tool
     async def huly_issue(ctx: RunContext[AssistantDeps], identifier: str) -> str:
@@ -166,10 +183,13 @@ def build_assistant(model: str) -> Agent[AssistantDeps, str]:
             results = await ctx.deps.outline.search(query, limit=8)
         except OutlineError as e:
             return f"(Outline error: {e})"
-        return "\n".join(
-            f"- {r['title']} (id: {r['id']})\n    {' '.join((r['context'] or '').split())[:200]}"
-            for r in results
-        ) or f"(no docs for '{query}')"
+        return (
+            "\n".join(
+                f"- {r['title']} (id: {r['id']})\n    {' '.join((r['context'] or '').split())[:200]}"
+                for r in results
+            )
+            or f"(no docs for '{query}')"
+        )
 
     @agent.tool
     async def read_doc(ctx: RunContext[AssistantDeps], doc_id: str) -> str:
@@ -206,7 +226,11 @@ async def ask_anything(
     repo_hint: str | None = None,
 ) -> str:
     agent = build_assistant(model)
-    deps = AssistantDeps(github=github, settings=settings, team=team, huly=huly, outline=outline)
-    prompt = question if not repo_hint else f"(Focus on the repo: {repo_hint})\n\n{question}"
+    deps = AssistantDeps(
+        github=github, settings=settings, team=team, huly=huly, outline=outline
+    )
+    prompt = (
+        question if not repo_hint else f"(Focus on the repo: {repo_hint})\n\n{question}"
+    )
     result = await agent.run(prompt, deps=deps)
     return result.output

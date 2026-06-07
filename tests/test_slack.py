@@ -13,8 +13,14 @@ from daily_agent.models import Bite
 
 
 def _item(content: str = "PR merged in api: #1 Add billing") -> OutboxItem:
-    return OutboxItem(id=1, dedup_key="pr:api#1@merged", subject="repo:api",
-                      kind="pr_merged", content=content, attempts=0)
+    return OutboxItem(
+        id=1,
+        dedup_key="pr:api#1@merged",
+        subject="repo:api",
+        kind="pr_merged",
+        content=content,
+        attempts=0,
+    )
 
 
 def _channel(handler) -> SlackChannel:
@@ -40,7 +46,11 @@ def test_send_posts_to_chat_postmessage():
 
 
 def test_api_ok_false_raises_slackerror():
-    ch = _channel(lambda req: httpx.Response(200, json={"ok": False, "error": "channel_not_found"}))
+    ch = _channel(
+        lambda req: httpx.Response(
+            200, json={"ok": False, "error": "channel_not_found"}
+        )
+    )
     with pytest.raises(SlackError, match="channel_not_found"):
         ch.send(_item())
 
@@ -66,10 +76,18 @@ def test_outbox_retries_a_failed_slack_send():
 
     with tempfile.TemporaryDirectory() as d:
         ob = Outbox(f"{d}/f.db")
-        ob.enqueue(Bite(dedup_key="pr:api#1@merged", subject="repo:api",
-                        kind="pr_merged", content="hi"))
+        ob.enqueue(
+            Bite(
+                dedup_key="pr:api#1@merged",
+                subject="repo:api",
+                kind="pr_merged",
+                content="hi",
+            )
+        )
         ch = _channel(handler)
         now = datetime.now(timezone.utc)
-        assert ob.drain(ch, now=now).failed == 1      # first attempt rejected -> deferred
-        assert ob.drain(ch, now=now + timedelta(minutes=10)).sent == 1  # retried -> sent
+        assert ob.drain(ch, now=now).failed == 1  # first attempt rejected -> deferred
+        assert (
+            ob.drain(ch, now=now + timedelta(minutes=10)).sent == 1
+        )  # retried -> sent
         assert ob.stats()["sent"] == 1

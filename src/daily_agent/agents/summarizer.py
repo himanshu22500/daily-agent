@@ -48,9 +48,7 @@ def _render_activity(activities: list[RepoActivity], period: str) -> str:
             lines.append("Pull requests:")
             for pr in act.pull_requests:
                 status = "MERGED" if pr.merged else pr.state.upper()
-                lines.append(
-                    f"  - #{pr.number} [{status}] {pr.title} (by {pr.author})"
-                )
+                lines.append(f"  - #{pr.number} [{status}] {pr.title} (by {pr.author})")
                 if pr.body.strip():
                     body = " ".join(pr.body.split())[:400]
                     lines.append(f"      desc: {body}")

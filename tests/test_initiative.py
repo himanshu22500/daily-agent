@@ -16,21 +16,33 @@ from daily_agent.models import PullRequest
 
 
 # --- helpers --------------------------------------------------------------- #
-def _issue(identifier: str, title: str, parents: list[tuple[str, str]] | None = None) -> dict:
+def _issue(
+    identifier: str, title: str, parents: list[tuple[str, str]] | None = None
+) -> dict:
     """Build a bridge-shaped issue dict. parents = [(identifier, title), ...]
     immediate parent first → root last."""
     return {
         "identifier": identifier,
         "title": title,
-        "parents": [{"identifier": i, "id": f"hid-{i}", "title": t} for i, t in (parents or [])],
+        "parents": [
+            {"identifier": i, "id": f"hid-{i}", "title": t} for i, t in (parents or [])
+        ],
     }
 
 
 def _pr(title: str, body: str = "") -> PullRequest:
     now = datetime.now(timezone.utc)
     return PullRequest(
-        repo="tranzact-v2", number=1, title=title, author="alice", state="closed",
-        merged=True, created_at=now, merged_at=now, url="http://x/1", body=body,
+        repo="tranzact-v2",
+        number=1,
+        title=title,
+        author="alice",
+        state="closed",
+        merged=True,
+        created_at=now,
+        merged_at=now,
+        url="http://x/1",
+        body=body,
     )
 
 
@@ -64,8 +76,11 @@ def test_ops_detection():
 # --- resolution ------------------------------------------------------------ #
 def test_topmost_non_bucket_is_the_initiative():
     # ENG-16970 "Usecase7 Skill" -> Use Case 7 -> TZ-Agents Phase 2 (root).
-    issue = _issue("ENG-16970", "TZ-Agents Usecase7 Skill",
-                   [("ENG-16938", "Use Case 7: Invite Users"), ("ENG-16326", "TZ-Agents Phase 2")])
+    issue = _issue(
+        "ENG-16970",
+        "TZ-Agents Usecase7 Skill",
+        [("ENG-16938", "Use Case 7: Invite Users"), ("ENG-16326", "TZ-Agents Phase 2")],
+    )
     init = resolve_initiative(issue)
     assert init.lane == "initiative"
     assert init.key == "ENG-16326"
@@ -75,16 +90,24 @@ def test_topmost_non_bucket_is_the_initiative():
 
 def test_qa_bucket_in_chain_is_skipped():
     # ENG-16974 "Test || ..." -> "Perform QA Testing" (bucket) -> "TS - 80".
-    issue = _issue("ENG-16974", "Test || Stock Valuation",
-                   [("ENG-16966", "Perform QA Testing"), ("ENG-16442", "TS - 80")])
+    issue = _issue(
+        "ENG-16974",
+        "Test || Stock Valuation",
+        [("ENG-16966", "Perform QA Testing"), ("ENG-16442", "TS - 80")],
+    )
     init = resolve_initiative(issue)
     assert init.lane == "initiative"
-    assert init.key == "ENG-16442"  # skipped both the Test|| self-node and the QA parent
+    assert (
+        init.key == "ENG-16442"
+    )  # skipped both the Test|| self-node and the QA parent
 
 
 def test_oncall_routes_to_ops_lane():
-    issue = _issue("ENG-16951", "Fix flaky job",
-                   [("ENG-16903", "Project Oncall [1st Jun '26 - 7th Jun '26]")])
+    issue = _issue(
+        "ENG-16951",
+        "Fix flaky job",
+        [("ENG-16903", "Project Oncall [1st Jun '26 - 7th Jun '26]")],
+    )
     init = resolve_initiative(issue)
     assert init.lane == "ops"
     assert init.key == "ops"
@@ -126,5 +149,7 @@ def test_pr_without_ticket_is_untracked():
 
 def test_pr_with_unknown_ticket_is_untracked():
     # References a ticket we don't have in the index (e.g. older than our window).
-    init = initiative_for_pr(_pr("ENG-99999 mystery"), index_issues([_issue("ENG-1", "x")]))
+    init = initiative_for_pr(
+        _pr("ENG-99999 mystery"), index_issues([_issue("ENG-1", "x")])
+    )
     assert init.lane == "untracked"

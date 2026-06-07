@@ -20,9 +20,18 @@ from daily_agent.models import PullRequest
 
 def _pr(num, *, merged=True, days_ago=2):
     ts = datetime.now(timezone.utc) - timedelta(days=days_ago)
-    return PullRequest(repo="api", number=num, title=f"t{num}", author="a", state="closed",
-                       merged=merged, created_at=ts, merged_at=ts if merged else None,
-                       url=f"http://x/{num}", body="")
+    return PullRequest(
+        repo="api",
+        number=num,
+        title=f"t{num}",
+        author="a",
+        state="closed",
+        merged=merged,
+        created_at=ts,
+        merged_at=ts if merged else None,
+        url=f"http://x/{num}",
+        body="",
+    )
 
 
 # --- helpers --------------------------------------------------------------- #
@@ -36,7 +45,7 @@ def test_new_since_filters_by_activity():
 
 def test_dedup_key_stable_for_same_set_changes_with_new_pr():
     a = _chapter_dedup_key("ENG-1", [_pr(1), _pr(2)])
-    b = _chapter_dedup_key("ENG-1", [_pr(2), _pr(1)])   # order-independent
+    b = _chapter_dedup_key("ENG-1", [_pr(2), _pr(1)])  # order-independent
     c = _chapter_dedup_key("ENG-1", [_pr(1), _pr(2), _pr(3)])
     assert a == b
     assert a != c
@@ -48,7 +57,9 @@ def _patch(monkeypatch, mapping):
         return mapping
 
     async def fake_write(model, *, title, prior_state, prs):
-        return Chapter(chapter=f"{title}: {len(prs)} new", story_state=f"state@{len(prs)}")
+        return Chapter(
+            chapter=f"{title}: {len(prs)} new", story_state=f"state@{len(prs)}"
+        )
 
     async def fake_items(model, prs):
         return [f"item {p.repo}#{p.number}" for p in prs]

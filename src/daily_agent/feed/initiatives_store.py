@@ -58,7 +58,9 @@ class InitiativeStore:
 
     def get(self, key: str) -> InitiativeState | None:
         with self._conn() as conn:
-            row = conn.execute("SELECT * FROM initiatives WHERE key=?", (key,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM initiatives WHERE key=?", (key,)
+            ).fetchone()
         return _row(row) if row else None
 
     def upsert(self, key: str, lane: str, title: str) -> None:
@@ -74,7 +76,9 @@ class InitiativeStore:
                 (key, lane, title, _now_iso()),
             )
 
-    def record_chapter(self, key: str, story_state: str, *, now: datetime | None = None) -> None:
+    def record_chapter(
+        self, key: str, story_state: str, *, now: datetime | None = None
+    ) -> None:
         """Persist the updated story-state after a chapter is delivered."""
         stamp = (now or datetime.now(timezone.utc)).isoformat()
         with self._conn() as conn:
@@ -85,11 +89,19 @@ class InitiativeStore:
 
     def all(self) -> list[InitiativeState]:
         with self._conn() as conn:
-            return [_row(r) for r in conn.execute("SELECT * FROM initiatives ORDER BY updated_at DESC")]
+            return [
+                _row(r)
+                for r in conn.execute(
+                    "SELECT * FROM initiatives ORDER BY updated_at DESC"
+                )
+            ]
 
 
 def _row(row: sqlite3.Row) -> InitiativeState:
     return InitiativeState(
-        key=row["key"], lane=row["lane"], title=row["title"],
-        story_state=row["story_state"], last_narrated_at=row["last_narrated_at"],
+        key=row["key"],
+        lane=row["lane"],
+        title=row["title"],
+        story_state=row["story_state"],
+        last_narrated_at=row["last_narrated_at"],
     )

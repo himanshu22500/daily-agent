@@ -77,7 +77,9 @@ class HulyClient:
                 f"Huly bridge deps not installed. Run: (cd {self.bridge_path.parent} && yarn install)"
             )
         proc = await asyncio.create_subprocess_exec(
-            self.node_bin, str(self.bridge_path), *args,
+            self.node_bin,
+            str(self.bridge_path),
+            *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=self._env,
@@ -94,7 +96,10 @@ class HulyClient:
     # --- queries ---------------------------------------------------------- #
     async def projects(self) -> list[dict]:
         """List Huly projects: [{identifier, name, description}]."""
-        if self._cache and (hit := self._cache.get("huly:projects", self._ttl)) is not None:
+        if (
+            self._cache
+            and (hit := self._cache.get("huly:projects", self._ttl)) is not None
+        ):
             return hit
         result = await self._run("projects")
         if self._cache:
@@ -151,5 +156,7 @@ class HulyClient:
             return hit
         result = await self._run("issue", identifier)
         if self._cache and result:
-            self._cache.set(key, result, permanent=result.get("statusCategory") == "done")
+            self._cache.set(
+                key, result, permanent=result.get("statusCategory") == "done"
+            )
         return result  # type: ignore[return-value]

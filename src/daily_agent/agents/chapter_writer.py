@@ -62,7 +62,9 @@ initiative so far (for your own memory next time), reflecting this chapter.
 
 def _build(model: str) -> Agent[None, Chapter]:
     return Agent(
-        build_model(model), output_type=Chapter, system_prompt=_SYSTEM_PROMPT,
+        build_model(model),
+        output_type=Chapter,
+        system_prompt=_SYSTEM_PROMPT,
         model_settings=cache_settings(model),
     )
 
@@ -72,7 +74,10 @@ def _render(title: str, prior_state: str | None, prs: list[PullRequest]) -> str:
     if prior_state:
         lines += ["Story so far (already told — only add what's new):", prior_state, ""]
     else:
-        lines += ["(No prior chapter — this is the first time we cover this initiative.)", ""]
+        lines += [
+            "(No prior chapter — this is the first time we cover this initiative.)",
+            "",
+        ]
     merged = [p for p in prs if p.merged]
     open_ = [p for p in prs if not p.merged]
     if merged:
@@ -124,7 +129,9 @@ shipped.
 
 def _build_items(model: str) -> Agent[None, ItemizedDigest]:
     return Agent(
-        build_model(model), output_type=ItemizedDigest, system_prompt=_ITEMS_SYSTEM_PROMPT,
+        build_model(model),
+        output_type=ItemizedDigest,
+        system_prompt=_ITEMS_SYSTEM_PROMPT,
         model_settings=cache_settings(model),
     )
 

@@ -46,7 +46,9 @@ Rules:
 
 def _build(model: str) -> Agent[None, _Mapping]:
     return Agent(
-        build_model(model), output_type=_Mapping, system_prompt=_SYSTEM_PROMPT,
+        build_model(model),
+        output_type=_Mapping,
+        system_prompt=_SYSTEM_PROMPT,
         model_settings=cache_settings(model),
     )
 

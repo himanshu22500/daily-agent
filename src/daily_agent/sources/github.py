@@ -61,7 +61,9 @@ class GitHubClient:
         params.setdefault("per_page", 100)
         url: str | None = path
         while url and len(out) < limit:
-            resp = await self._get(url, **params) if url == path else await self._raw(url)
+            resp = (
+                await self._get(url, **params) if url == path else await self._raw(url)
+            )
             out.extend(resp.json())
             url = _next_link(resp)
             params = {}  # params are baked into the `next` URL
@@ -100,7 +102,10 @@ class GitHubClient:
         # PRs sorted by last update desc; stop once we pass the window.
         raw = await self._paginate(
             f"/repos/{self.org}/{repo}/pulls",
-            limit=100, state="all", sort="updated", direction="desc",
+            limit=100,
+            state="all",
+            sort="updated",
+            direction="desc",
         )
         out: list[PullRequest] = []
         for p in raw:
@@ -127,14 +132,17 @@ class GitHubClient:
         try:
             raw = await self._paginate(
                 f"/repos/{self.org}/{repo}/commits",
-                limit=100, since=since.isoformat(),
+                limit=100,
+                since=since.isoformat(),
             )
         except GitHubError:
             return []  # empty repo / no default branch
         out: list[Commit] = []
         for c in raw:
             commit = c.get("commit", {})
-            author = (c.get("author") or {}).get("login") or commit.get("author", {}).get("name", "unknown")
+            author = (c.get("author") or {}).get("login") or commit.get(
+                "author", {}
+            ).get("name", "unknown")
             out.append(
                 Commit(
                     repo=repo,
@@ -159,7 +167,10 @@ class GitHubClient:
             f"updated:>={since.date().isoformat()}"
         )
         resp = await self._get(
-            "/search/issues", q=q, sort="updated", order="desc",
+            "/search/issues",
+            q=q,
+            sort="updated",
+            order="desc",
             per_page=min(limit, 100),
         )
         out: list[PullRequest] = []
@@ -175,7 +186,9 @@ class GitHubClient:
                     state=it["state"],
                     merged=bool(pr_meta.get("merged_at")),
                     created_at=_parse(it["created_at"]),
-                    merged_at=_parse(pr_meta["merged_at"]) if pr_meta.get("merged_at") else None,
+                    merged_at=_parse(pr_meta["merged_at"])
+                    if pr_meta.get("merged_at")
+                    else None,
                     url=it["html_url"],
                     body=(it.get("body") or "")[:1000],
                 )
@@ -213,7 +226,9 @@ class GitHubClient:
                     f"/repos/{self.org}/{repo}/git/trees/{branch}", recursive="1"
                 )
             ).json()
-            paths = [t["path"] for t in tree.get("tree", []) if t["type"] == "blob"][:limit]
+            paths = [t["path"] for t in tree.get("tree", []) if t["type"] == "blob"][
+                :limit
+            ]
         except GitHubError:
             paths = []
         if self._cache:

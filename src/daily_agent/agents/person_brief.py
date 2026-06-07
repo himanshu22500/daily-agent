@@ -38,7 +38,9 @@ absent, rely on the PRs and don't remark on the absence.
 
 def build_person_brief_agent(model: str) -> Agent[None, PersonBrief]:
     return Agent(
-        build_model(model), output_type=PersonBrief, system_prompt=_SYSTEM_PROMPT,
+        build_model(model),
+        output_type=PersonBrief,
+        system_prompt=_SYSTEM_PROMPT,
         model_settings=cache_settings(model),
     )
 
