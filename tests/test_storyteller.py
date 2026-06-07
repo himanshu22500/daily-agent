@@ -71,7 +71,7 @@ async def test_render_chapters_uses_prior_state_and_limit(tmp_path, monkeypatch)
     a = Initiative(lane="initiative", key="ENG-1", title="A")
     b = Initiative(lane="initiative", key="ENG-2", title="B")
 
-    async def fake_resolve(model, prs, issues):
+    async def fake_resolve(model, prs, issues, *, cache=None):
         return {"r#1": a, "r#2": a, "r#3": b}
 
     seen_prior = {}
@@ -101,7 +101,7 @@ async def test_render_chapters_uses_prior_state_and_limit(tmp_path, monkeypatch)
 async def test_render_chapters_does_not_persist(tmp_path, monkeypatch):
     a = Initiative(lane="initiative", key="ENG-1", title="A")
 
-    async def fake_resolve(model, prs, issues):
+    async def fake_resolve(model, prs, issues, *, cache=None):
         return {"r#1": a}
 
     async def fake_write(model, *, title, prior_state, prs):

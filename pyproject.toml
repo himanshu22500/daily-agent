@@ -36,3 +36,8 @@ asyncio_mode = "auto"
 [tool.ruff]
 target-version = "py311"
 line-length = 88
+
+[tool.ruff.lint.per-file-ignores]
+# cli.py calls load_dotenv() before later imports on purpose, so provider SDKs
+# see their API keys at import time — that requires imports after it.
+"src/daily_agent/cli.py" = ["E402"]

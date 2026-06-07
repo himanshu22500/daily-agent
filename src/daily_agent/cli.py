@@ -16,6 +16,10 @@ from datetime import datetime, timedelta, timezone
 
 import typer
 from dotenv import load_dotenv
+
+# Load .env into the process environment so provider SDKs (OpenAI, Anthropic,
+# ...) can see their API keys, not just our DAILY_AGENT_* settings.
+load_dotenv()
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -46,10 +50,6 @@ from .sources.huly import HulyClient, HulyError
 from .sources.outline import OutlineClient, OutlineError
 from .storage import Store
 from .team import load_team, resolve_member
-
-# Load .env into the process environment so provider SDKs (OpenAI, Anthropic,
-# ...) can see their API keys, not just our DAILY_AGENT_* settings.
-load_dotenv()
 
 app = typer.Typer(
     add_completion=False,
@@ -776,7 +776,7 @@ def feed(
             async with _huly() as huly:
                 issues = await huly.issues(project, limit=500)
             return await chapters_to_bites(
-                s.model, prs, issues, InitiativeStore(s.db_path)
+                s.model, prs, issues, InitiativeStore(s.db_path), cache=_cache()
             )
 
         bites = asyncio.run(_build())
