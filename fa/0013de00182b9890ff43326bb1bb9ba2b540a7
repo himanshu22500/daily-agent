@@ -1,0 +1,20 @@
+ROADMAP.md
+  s_801bce6afa93a1::t_0a9100dba14498 123-128
+  s_801bce6afa93a1::t_551b1bf0825fe0 151-242
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "fa0013de00182b9890ff43326bb1bb9ba2b540a7",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
