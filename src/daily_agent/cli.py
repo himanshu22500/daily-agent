@@ -736,9 +736,7 @@ def feed_preview(
         return
     console.print(f"[dim]Rendered top {len(chapters)} initiatives from {n_prs} PRs (last {days}d):[/dim]\n")
     for rc in chapters:
-        footer = f"{rc.merged} merged" + (f" · {rc.opened} in flight" if rc.opened else "")
-        body = f"{rc.chapter.chapter}\n\n[dim]{footer} · {rc.initiative.lane}[/dim]"
-        console.print(Panel(body, title=f"📦 {rc.initiative.title}", border_style="cyan"))
+        console.print(Panel(rc.content, border_style="cyan"))
 
 
 @app.command(name="slack-check")

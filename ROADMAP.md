@@ -286,10 +286,12 @@ edit-in-place vs new messages. All wait until after rich content.
      outbox is at-least-once). And with **no pacing yet**, a bare `feed` drains all
      pending chapters at once — use `--limit N` until the cadence engine lands.
 
-**⏳ OBSERVE FIRST (user, 2026-06-07):** run the rich feed for ~a week before
-tuning. Then revisit: **chapter length** (user will judge after real use) and the
-**Untracked lane** (currently one prose grab-bag — likely itemize/split, decide
-from observed results). Don't tune these preemptively.
+**Tuned on first use (2026-06-07):** user found chapters too long and the
+Untracked lane unreadable. Fixed: chapter prompt hard-capped to ~2 sentences/
+~45 words; the **Untracked lane now renders as terse itemized bullets** (one
+plain-language line per shipped change) instead of forced prose — `render_one`
+routes by lane (narrative for initiative/ops, itemized for untracked). Keep
+observing during real use for further length/format feedback.
 
 **Resolved open questions (from the original brainstorm):**
 - Bite model → **per-initiative evolving storyline** (not per-project/per-person).

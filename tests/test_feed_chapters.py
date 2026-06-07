@@ -50,8 +50,12 @@ def _patch(monkeypatch, mapping):
     async def fake_write(model, *, title, prior_state, prs):
         return Chapter(chapter=f"{title}: {len(prs)} new", story_state=f"state@{len(prs)}")
 
+    async def fake_items(model, prs):
+        return [f"item {p.repo}#{p.number}" for p in prs]
+
     monkeypatch.setattr(st_mod, "resolve_initiatives", fake_resolve)
     monkeypatch.setattr(st_mod, "write_chapter", fake_write)
+    monkeypatch.setattr(st_mod, "write_untracked_items", fake_items)
 
 
 @pytest.mark.asyncio

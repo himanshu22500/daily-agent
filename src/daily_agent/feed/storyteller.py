@@ -13,7 +13,7 @@ import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 
-from ..agents.chapter_writer import Chapter, write_chapter
+from ..agents.chapter_writer import write_chapter, write_untracked_items
 from ..agents.initiative_mapper import pr_key
 from ..models import Bite, PullRequest
 from .initiative import Initiative
@@ -24,7 +24,7 @@ from .mapping import resolve_initiatives
 @dataclass
 class RenderedChapter:
     initiative: Initiative
-    chapter: Chapter
+    content: str
     prs: list[PullRequest]
 
     @property
@@ -34,6 +34,30 @@ class RenderedChapter:
     @property
     def opened(self) -> int:
         return sum(1 for p in self.prs if not p.merged)
+
+
+def _footer(prs: list[PullRequest]) -> str:
+    merged = sum(1 for p in prs if p.merged)
+    opened = len(prs) - merged
+    return f"{merged} merged" + (f" · {opened} in flight" if opened else "")
+
+
+async def render_one(
+    model: str, init: Initiative, prior_state: str | None, prs: list[PullRequest]
+) -> tuple[str, str]:
+    """Render an initiative's new PRs to (delivered_content, new_story_state).
+
+    Initiatives/ops get a tight narrative chapter; the untracked lane gets a
+    terse itemized digest instead of forced prose.
+    """
+    if init.lane == "untracked":
+        items = await write_untracked_items(model, prs)
+        bullets = "\n".join(f"• {it}" for it in items) or "• (misc changes)"
+        content = f"🧩 {init.title}\n\n{bullets}\n\n{_footer(prs)}"
+        return content, f"listed {len(prs)} untracked changes"
+    chapter = await write_chapter(model, title=init.title, prior_state=prior_state, prs=prs)
+    content = f"📦 {init.title}\n\n{chapter.chapter}\n\n{_footer(prs)}"
+    return content, chapter.story_state
 
 
 def group_by_initiative(
@@ -73,8 +97,8 @@ async def render_chapters(
         prior = None
         if store and (state := store.get(init.key)):
             prior = state.story_state
-        chapter = await write_chapter(model, title=init.title, prior_state=prior, prs=group)
-        rendered.append(RenderedChapter(initiative=init, chapter=chapter, prs=group))
+        content, _ = await render_one(model, init, prior, group)
+        rendered.append(RenderedChapter(initiative=init, content=content, prs=group))
     return rendered
 
 
@@ -103,13 +127,6 @@ def _chapter_dedup_key(initiative_key: str, new_prs: list[PullRequest]) -> str:
     return f"chapter:{initiative_key}:{digest}"
 
 
-def _format_chapter(title: str, chapter: Chapter, new_prs: list[PullRequest]) -> str:
-    merged = sum(1 for p in new_prs if p.merged)
-    opened = len(new_prs) - merged
-    footer = f"{merged} merged" + (f" · {opened} in flight" if opened else "")
-    return f"📦 {title}\n\n{chapter.chapter}\n\n{footer}"
-
-
 async def chapters_to_bites(
     model: str, prs: list[PullRequest], issues: list[dict], store: InitiativeStore
 ) -> list[Bite]:
@@ -136,14 +153,14 @@ async def chapters_to_bites(
         if not new_prs:
             continue
         prior = state.story_state if state else None
-        chapter = await write_chapter(model, title=init.title, prior_state=prior, prs=new_prs)
+        content, story_state = await render_one(model, init, prior, new_prs)
         bites.append(
             Bite(
                 dedup_key=_chapter_dedup_key(init.key, new_prs),
                 subject=init.subject,
                 kind="chapter",
-                content=_format_chapter(init.title, chapter, new_prs),
+                content=content,
             )
         )
-        store.record_chapter(init.key, chapter.story_state)
+        store.record_chapter(init.key, story_state)
     return bites
