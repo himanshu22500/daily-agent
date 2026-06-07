@@ -227,13 +227,25 @@ breaking storyline continuity.)
   initiative; otherwise surfaced in its own lane so their work isn't invisible.
 - **QA folds into its feature's storyline** (not its own lane).
 
+**PR→initiative mapping is LLM-PRIMARY (validated 2026-06-07).** Deterministic
+ticket-linkage covers only **~17%** — the team rarely puts `ENG-<n>` in a PR's
+title/body *or* branch (1/20 branches), using conventional-commit scopes instead
+(`feat(comm-v3)`, `feat(inventory-v3)`). So: a deterministic resolver builds the
+**catalog** of real initiatives from Huly's parent tree and anchors the confident
+~17% (+ ops); an **LLM mapper** assigns the ticket-less majority onto that catalog
+by reading PR scope/title/body. Constrained to the catalog (or `untracked`) — it
+**never invents an initiative** (keeps identity stable). Live result on a week of
+activity: **17% → 81% initiative coverage** (108/132; 4 ops, 20 genuinely
+untracked), clustering onto real efforts ("Document Create Vue3 Migration" 23 PRs,
+"Custom Fields V3 Migration" 13, "Communication V3" 7).
+
 **Storyline mechanics (the render loop):**
 ```
 per cycle:
   differ finds new raw deltas (cheap, deterministic — already built)
    → map each delta to an initiative:
-        PR → ENG-ticket → walk Huly parent chain → normalized initiative id
-        (orphan PR / no ticket → LLM matches to an existing initiative, else Untracked)
+        deterministic: PR → ENG-ticket → walk Huly parent chain → initiative id
+        LLM: ticket-less PRs assigned onto the Huly catalog (else Untracked)
    → for each initiative WITH new deltas:
         agent reads: [prior story-state] + [new deltas]
                    + [fresh context: PR bodies/diffs, the task + parent, linked
@@ -253,13 +265,15 @@ chapter (vs silently updating state), pacing (bites/day, spacing, quiet hours),
 edit-in-place vs new messages. All wait until after rich content.
 
 **Build phasing (rich content):**
-1. Extend the Huly bridge to surface the **parent chain + tags** per issue (today
-   it only returns status/assignee/priority).
-2. **Initiative resolver + normalizer** (deterministic chain walk + cached LLM
-   normalization, keyed by Huly parent id) → maps a delta to a stable initiative.
-3. **Story-state store** (`initiatives` table) + the **rich renderer agent**
+1. [x] Extend the Huly bridge to surface the **parent chain + tags** per issue.
+2. [x] **Initiative resolver** (`feed/initiative.py`) — deterministic chain walk,
+   bucket-skip, lane routing, id-pinned identity.
+2b. [x] **Catalog + LLM mapper** (`feed/catalog.py`, `agents/initiative_mapper.py`,
+   `feed/mapping.py`) — derive the catalog from Huly, anchor ticketed PRs, LLM
+   maps the rest onto the catalog. Validated 81% coverage.
+3. [ ] **Story-state store** (`initiatives` table) + the **rich renderer agent**
    (reuses the assistant agent's retrieval tools) producing chapter + new state.
-4. Wire into the feed so bites are initiative chapters, not PR events.
+4. [ ] Wire into the feed so bites are initiative chapters, not PR events.
 
 **Resolved open questions (from the original brainstorm):**
 - Bite model → **per-initiative evolving storyline** (not per-project/per-person).
