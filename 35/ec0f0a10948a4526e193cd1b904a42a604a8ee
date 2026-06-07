@@ -1,0 +1,31 @@
+ROADMAP.md
+  s_801bce6afa93a1::t_77065c28d55153 1,3-6
+.github/ISSUE_TEMPLATE/feature.md
+  s_801bce6afa93a1::t_ee477de02079fe 1-22
+CONTRIBUTING.md
+  s_801bce6afa93a1::t_9bec52c8b77f9f 1-30
+docs/decisions.md
+  s_801bce6afa93a1::t_e20bfc7916fdfe 1-56
+.github/ISSUE_TEMPLATE/bug.md
+  s_801bce6afa93a1::t_c9e6a4da2d08c2 1-19
+.github/pull_request_template.md
+  s_801bce6afa93a1::t_7ef2f5884a9ba6 1-13
+AGENTS.md
+  s_801bce6afa93a1::t_d5290cebbece03 1-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "35ec0f0a10948a4526e193cd1b904a42a604a8ee",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
