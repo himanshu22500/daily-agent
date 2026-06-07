@@ -387,6 +387,21 @@ observing during real use for further length/format feedback.
   - Possible follow-up: memoize LLM outputs (digest/brief by date) + cache
     `list_repos`.
 
+## Long-term / needs research
+
+- [ ] **Voice-note delivery.** Once feed *content* is genuinely good, deliver
+      chapters as **voice notes** (not just text). Gated on content quality on
+      purpose — a voice note amplifies the writing, so a weak chapter sounds
+      worse spoken; do this only after the content has earned it.
+      - Telegram fits well: `sendVoice` (OGG/Opus) / `sendAudio` — another
+        method on the existing `TelegramChannel`.
+      - Needs a TTS engine (e.g. OpenAI TTS / ElevenLabs / Cartesia) to render
+        the chapter text → audio, then send.
+      - Open research questions: which TTS (voice quality / latency / cost);
+        per-chapter voice notes vs one short daily audio digest; you can't *skim*
+        audio, so maybe a spoken headline + text for detail; keep clips short
+        (aligns with the bite-sized principle). Capture findings here before building.
+
 ## Smaller niceties
 
 - [ ] One-shot `brief` that runs `collect` + `summary` together.
