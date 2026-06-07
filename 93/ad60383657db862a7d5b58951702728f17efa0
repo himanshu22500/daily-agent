@@ -1,0 +1,24 @@
+src/daily_agent/sources/huly.py
+  s_801bce6afa93a1::t_cc983c5f78b05e 117-123
+  s_801bce6afa93a1::t_cb9439b90794c6 146
+bridges/huly/index.js
+  s_801bce6afa93a1::t_67bfccb89d7ca5 206-207
+  s_801bce6afa93a1::t_9d477b73e28bb0 101-135,146-148
+  s_801bce6afa93a1::t_8944c65d7969d5 225,227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "93ad60383657db862a7d5b58951702728f17efa0",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
