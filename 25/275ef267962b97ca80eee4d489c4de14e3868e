@@ -1,0 +1,34 @@
+scripts/run-feed.sh
+  s_801bce6afa93a1::t_cd5dd8d46d7e7e 1-12
+src/daily_agent/cli.py
+  s_801bce6afa93a1::t_3fa275f1e31107 629-631
+  s_801bce6afa93a1::t_7fb67cd159a60e 683-694,710,715,721
+scripts/install-feed-launchd.sh
+  s_801bce6afa93a1::t_d462cc5c286431 1-45
+src/daily_agent/config.py
+  s_801bce6afa93a1::t_fe4f5e33cf79b9 79-87
+tests/test_pacer.py
+  s_801bce6afa93a1::t_101bb324806447 1-40
+ROADMAP.md
+  s_801bce6afa93a1::t_8d90a8404eaaf3 140-147
+src/daily_agent/feed/pacer.py
+  s_801bce6afa93a1::t_347792524c6a4d 1-45
+.env.example
+  s_801bce6afa93a1::t_9e288fd55db7a7 90-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "25275ef267962b97ca80eee4d489c4de14e3868e",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
