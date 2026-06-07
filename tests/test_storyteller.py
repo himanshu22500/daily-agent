@@ -16,9 +16,18 @@ from daily_agent.models import PullRequest
 
 def _pr(repo, num, merged=True):
     now = datetime.now(timezone.utc)
-    return PullRequest(repo=repo, number=num, title=f"t{num}", author="a", state="closed",
-                       merged=merged, created_at=now, merged_at=now if merged else None,
-                       url=f"http://x/{num}", body="")
+    return PullRequest(
+        repo=repo,
+        number=num,
+        title=f"t{num}",
+        author="a",
+        state="closed",
+        merged=merged,
+        created_at=now,
+        merged_at=now if merged else None,
+        url=f"http://x/{num}",
+        body="",
+    )
 
 
 # --- store ----------------------------------------------------------------- #
@@ -81,11 +90,11 @@ async def test_render_chapters_uses_prior_state_and_limit(tmp_path, monkeypatch)
     prs = [_pr("r", 1), _pr("r", 2), _pr("r", 3)]
     out = await render_chapters("m", prs, issues=[], store=store, limit=1)
 
-    assert len(out) == 1                       # limit respected
-    assert out[0].initiative.key == "ENG-1"    # most active first
+    assert len(out) == 1  # limit respected
+    assert out[0].initiative.key == "ENG-1"  # most active first
     assert out[0].merged == 2
-    assert "chapter for A" in out[0].content   # rendered content carried
-    assert seen_prior["A"] == "previously shipped X"   # prior state passed in
+    assert "chapter for A" in out[0].content  # rendered content carried
+    assert seen_prior["A"] == "previously shipped X"  # prior state passed in
 
 
 @pytest.mark.asyncio

@@ -55,7 +55,9 @@ async def render_one(
         bullets = "\n".join(f"• {it}" for it in items) or "• (misc changes)"
         content = f"🧩 {init.title}\n\n{bullets}\n\n{_footer(prs)}"
         return content, f"listed {len(prs)} untracked changes"
-    chapter = await write_chapter(model, title=init.title, prior_state=prior_state, prs=prs)
+    chapter = await write_chapter(
+        model, title=init.title, prior_state=prior_state, prs=prs
+    )
     content = f"📦 {init.title}\n\n{chapter.chapter}\n\n{_footer(prs)}"
     return content, chapter.story_state
 

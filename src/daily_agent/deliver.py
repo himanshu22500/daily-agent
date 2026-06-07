@@ -18,7 +18,12 @@ def render_markdown(
     digest: ActivityDigest,
     briefs: list[tuple[TeamMember, PersonBrief]],
 ) -> str:
-    out: list[str] = [f"# Daily digest — {date_str}", "", f"_Window: {digest.period}_", ""]
+    out: list[str] = [
+        f"# Daily digest — {date_str}",
+        "",
+        f"_Window: {digest.period}_",
+        "",
+    ]
 
     out += ["## Overview", "", digest.overview, ""]
 
@@ -26,7 +31,14 @@ def render_markdown(
         out.append("## Projects")
         out.append("")
         for p in digest.projects:
-            out += [f"### {p.project}", "", f"**{p.headline}**", "", p.whats_happening, ""]
+            out += [
+                f"### {p.project}",
+                "",
+                f"**{p.headline}**",
+                "",
+                p.whats_happening,
+                "",
+            ]
             if p.notable_changes:
                 out += [f"- {c}" for c in p.notable_changes] + [""]
             if p.contributors:

@@ -49,9 +49,7 @@ class FileChannel:
 
     def send(self, item: OutboxItem) -> None:
         stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        block = (
-            f"\n--- {stamp} | {item.subject} | {item.kind} ---\n{item.content}\n"
-        )
+        block = f"\n--- {stamp} | {item.subject} | {item.kind} ---\n{item.content}\n"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(block)
@@ -136,7 +134,11 @@ class TelegramChannel:
     def _post(self, text: str) -> None:
         resp = self._client.post(
             f"https://api.telegram.org/bot{self.token}/sendMessage",
-            json={"chat_id": self.chat_id, "text": text, "disable_web_page_preview": True},
+            json={
+                "chat_id": self.chat_id,
+                "text": text,
+                "disable_web_page_preview": True,
+            },
         )
         # Telegram returns a useful `description` even on 4xx, so read the body
         # before treating the status as fatal.

@@ -18,14 +18,26 @@ def _activity(repo: str = "api") -> RepoActivity:
         repo=repo,
         pull_requests=[
             PullRequest(
-                repo=repo, number=1, title="Add billing", author="alice",
-                state="closed", merged=True, created_at=now, merged_at=now,
+                repo=repo,
+                number=1,
+                title="Add billing",
+                author="alice",
+                state="closed",
+                merged=True,
+                created_at=now,
+                merged_at=now,
                 url="http://x/1",
             )
         ],
         commits=[
-            Commit(repo=repo, sha="abc123", author="alice", message="init",
-                   date=now, url="http://x/c/abc123")
+            Commit(
+                repo=repo,
+                sha="abc123",
+                author="alice",
+                message="init",
+                date=now,
+                url="http://x/c/abc123",
+            )
         ],
     )
 
@@ -55,8 +67,16 @@ def test_pr_state_updates_on_reupsert(tmp_path):
     open_pr = RepoActivity(
         repo="web",
         pull_requests=[
-            PullRequest(repo="web", number=5, title="WIP", author="bob",
-                        state="open", merged=False, created_at=now, url="http://x/5")
+            PullRequest(
+                repo="web",
+                number=5,
+                title="WIP",
+                author="bob",
+                state="open",
+                merged=False,
+                created_at=now,
+                url="http://x/5",
+            )
         ],
     )
     store.save_activity(open_pr)

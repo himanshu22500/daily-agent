@@ -38,7 +38,9 @@ Rules:
 
 def build_docs_agent(model) -> Agent[OutlineClient, str]:
     agent = Agent(
-        model, deps_type=OutlineClient, system_prompt=_SYSTEM_PROMPT,
+        model,
+        deps_type=OutlineClient,
+        system_prompt=_SYSTEM_PROMPT,
         model_settings=cache_settings(model if isinstance(model, str) else ""),
     )
 

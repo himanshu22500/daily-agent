@@ -13,8 +13,14 @@ from daily_agent.models import Bite
 
 
 def _item(content: str = "PR merged in api: #1 Add billing") -> OutboxItem:
-    return OutboxItem(id=1, dedup_key="pr:api#1@merged", subject="repo:api",
-                      kind="pr_merged", content=content, attempts=0)
+    return OutboxItem(
+        id=1,
+        dedup_key="pr:api#1@merged",
+        subject="repo:api",
+        kind="pr_merged",
+        content=content,
+        attempts=0,
+    )
 
 
 def _channel(handler) -> TelegramChannel:
@@ -38,7 +44,9 @@ def test_send_posts_to_sendmessage():
 
 def test_api_ok_false_raises_with_description():
     ch = _channel(
-        lambda req: httpx.Response(400, json={"ok": False, "description": "chat not found"})
+        lambda req: httpx.Response(
+            400, json={"ok": False, "description": "chat not found"}
+        )
     )
     with pytest.raises(TelegramError, match="chat not found"):
         ch.send(_item())
@@ -56,14 +64,22 @@ def test_outbox_retries_a_failed_telegram_send(tmp_path):
     def handler(request: httpx.Request) -> httpx.Response:
         calls["n"] += 1
         if calls["n"] == 1:
-            return httpx.Response(429, json={"ok": False, "description": "Too Many Requests"})
+            return httpx.Response(
+                429, json={"ok": False, "description": "Too Many Requests"}
+            )
         return httpx.Response(200, json={"ok": True})
 
     from datetime import datetime, timedelta, timezone
 
     ob = Outbox(tmp_path / "f.db")
-    ob.enqueue(Bite(dedup_key="pr:api#1@merged", subject="repo:api",
-                    kind="pr_merged", content="hi"))
+    ob.enqueue(
+        Bite(
+            dedup_key="pr:api#1@merged",
+            subject="repo:api",
+            kind="pr_merged",
+            content="hi",
+        )
+    )
     ch = _channel(handler)
     now = datetime.now(timezone.utc)
     assert ob.drain(ch, now=now).failed == 1

@@ -46,10 +46,21 @@ async def test_issues_without_project_omits_flag(monkeypatch):
 @pytest.mark.asyncio
 async def test_issues_with_all_filters(monkeypatch):
     c, calls = _client(monkeypatch)
-    await c.issues("ENG", limit=20, status="In Review", assignee="Himanshu", priority="high")
+    await c.issues(
+        "ENG", limit=20, status="In Review", assignee="Himanshu", priority="high"
+    )
     assert calls[0] == (
-        "issues", "--limit", "20", "--project", "ENG",
-        "--status", "In Review", "--assignee", "Himanshu", "--priority", "high",
+        "issues",
+        "--limit",
+        "20",
+        "--project",
+        "ENG",
+        "--status",
+        "In Review",
+        "--assignee",
+        "Himanshu",
+        "--priority",
+        "high",
     )
 
 

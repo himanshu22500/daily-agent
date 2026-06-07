@@ -5,7 +5,11 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from daily_agent.sources.outline import OutlineClient, OutlineError, OutlineNotConfigured
+from daily_agent.sources.outline import (
+    OutlineClient,
+    OutlineError,
+    OutlineNotConfigured,
+)
 
 
 def _client_with(handler) -> OutlineClient:
@@ -34,7 +38,11 @@ async def test_search_parses_results_and_builds_urls():
                 "data": [
                     {
                         "context": "matched <b>text</b> here",
-                        "document": {"id": "abc", "title": "ERD: Foo", "url": "/doc/erd-foo-abc"},
+                        "document": {
+                            "id": "abc",
+                            "title": "ERD: Foo",
+                            "url": "/doc/erd-foo-abc",
+                        },
                     }
                 ],
             },
@@ -57,7 +65,11 @@ async def test_read_document_returns_markdown():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/documents.info"
         return httpx.Response(
-            200, json={"ok": True, "data": {"title": "Foo", "text": "# Foo\nbody", "url": "/doc/foo"}}
+            200,
+            json={
+                "ok": True,
+                "data": {"title": "Foo", "text": "# Foo\nbody", "url": "/doc/foo"},
+            },
         )
 
     async with _client_with(handler) as ol:
@@ -70,7 +82,9 @@ async def test_read_document_returns_markdown():
 @pytest.mark.asyncio
 async def test_api_error_surfaces():
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"ok": False, "error": "authentication_required"})
+        return httpx.Response(
+            200, json={"ok": False, "error": "authentication_required"}
+        )
 
     async with _client_with(handler) as ol:
         with pytest.raises(OutlineError):

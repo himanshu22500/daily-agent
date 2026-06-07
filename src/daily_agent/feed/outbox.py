@@ -146,7 +146,9 @@ class Outbox:
         return sum(self.enqueue(b, now=stamp) for b in bites)
 
     # --- drain ------------------------------------------------------------ #
-    def _due(self, conn: sqlite3.Connection, now: datetime, limit: int | None) -> list[OutboxItem]:
+    def _due(
+        self, conn: sqlite3.Connection, now: datetime, limit: int | None
+    ) -> list[OutboxItem]:
         sql = (
             "SELECT id, dedup_key, subject, kind, content, attempts FROM outbox "
             "WHERE status IN ('pending','failed') "
@@ -159,8 +161,12 @@ class Outbox:
             params += (limit,)
         return [
             OutboxItem(
-                id=r["id"], dedup_key=r["dedup_key"], subject=r["subject"],
-                kind=r["kind"], content=r["content"], attempts=r["attempts"],
+                id=r["id"],
+                dedup_key=r["dedup_key"],
+                subject=r["subject"],
+                kind=r["kind"],
+                content=r["content"],
+                attempts=r["attempts"],
             )
             for r in conn.execute(sql, params)
         ]
@@ -197,7 +203,9 @@ class Outbox:
             sent += 1
         return DrainResult(sent=sent, failed=failed, dead=dead)
 
-    def _mark_sent(self, conn: sqlite3.Connection, item: OutboxItem, now: datetime) -> None:
+    def _mark_sent(
+        self, conn: sqlite3.Connection, item: OutboxItem, now: datetime
+    ) -> None:
         stamp = now.isoformat()
         conn.execute(
             "UPDATE outbox SET status='sent', sent_at=?, last_error=NULL WHERE id=?",
@@ -244,15 +252,22 @@ class Outbox:
 
     def delivered_keys(self) -> set[str]:
         with self._conn() as conn:
-            return {r["item_key"] for r in conn.execute("SELECT item_key FROM delivered_ledger")}
+            return {
+                r["item_key"]
+                for r in conn.execute("SELECT item_key FROM delivered_ledger")
+            }
 
     def stats(self) -> dict[str, int]:
         with self._conn() as conn:
             counts = {
                 r["status"]: r["n"]
-                for r in conn.execute("SELECT status, COUNT(*) n FROM outbox GROUP BY status")
+                for r in conn.execute(
+                    "SELECT status, COUNT(*) n FROM outbox GROUP BY status"
+                )
             }
-            delivered = conn.execute("SELECT COUNT(*) n FROM delivered_ledger").fetchone()["n"]
+            delivered = conn.execute(
+                "SELECT COUNT(*) n FROM delivered_ledger"
+            ).fetchone()["n"]
         return {
             "pending": counts.get("pending", 0),
             "failed": counts.get("failed", 0),

@@ -84,7 +84,10 @@ def is_ops(title: str | None) -> bool:
 
 def _chain(issue: dict) -> list[dict]:
     """The issue itself first, then its ancestors (immediate parent → root)."""
-    self_node = {"identifier": issue.get("identifier"), "title": issue.get("title") or ""}
+    self_node = {
+        "identifier": issue.get("identifier"),
+        "title": issue.get("title") or "",
+    }
     return [self_node, *issue.get("parents", [])]
 
 

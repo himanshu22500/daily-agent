@@ -14,28 +14,41 @@ from daily_agent.models import PullRequest
 
 def _issue(identifier, title, parents=None):
     return {
-        "identifier": identifier, "title": title,
-        "parents": [{"identifier": i, "id": f"h-{i}", "title": t} for i, t in (parents or [])],
+        "identifier": identifier,
+        "title": title,
+        "parents": [
+            {"identifier": i, "id": f"h-{i}", "title": t} for i, t in (parents or [])
+        ],
     }
 
 
 def _pr(repo, num, title, body=""):
     now = datetime.now(timezone.utc)
-    return PullRequest(repo=repo, number=num, title=title, author="a", state="closed",
-                       merged=True, created_at=now, merged_at=now, url=f"http://x/{num}", body=body)
+    return PullRequest(
+        repo=repo,
+        number=num,
+        title=title,
+        author="a",
+        state="closed",
+        merged=True,
+        created_at=now,
+        merged_at=now,
+        url=f"http://x/{num}",
+        body=body,
+    )
 
 
 # --- catalog --------------------------------------------------------------- #
 def test_catalog_is_distinct_initiatives_only():
     issues = [
         _issue("ENG-10", "Sub A", [("ENG-1", "Billing Revamp")]),
-        _issue("ENG-11", "Sub B", [("ENG-1", "Billing Revamp")]),   # same initiative
-        _issue("ENG-2", "Standalone Feature"),                       # itself
+        _issue("ENG-11", "Sub B", [("ENG-1", "Billing Revamp")]),  # same initiative
+        _issue("ENG-2", "Standalone Feature"),  # itself
         _issue("ENG-12", "fix", [("ENG-3", "Project Oncall [Jun]")]),  # ops, excluded
     ]
     catalog = build_catalog(issues)
     keys = {c.key for c in catalog}
-    assert keys == {"ENG-1", "ENG-2"}              # deduped; ops excluded
+    assert keys == {"ENG-1", "ENG-2"}  # deduped; ops excluded
     assert all(c.lane == "initiative" for c in catalog)
 
 

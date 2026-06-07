@@ -30,7 +30,12 @@ class OutlineNotConfigured(RuntimeError):
 
 class OutlineClient:
     def __init__(
-        self, base_url: str, token: str, *, cache: Cache | None = None, cache_ttl: int = 604800
+        self,
+        base_url: str,
+        token: str,
+        *,
+        cache: Cache | None = None,
+        cache_ttl: int = 604800,
     ) -> None:
         if not base_url or not token:
             raise OutlineNotConfigured(
@@ -58,10 +63,14 @@ class OutlineClient:
     async def _post(self, endpoint: str, payload: dict) -> object:
         resp = await self._client.post(endpoint, json=payload)
         if resp.status_code >= 400:
-            raise OutlineError(f"POST {endpoint} -> {resp.status_code}: {resp.text[:200]}")
+            raise OutlineError(
+                f"POST {endpoint} -> {resp.status_code}: {resp.text[:200]}"
+            )
         body = resp.json()
         if not body.get("ok", True):
-            raise OutlineError(f"POST {endpoint} -> {body.get('error', 'unknown error')}")
+            raise OutlineError(
+                f"POST {endpoint} -> {body.get('error', 'unknown error')}"
+            )
         return body.get("data")
 
     def _doc_url(self, url_path: str) -> str:

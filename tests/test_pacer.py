@@ -13,10 +13,10 @@ def _at(hour: int) -> datetime:
 
 def test_wrapping_quiet_hours_22_to_8():
     p = Pacer(max_per_run=3, quiet_start=22, quiet_end=8)
-    assert p.in_quiet_hours(_at(23))   # late night
-    assert p.in_quiet_hours(_at(2))    # small hours
-    assert p.in_quiet_hours(_at(22))   # start is inclusive
-    assert not p.in_quiet_hours(_at(8))   # end is exclusive
+    assert p.in_quiet_hours(_at(23))  # late night
+    assert p.in_quiet_hours(_at(2))  # small hours
+    assert p.in_quiet_hours(_at(22))  # start is inclusive
+    assert not p.in_quiet_hours(_at(8))  # end is exclusive
     assert not p.in_quiet_hours(_at(12))  # midday
     assert not p.in_quiet_hours(_at(21))  # just before quiet
 
@@ -36,5 +36,5 @@ def test_disabled_quiet_hours_when_equal():
 
 def test_allowance_is_zero_in_quiet_hours_else_cap():
     p = Pacer(max_per_run=3, quiet_start=22, quiet_end=8)
-    assert p.allowance(_at(2)) == 0     # quiet
-    assert p.allowance(_at(10)) == 3    # active → cap
+    assert p.allowance(_at(2)) == 0  # quiet
+    assert p.allowance(_at(10)) == 3  # active → cap

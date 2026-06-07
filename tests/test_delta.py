@@ -16,22 +16,34 @@ def _now() -> datetime:
 def _pr(number: int, *, merged: bool) -> PullRequest:
     now = _now()
     return PullRequest(
-        repo="api", number=number, title=f"Feature {number}", author="alice",
-        state="closed" if merged else "open", merged=merged,
-        created_at=now, merged_at=now if merged else None,
-        url=f"http://x/{number}", additions=10, deletions=2, changed_files=1,
+        repo="api",
+        number=number,
+        title=f"Feature {number}",
+        author="alice",
+        state="closed" if merged else "open",
+        merged=merged,
+        created_at=now,
+        merged_at=now if merged else None,
+        url=f"http://x/{number}",
+        additions=10,
+        deletions=2,
+        changed_files=1,
     )
 
 
 def test_open_pr_yields_one_bite():
-    bites = bites_for_activity([RepoActivity(repo="api", pull_requests=[_pr(1, merged=False)])])
+    bites = bites_for_activity(
+        [RepoActivity(repo="api", pull_requests=[_pr(1, merged=False)])]
+    )
     assert [b.kind for b in bites] == ["pr_opened"]
     assert bites[0].dedup_key == "pr:api#1@opened"
     assert bites[0].subject == "repo:api"
 
 
 def test_merged_pr_yields_opened_and_merged_bites():
-    bites = bites_for_activity([RepoActivity(repo="api", pull_requests=[_pr(2, merged=True)])])
+    bites = bites_for_activity(
+        [RepoActivity(repo="api", pull_requests=[_pr(2, merged=True)])]
+    )
     assert {b.dedup_key for b in bites} == {"pr:api#2@opened", "pr:api#2@merged"}
 
 
