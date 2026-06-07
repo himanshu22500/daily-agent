@@ -389,6 +389,23 @@ observing during real use for further length/format feedback.
 
 ## Long-term / needs research
 
+- [ ] **Personal insight feed (from Claude Code sessions).** While pairing with
+      Claude Code, lots of useful technical/repo knowledge surfaces — gotchas,
+      techniques, "I didn't know the repo did X" — that's easy to forget. Capture
+      those insights and **resurface them later through the same notification
+      feed**. This is a *distinct* feed from the org-activity one: a personal
+      learning / recall stream, not what-shipped. Likely reuses the existing
+      outbox + Telegram delivery.
+      - **TO DISCUSS — design not started** (the user wants a dedicated session):
+        - **Capture:** mine local Claude Code session transcripts
+          (`~/.claude/projects/<proj>/*.jsonl`)? a "remember this" marker mid-
+          session? an LLM extraction pass over a session afterwards?
+        - **What:** which insights are worth keeping (signal vs noise) and how to
+          dedupe/rank them.
+        - **How/when:** spaced resurfacing (remind-me-later) vs a periodic digest;
+          same paced Telegram feed; how it interleaves with the activity feed.
+      - Bring ideas to that discussion before building.
+
 - [ ] **Voice-note delivery.** Once feed *content* is genuinely good, deliver
       chapters as **voice notes** (not just text). Gated on content quality on
       purpose — a voice note amplifies the writing, so a weak chapter sounds
