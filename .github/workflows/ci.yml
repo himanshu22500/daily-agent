@@ -1,0 +1,31 @@
+name: CI
+
+# The objective gate before a human reviews a PR. Runs the OFFLINE test suite
+# only — every test mocks Huly/Telegram/the LLM, so no secrets are needed and
+# none are exposed to CI. Live verification (real Huly/Telegram/data) happens on
+# the maintainer's machine before merge.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# One run per branch/PR; cancel superseded runs.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run offline test suite
+        run: uv run pytest -q
