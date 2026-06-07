@@ -1,0 +1,21 @@
+tests/test_initiative.py
+  s_801bce6afa93a1::t_7cc37ad4da5564 1-130
+src/daily_agent/feed/initiative.py
+  s_801bce6afa93a1::t_3d024b121dcd3b 1-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "39eb1748154a8693732cc0f0cbb5d9a74bc47bf5",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
