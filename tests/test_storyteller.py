@@ -84,6 +84,7 @@ async def test_render_chapters_uses_prior_state_and_limit(tmp_path, monkeypatch)
     assert len(out) == 1                       # limit respected
     assert out[0].initiative.key == "ENG-1"    # most active first
     assert out[0].merged == 2
+    assert "chapter for A" in out[0].content   # rendered content carried
     assert seen_prior["A"] == "previously shipped X"   # prior state passed in
 
 

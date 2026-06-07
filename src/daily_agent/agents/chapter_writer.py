@@ -23,9 +23,9 @@ from .model import build_model, cache_settings
 class Chapter(BaseModel):
     chapter: str = Field(
         description=(
-            "The message to deliver: 2-4 sentences, plain language. Lead with what "
-            "shipped, then explain what it actually is in the product. No status "
-            "ratings, no risks, no advice."
+            "The message to deliver: AT MOST 2 sentences (~45 words). Sentence 1: "
+            "what shipped. Sentence 2: what it is in the product, plainly. No "
+            "preamble, no status, no risks, no advice."
         )
     )
     story_state: str = Field(
@@ -43,17 +43,17 @@ engineering initiative, for a busy leader who is a SILENT OBSERVER. Their goal:
 understand what's going into the product so they're never blindsided — not to
 make decisions.
 
-Write the chapter so it:
-- LEADS WITH WHAT SHIPPED (merged PRs). Mention in-flight work only briefly, if
-  at all.
-- TRANSLATES the technical changes into plain product terms — what this actually
-  is / does in the product. This is the whole point. Avoid jargon; if a PR is
-  internal plumbing, say what it sets up in user/product terms.
-- Is SHORT and scannable: 2-4 sentences. It's a bite, not a report.
-- DESCRIBES, never judges: no health/status labels, no risk or "watch" flags, no
-  recommendations or calls-to-action.
-- CONTINUES THE STORY: if a prior summary is given, only add what's NEW since
-  then; don't repeat what was already told.
+Hard rules for the chapter text:
+- AT MOST 2 SENTENCES, ~45 words total. This is a glanceable bite, not a report.
+  Be ruthless: one sentence on what shipped, one on what it is in the product.
+- NO preamble ("This update…", "The team…"), NO lists, NO PR numbers.
+- LEAD WITH WHAT SHIPPED (merged work). Ignore in-flight work unless nothing
+  shipped.
+- TRANSLATE tech into plain product terms — what it actually is/does for the
+  product. If it's internal plumbing, say what it sets up, briefly.
+- DESCRIBE, never judge: no status, no risk/watch flags, no recommendations.
+- CONTINUE THE STORY: if a prior summary is given, only add what's NEW; never
+  repeat what was already told.
 
 Also return an updated `story_state`: a brief running summary of the whole
 initiative so far (for your own memory next time), reflecting this chapter.
@@ -95,3 +95,54 @@ async def write_chapter(
     agent = _build(model)
     result = await agent.run(_render(title, prior_state, prs))
     return result.output
+
+
+# --------------------------------------------------------------------------- #
+# Untracked lane — terse itemized digest, not a forced narrative
+# --------------------------------------------------------------------------- #
+class ItemizedDigest(BaseModel):
+    items: list[str] = Field(
+        description=(
+            "One short plain-language line per shipped change — what it is in the "
+            "product. No PR numbers, no prefixes, no grouping into prose."
+        )
+    )
+
+
+_ITEMS_SYSTEM_PROMPT = """\
+You summarize a set of UNRELATED engineering changes that shipped but aren't tied
+to any initiative, for a busy observer who just wants to not miss what went into
+the product.
+
+Return one short line PER change (merged PRs first): a plain-language note of what
+it is in the product — translate the technical title, drop jargon and PR numbers.
+Keep each line under ~12 words. Do NOT weave them into a paragraph; they're
+unrelated. Skip purely trivial chores (formatting, lint) unless nothing else
+shipped.
+"""
+
+
+def _build_items(model: str) -> Agent[None, ItemizedDigest]:
+    return Agent(
+        build_model(model), output_type=ItemizedDigest, system_prompt=_ITEMS_SYSTEM_PROMPT,
+        model_settings=cache_settings(model),
+    )
+
+
+def _render_items(prs: list[PullRequest]) -> str:
+    merged = [p for p in prs if p.merged]
+    open_ = [p for p in prs if not p.merged]
+    lines = ["Shipped (merged):"]
+    for p in merged:
+        lines.append(f"  - {p.repo}#{p.number} {p.title}")
+    if open_:
+        lines.append("In flight:")
+        for p in open_:
+            lines.append(f"  - {p.repo}#{p.number} {p.title}")
+    return "\n".join(lines)
+
+
+async def write_untracked_items(model: str, prs: list[PullRequest]) -> list[str]:
+    agent = _build_items(model)
+    result = await agent.run(_render_items(prs))
+    return result.output.items

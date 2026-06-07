@@ -275,8 +275,23 @@ edit-in-place vs new messages. All wait until after rich content.
    `agents/chapter_writer.py`, `feed/storyteller.py`) — per-initiative story-state
    + an agent that writes each chapter (plain-language: what shipped + what it is)
    and an updated state. `feed-preview` CLI dry-runs chapters to the console.
-4. [ ] Wire into the feed so bites are initiative chapters, not PR events
-   (persist story-state on delivery; only narrate what's new since last chapter).
+4. [x] **Wired into `feed`** (`storyteller.chapters_to_bites`, `cli.feed`) — the
+   feed now delivers initiative **chapters**, not PR events: maps PRs → initiatives,
+   narrates only PRs *new since each initiative's last chapter*, enqueues one bite
+   per initiative (stable `chapter:<key>:<hash>` dedup), and advances story-state.
+   Falls back to mechanical bites if Huly is unconfigured. Live-verified delivering
+   chapters to Telegram.
+   - *Known tradeoffs to revisit:* story-state advances at build time (not on
+     delivery) — a dead-lettered chapter's PRs wouldn't be re-narrated (rare,
+     outbox is at-least-once). And with **no pacing yet**, a bare `feed` drains all
+     pending chapters at once — use `--limit N` until the cadence engine lands.
+
+**Tuned on first use (2026-06-07):** user found chapters too long and the
+Untracked lane unreadable. Fixed: chapter prompt hard-capped to ~2 sentences/
+~45 words; the **Untracked lane now renders as terse itemized bullets** (one
+plain-language line per shipped change) instead of forced prose — `render_one`
+routes by lane (narrative for initiative/ops, itemized for untracked). Keep
+observing during real use for further length/format feedback.
 
 **Resolved open questions (from the original brainstorm):**
 - Bite model → **per-initiative evolving storyline** (not per-project/per-person).

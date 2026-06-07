@@ -9,11 +9,13 @@ is safe to run as a dry-run preview.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
+from datetime import datetime
 
-from ..agents.chapter_writer import Chapter, write_chapter
+from ..agents.chapter_writer import write_chapter, write_untracked_items
 from ..agents.initiative_mapper import pr_key
-from ..models import PullRequest
+from ..models import Bite, PullRequest
 from .initiative import Initiative
 from .initiatives_store import InitiativeStore
 from .mapping import resolve_initiatives
@@ -22,7 +24,7 @@ from .mapping import resolve_initiatives
 @dataclass
 class RenderedChapter:
     initiative: Initiative
-    chapter: Chapter
+    content: str
     prs: list[PullRequest]
 
     @property
@@ -32,6 +34,30 @@ class RenderedChapter:
     @property
     def opened(self) -> int:
         return sum(1 for p in self.prs if not p.merged)
+
+
+def _footer(prs: list[PullRequest]) -> str:
+    merged = sum(1 for p in prs if p.merged)
+    opened = len(prs) - merged
+    return f"{merged} merged" + (f" · {opened} in flight" if opened else "")
+
+
+async def render_one(
+    model: str, init: Initiative, prior_state: str | None, prs: list[PullRequest]
+) -> tuple[str, str]:
+    """Render an initiative's new PRs to (delivered_content, new_story_state).
+
+    Initiatives/ops get a tight narrative chapter; the untracked lane gets a
+    terse itemized digest instead of forced prose.
+    """
+    if init.lane == "untracked":
+        items = await write_untracked_items(model, prs)
+        bullets = "\n".join(f"• {it}" for it in items) or "• (misc changes)"
+        content = f"🧩 {init.title}\n\n{bullets}\n\n{_footer(prs)}"
+        return content, f"listed {len(prs)} untracked changes"
+    chapter = await write_chapter(model, title=init.title, prior_state=prior_state, prs=prs)
+    content = f"📦 {init.title}\n\n{chapter.chapter}\n\n{_footer(prs)}"
+    return content, chapter.story_state
 
 
 def group_by_initiative(
@@ -71,6 +97,70 @@ async def render_chapters(
         prior = None
         if store and (state := store.get(init.key)):
             prior = state.story_state
-        chapter = await write_chapter(model, title=init.title, prior_state=prior, prs=group)
-        rendered.append(RenderedChapter(initiative=init, chapter=chapter, prs=group))
+        content, _ = await render_one(model, init, prior, group)
+        rendered.append(RenderedChapter(initiative=init, content=content, prs=group))
     return rendered
+
+
+# --------------------------------------------------------------------------- #
+# Live feed: incremental, story-state-persisting chapters → outbox bites
+# --------------------------------------------------------------------------- #
+def _activity_ts(pr: PullRequest) -> datetime:
+    """When a PR became news: when it merged, else when it opened."""
+    return pr.merged_at or pr.created_at
+
+
+def _new_since(prs: list[PullRequest], since: datetime | None) -> list[PullRequest]:
+    if since is None:
+        return list(prs)
+    return [pr for pr in prs if _activity_ts(pr) > since]
+
+
+def _chapter_dedup_key(initiative_key: str, new_prs: list[PullRequest]) -> str:
+    """Stable key for a chapter covering this exact set of new PRs.
+
+    Same new-PR set → same key (re-runs collapse in the outbox); one more PR →
+    a new key → a new chapter. Keeps generation + delivery idempotent.
+    """
+    ident = "|".join(sorted(f"{p.repo}#{p.number}:{int(p.merged)}" for p in new_prs))
+    digest = hashlib.sha1(ident.encode()).hexdigest()[:12]
+    return f"chapter:{initiative_key}:{digest}"
+
+
+async def chapters_to_bites(
+    model: str, prs: list[PullRequest], issues: list[dict], store: InitiativeStore
+) -> list[Bite]:
+    """Build deliverable chapter bites, advancing each initiative's storyline.
+
+    For each initiative, narrate only the PRs that are *new since its last
+    chapter*, then persist the updated story-state so the next run continues
+    rather than repeats. Story-state is advanced at build time (the outbox is
+    at-least-once); the rare dead-letter case is a known tradeoff to revisit.
+    """
+    mapping = await resolve_initiatives(model, prs, issues)
+    grouped = group_by_initiative(prs, mapping)
+
+    bites: list[Bite] = []
+    for init, group in grouped:
+        state = store.get(init.key)
+        store.upsert(init.key, init.lane, init.title)
+        since = (
+            datetime.fromisoformat(state.last_narrated_at)
+            if state and state.last_narrated_at
+            else None
+        )
+        new_prs = _new_since(group, since)
+        if not new_prs:
+            continue
+        prior = state.story_state if state else None
+        content, story_state = await render_one(model, init, prior, new_prs)
+        bites.append(
+            Bite(
+                dedup_key=_chapter_dedup_key(init.key, new_prs),
+                subject=init.subject,
+                kind="chapter",
+                content=content,
+            )
+        )
+        store.record_chapter(init.key, story_state)
+    return bites
