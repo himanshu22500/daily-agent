@@ -114,6 +114,13 @@ class HulyClient:
 
         Optional filters: ``project`` identifier, ``status`` name, ``assignee``
         name (substring match), ``priority`` (none|urgent|high|medium|low).
+
+        Each row also carries the structural fields the feed's initiative
+        resolver needs:
+        - ``parents``: the ancestor chain, immediate parent first → root last,
+          as ``[{identifier, id, title}]`` (``id`` is the stable Huly _id used
+          as the initiative anchor).
+        - ``tags``: list of tag/label titles on the issue (notability signals).
         """
         args = ["issues", "--limit", str(limit)]
         if project:
@@ -136,6 +143,7 @@ class HulyClient:
     async def issue(self, identifier: str) -> dict | None:
         """Fetch one issue's detail (incl. markdown description) by identifier.
 
+        Also includes ``parents`` (ancestor chain) and ``tags`` — see ``issues``.
         A DONE issue is terminal, so it's cached permanently; otherwise TTL.
         """
         key = f"huly:issue:{identifier.upper()}"
