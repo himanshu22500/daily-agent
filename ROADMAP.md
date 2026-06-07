@@ -120,19 +120,12 @@ shopping for a problem we don't have.
    `@opened`/`@merged` bites with stable keys), console + file channels, and the
    `feed` command. Verified end-to-end: re-running never repeats a bite.
    *(LLM-narrated + per-person rollups and commit bites are deliberately later.)*
-   - [ ] **⚠️ REVISIT — make the feed content rich & business-level (the user's
-     next focus).** Phase 1 bites are mechanical ("PR opened", "PR merged") —
-     they say *what changed in git*, not *what's happening with the product*.
-     That's not interesting or useful. The generation layer needs to become a
-     genuinely helpful agent: synthesize what the change *means* for the product
-     / business, connect related activity (this PR + that task + that doc),
-     surface intent, risk, and "why should you care". **LLM cost is NOT a
-     constraint** — spend tokens freely to make each bite informative. The user
-     has specific ideas and wants to design this in detail before building.
-     This sits *between* the delta engine and the outbox (the `bites` /
-     renderer stage in the architecture): the differ still finds *what's new*
-     deterministically; a rich generator turns those raw deltas into a narrated,
-     contextual bite (pulling in Huly tasks, Outline docs, PR bodies, history).
+   - [ ] **⚠️ NEXT TO BUILD — rich content: the initiative-storyline model**
+     (designed 2026-06-07; see the dedicated section below). Phase 1 bites are
+     mechanical ("PR opened/merged") — they describe *git*, not *the product*.
+     The renderer stage becomes a genuinely helpful agent. **LLM cost is NOT a
+     constraint.** Design is settled on the structure; what remains is the bite
+     *anatomy* + storyline state shape, then build.
 2. [x] **Delivery channels.**
    - [x] **Telegram — the PRIMARY channel.** `TelegramChannel` + `feed
      --to-telegram` + `telegram-check`. No org/admin approval; one bot token;
@@ -155,15 +148,126 @@ shopping for a problem we don't have.
    one phase that needs a persistent daemon (launchd KeepAlive); everything up
    to here is fire-and-exit.
 
-**Open questions to settle before building (user wanted to clarify):**
-- Is per-project + per-person delta the right bite model, or a morning narrative
-  that drips follow-ups?
-- Exact definition of a "notable" event worth interrupting the day.
-- Pacing specifics: bites/day, spacing, quiet hours, weekends.
-- Robustness bar: at-least-once + dedup (assumed); acknowledgements?
-  edit-in-place vs new messages?
-- Is reply-to-expand core or a later nice-to-have?
-- *(Resolved: channel = Telegram, primary & only — see "Decisions made".)*
+### Rich content — the initiative-storyline model (designed 2026-06-07)
+
+**Purpose (decided — the lens for everything below):** this is an **awareness
+feed for a busy *silent observer*, NOT a leadership decision/action dashboard.**
+The user is heads-down on their own work; the feed's job is to keep them quietly
+caught up so they're never blindsided by *"when did that go into the product, and
+what even was it?"*. Understanding, not action. Consequences:
+- **No health status, no risk/watch flags, no calls-to-action.** The user isn't
+  steering these efforts.
+- The renderer's central job is **translating technical git/Huly activity into
+  plain-language product understanding** — "what this actually is, in the
+  product" — not analysis. The *richness is explanation*.
+- **Shipped > in-flight.** The fear is something *went into* the product unseen,
+  so **merged/shipped work is the priority signal**; purely in-flight work stays
+  minimal (no "coming soon" heads-up wanted).
+- This makes the **Untracked lane matter** — work that shipped with no ticket is
+  exactly the "I had no idea that happened" case.
+
+**Unit & shape (decided):** the bite unit is the **initiative**, delivered as an
+**evolving storyline** — each message is the next *chapter* of an ongoing effort
+("here's what landed in the Item Details v3 migration since I last told you"),
+not a standalone event. This needs a **stable initiative identity** so chapters
+attach to the same subject over time.
+
+**Chapter anatomy (decided):** each delivered chapter is descriptive, no judgment:
+1. **Initiative name** — which thread of the product this is.
+2. **What happened** — what landed, plainly (lead with what shipped/merged).
+3. **What it is, in plain terms** — the technical→product translation that lets
+   the user understand it without digging. *This is the core deliverable.*
+4. *(thin footer)* — what shipped + timeframe; later a `[Dig deeper]` button
+   (reply-to-expand). Detail beyond the footer lives *behind* the button, so the
+   message stays bite-sized.
+
+Example:
+> **📦 Item Details v3 migration**
+> The backend APIs behind the item-details page moved to the v3 stack this week
+> (4 PRs merged, Pratik). In plain terms: the page that shows a product's details
+> now runs on the new architecture — no visible change for users, but it's the
+> groundwork for the Vue3 frontend rebuild coming next.
+> _since Tue · 4 merged_  `[Dig deeper]`
+
+**Anchor (decided) — normalized Huly parent-chain, identity pinned to Huly ID.**
+Grounded in a live investigation of the `ENG` workspace (2026-06-07):
+- Only one project (`ENG`); **components unused**; **milestones are monthly
+  time-buckets** ("May 2026 Projects") and not set on recent issues → neither is
+  an anchor.
+- **82% of recent issues hang off a parent** in a *multi-level* tree → the parent
+  hierarchy is the de-facto structure and the identity spine.
+- But raw parents are noisy: a mix of **real initiatives** ("Item Details v3 -
+  Phase 1", "TZ-Agents Phase 2", "Document Create Vue3 Migration", "DB
+  Standardization 4") and **process/ops buckets** ("Perform QA Testing" ×many,
+  weekly "Project Oncall [date]", vague "Frontend Components", cryptic "TS-80").
+  Naming is inconsistent; real initiatives often sit *above* a "Perform QA
+  Testing" parent (so walking one level lands on a bucket — must walk to the
+  right level).
+- The team creates **mirror QA tasks** (`Test || <feature>`, "Perform QA
+  Testing") per feature → must collapse so one feature ≠ several storylines.
+- Tags are rich (4090 refs: `issue-production-bug`, `ia-tech-debt`,
+  `new-feature`, the `project` tag, `ia-*` areas) → use as **notability /
+  characterization signals, not identity**.
+- After collapsing buckets/phases: ~**10–20 active initiatives** at a time.
+
+So identity = the **Huly parent _id** (stable), but a cached **LLM "initiative
+normalizer"** (runs once per cluster, keyed by that id) does what the raw tree
+can't: pick the right level in the chain, emit a clean initiative name, **collapse
+QA/Test mirror tasks**, and classify *real initiative* vs *process bucket*. The
+LLM never invents identity — it normalizes around the stable id. (Hybrid of
+options A+C from the brainstorm; pure LLM clustering rejected — names drift,
+breaking storyline continuity.)
+
+**Three lanes (decided):**
+- **Initiatives** — the real efforts, one evolving storyline each.
+- **Ops** — weekly "Project Oncall" + production incidents. A *separate, quiet*
+  lane ("what broke / what's being kept alive"), not an initiative.
+- **Untracked** — PRs with no `ENG-` ticket (not all branches carry one; **Sharad
+  & Faizal don't use Huly at all**). Best-effort LLM-mapped into an existing
+  initiative; otherwise surfaced in its own lane so their work isn't invisible.
+- **QA folds into its feature's storyline** (not its own lane).
+
+**Storyline mechanics (the render loop):**
+```
+per cycle:
+  differ finds new raw deltas (cheap, deterministic — already built)
+   → map each delta to an initiative:
+        PR → ENG-ticket → walk Huly parent chain → normalized initiative id
+        (orphan PR / no ticket → LLM matches to an existing initiative, else Untracked)
+   → for each initiative WITH new deltas:
+        agent reads: [prior story-state] + [new deltas]
+                   + [fresh context: PR bodies/diffs, the task + parent, linked
+                      Outline docs, recent history]
+        agent writes: (a) the next chapter (the bite)
+                      (b) an updated story-state to remember
+```
+The **per-initiative story-state** is the new memory that makes it a storyline:
+a running plain-language summary of the effort + what's already been narrated (so
+the next chapter only adds what's new). No health/status — the feed doesn't judge.
+New table `initiatives(huly_parent_id PK, name, lane, story_state,
+last_narrated_at, …)`. The differ + outbox (built) are unchanged; this is the
+`bites`/renderer stage. PR→ticket linkage is partial, hence the LLM orphan fallback.
+
+**Still open (delivery-layer, deliberately deferred):** notability *for pushing* a
+chapter (vs silently updating state), pacing (bites/day, spacing, quiet hours),
+edit-in-place vs new messages. All wait until after rich content.
+
+**Build phasing (rich content):**
+1. Extend the Huly bridge to surface the **parent chain + tags** per issue (today
+   it only returns status/assignee/priority).
+2. **Initiative resolver + normalizer** (deterministic chain walk + cached LLM
+   normalization, keyed by Huly parent id) → maps a delta to a stable initiative.
+3. **Story-state store** (`initiatives` table) + the **rich renderer agent**
+   (reuses the assistant agent's retrieval tools) producing chapter + new state.
+4. Wire into the feed so bites are initiative chapters, not PR events.
+
+**Resolved open questions (from the original brainstorm):**
+- Bite model → **per-initiative evolving storyline** (not per-project/per-person).
+- Channel → **Telegram, primary & only** (see "Decisions made").
+- Initiative anchor → **normalized Huly parent-chain, id-pinned** (above).
+- *Still open:* exact "notable enough to interrupt" bar, pacing specifics
+  (bites/day, spacing, quiet hours, weekends), edit-in-place vs new messages —
+  all **delivery-layer**, deferred until after rich content.
 
 ## Known gaps / fixes
 
