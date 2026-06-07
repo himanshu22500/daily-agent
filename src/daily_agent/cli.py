@@ -40,7 +40,9 @@ from .feed.channels import (
     TelegramError,
 )
 from .feed.delta import bites_for_activity
+from .feed.initiatives_store import InitiativeStore
 from .feed.outbox import Channel, Outbox
+from .feed.storyteller import render_chapters
 from .models import ActivityDigest
 from .sources.github import GitHubClient, GitHubError
 from .sources.huly import HulyClient, HulyError
@@ -690,6 +692,42 @@ def feed(
         + (f", [red]{result.dead} dead[/red]" if result.dead else "")
         + "."
     )
+
+
+@app.command(name="feed-preview")
+def feed_preview(
+    days: int = typer.Option(7, help="Use PR activity from the last N days."),
+    limit: int = typer.Option(5, help="Render at most N initiative chapters."),
+) -> None:
+    """Dry-run the rich feed: render initiative chapters to the console.
+
+    Maps PRs → initiatives, then writes a plain-language chapter per initiative.
+    Read-only — nothing is persisted or delivered, so it's safe to react to the
+    tone/length before wiring chapters into the live feed.
+    """
+    s = get_settings()
+
+    async def _run():
+        project = s.huly_default_project or "ENG"
+        async with _huly() as huly:
+            issues = await huly.issues(project, limit=500)
+        prs = [pr for a in Store(s.db_path).activity_since(_since(days))
+               for pr in a.pull_requests]
+        if not prs:
+            return [], 0
+        store = InitiativeStore(s.db_path)
+        chapters = await render_chapters(s.model, prs, issues, store=store, limit=limit)
+        return chapters, len(prs)
+
+    chapters, n_prs = asyncio.run(_run())
+    if not chapters:
+        console.print("[yellow]No PR activity in the window. Run `collect` first.[/yellow]")
+        return
+    console.print(f"[dim]Rendered top {len(chapters)} initiatives from {n_prs} PRs (last {days}d):[/dim]\n")
+    for rc in chapters:
+        footer = f"{rc.merged} merged" + (f" · {rc.opened} in flight" if rc.opened else "")
+        body = f"{rc.chapter.chapter}\n\n[dim]{footer} · {rc.initiative.lane}[/dim]"
+        console.print(Panel(body, title=f"📦 {rc.initiative.title}", border_style="cyan"))
 
 
 @app.command(name="slack-check")
