@@ -98,7 +98,41 @@ async function buildAssigneeMap (client, issues) {
   return map
 }
 
-function issueRow (i, statusMap, assigneeMap) {
+// The ancestor chain (immediate parent first, root last), pre-resolved by Huly
+// in `i.parents` as [{identifier, parentId, parentTitle}]. This is the spine the
+// feed's initiative resolver walks to find the right "initiative" level.
+function buildParents (i) {
+  if (!Array.isArray(i.parents)) return []
+  return i.parents.map((p) => ({
+    identifier: p.identifier || null,
+    id: p.parentId || null,
+    title: p.parentTitle || null
+  }))
+}
+
+// Resolve issue tags/labels (Huly stores them as TagReference docs attached to
+// the issue). Best-effort: if the tags plugin isn't present, return no tags
+// rather than failing the whole query.
+async function buildTagMap (client, issues) {
+  const map = new Map()
+  let tags
+  try {
+    tags = require('@hcengineering/tags').default
+  } catch (_) {
+    return map
+  }
+  const ids = issues.map((i) => i._id)
+  if (ids.length === 0) return map
+  const refs = await client.findAll(tags.class.TagReference, { attachedTo: { $in: ids } })
+  for (const r of refs) {
+    const arr = map.get(r.attachedTo) || []
+    arr.push(r.title)
+    map.set(r.attachedTo, arr)
+  }
+  return map
+}
+
+function issueRow (i, statusMap, assigneeMap, tagMap) {
   const st = statusMap.get(i.status)
   return {
     identifier: i.identifier,
@@ -109,7 +143,9 @@ function issueRow (i, statusMap, assigneeMap) {
     priority: PRIORITY_LABELS[i.priority] || 'none',
     estimation: i.estimation || 0,
     modifiedOn: i.modifiedOn ? new Date(i.modifiedOn).toISOString() : null,
-    dueDate: i.dueDate ? new Date(i.dueDate).toISOString() : null
+    dueDate: i.dueDate ? new Date(i.dueDate).toISOString() : null,
+    parents: buildParents(i),
+    tags: (tagMap && tagMap.get(i._id)) || []
   }
 }
 
@@ -167,7 +203,8 @@ async function listIssues (client, opts) {
       })
       .slice(0, limit)
   }
-  return issues.map((i) => issueRow(i, statusMap, assigneeMap))
+  const tagMap = await buildTagMap(client, issues)
+  return issues.map((i) => issueRow(i, statusMap, assigneeMap, tagMap))
 }
 
 async function getIssue (client, identifier) {
@@ -185,8 +222,9 @@ async function getIssue (client, identifier) {
       )
     } catch (_) { description = null }
   }
+  const tagMap = await buildTagMap(client, [issue])
   return {
-    ...issueRow(issue, statusMap, assigneeMap),
+    ...issueRow(issue, statusMap, assigneeMap, tagMap),
     project: project ? project.identifier : 'Unknown',
     number: issue.number,
     description
