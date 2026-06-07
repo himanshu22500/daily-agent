@@ -44,7 +44,7 @@ def test_dedup_key_stable_for_same_set_changes_with_new_pr():
 
 # --- pipeline -------------------------------------------------------------- #
 def _patch(monkeypatch, mapping):
-    async def fake_resolve(model, prs, issues):
+    async def fake_resolve(model, prs, issues, *, cache=None):
         return mapping
 
     async def fake_write(model, *, title, prior_state, prs):
