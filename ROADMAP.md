@@ -1,7 +1,9 @@
-# Roadmap / Ideas
+# Roadmap / Strategy
 
-A running backlog of improvements, captured for later. Not yet built unless it's
-in the README's "Done" list.
+This is the **strategy & decisions** doc — the arc, the "why", and the design
+rationale. **Actionable work lives in GitHub Issues**, not here (see `AGENTS.md`);
+durable decisions are logged in `docs/decisions.md`. Use this to understand
+*where the project is going*; pick up *what to do next* from the Issues.
 
 ## ⭐ NEXT UP: Delivery feed (the big one)
 
