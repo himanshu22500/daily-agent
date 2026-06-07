@@ -9,4 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
+# Refresh activity first so the feed works off fresh data; if collect hiccups
+# (e.g. GitHub blip), still deliver from what's already stored.
+uv run daily-agent collect || echo "collect failed; proceeding with stored data" >&2
 exec uv run daily-agent feed "$@"
