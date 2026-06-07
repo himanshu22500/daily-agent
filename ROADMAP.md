@@ -271,9 +271,12 @@ edit-in-place vs new messages. All wait until after rich content.
 2b. [x] **Catalog + LLM mapper** (`feed/catalog.py`, `agents/initiative_mapper.py`,
    `feed/mapping.py`) — derive the catalog from Huly, anchor ticketed PRs, LLM
    maps the rest onto the catalog. Validated 81% coverage.
-3. [ ] **Story-state store** (`initiatives` table) + the **rich renderer agent**
-   (reuses the assistant agent's retrieval tools) producing chapter + new state.
-4. [ ] Wire into the feed so bites are initiative chapters, not PR events.
+3. [x] **Story-state store + rich renderer** (`feed/initiatives_store.py`,
+   `agents/chapter_writer.py`, `feed/storyteller.py`) — per-initiative story-state
+   + an agent that writes each chapter (plain-language: what shipped + what it is)
+   and an updated state. `feed-preview` CLI dry-runs chapters to the console.
+4. [ ] Wire into the feed so bites are initiative chapters, not PR events
+   (persist story-state on delivery; only narrate what's new since last chapter).
 
 **Resolved open questions (from the original brainstorm):**
 - Bite model → **per-initiative evolving storyline** (not per-project/per-person).
