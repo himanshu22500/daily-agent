@@ -42,7 +42,7 @@ from .feed.channels import (
 from .feed.delta import bites_for_activity
 from .feed.initiatives_store import InitiativeStore
 from .feed.outbox import Channel, Outbox
-from .feed.storyteller import render_chapters
+from .feed.storyteller import chapters_to_bites, render_chapters
 from .models import ActivityDigest
 from .sources.github import GitHubClient, GitHubError
 from .sources.huly import HulyClient, HulyError
@@ -661,9 +661,20 @@ def feed(
         )
         raise typer.Exit(1)
 
-    store = Store(s.db_path)
-    activities = store.activity_since(_since(days))
-    new = outbox.enqueue_all(bites_for_activity(activities))
+    prs = [pr for a in Store(s.db_path).activity_since(_since(days)) for pr in a.pull_requests]
+    if s.huly_enabled and prs:
+        # Rich feed: PRs → initiatives → plain-language storyline chapters.
+        async def _build():
+            project = s.huly_default_project or "ENG"
+            async with _huly() as huly:
+                issues = await huly.issues(project, limit=500)
+            return await chapters_to_bites(s.model, prs, issues, InitiativeStore(s.db_path))
+
+        bites = asyncio.run(_build())
+    else:
+        # Fallback without Huly: mechanical per-PR bites.
+        bites = bites_for_activity(Store(s.db_path).activity_since(_since(days)))
+    new = outbox.enqueue_all(bites)
 
     if choice == "slack":
         channel: Channel = SlackChannel(s.slack_bot_token, s.slack_destination)
