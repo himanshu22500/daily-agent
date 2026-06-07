@@ -42,6 +42,7 @@ from .feed.channels import (
 from .feed.delta import bites_for_activity
 from .feed.initiatives_store import InitiativeStore
 from .feed.outbox import Channel, Outbox
+from .feed.pacer import Pacer
 from .feed.storyteller import chapters_to_bites, render_chapters
 from .models import ActivityDigest
 from .sources.github import GitHubClient, GitHubError
@@ -625,6 +626,9 @@ def feed(
     already queued or delivered, so running `feed` repeatedly never repeats a
     bite. Delivers to the console by default; `--to-slack` / `--to-telegram` push
     them to you, `--to-file` appends them to a transcript.
+
+    Paced by default (DAILY_AGENT_FEED_MAX_PER_RUN + quiet hours): run it
+    periodically and the backlog trickles out. `--limit` overrides the pacer.
     """
     s = get_settings()
     outbox = Outbox(s.db_path)
@@ -676,6 +680,18 @@ def feed(
         bites = bites_for_activity(Store(s.db_path).activity_since(_since(days)))
     new = outbox.enqueue_all(bites)
 
+    # Cadence: an explicit --limit overrides the pacer; otherwise the pacer caps
+    # how many to release now and stays silent during quiet hours.
+    pacer = Pacer(s.feed_max_per_run, s.feed_quiet_start, s.feed_quiet_end)
+    allow = limit if limit is not None else pacer.allowance(datetime.now())
+    if allow == 0:
+        held = outbox.stats()["pending"]
+        console.print(
+            f"[yellow]Quiet hours[/yellow] — queued {new} new bite(s); "
+            f"holding {held} for later (none delivered)."
+        )
+        return
+
     if choice == "slack":
         channel: Channel = SlackChannel(s.slack_bot_token, s.slack_destination)
         dest = "Slack"
@@ -691,16 +707,18 @@ def feed(
         dest = "console"
 
     try:
-        result = outbox.drain(channel, limit=limit)
+        result = outbox.drain(channel, limit=allow)
     finally:
         if hasattr(channel, "close"):
             channel.close()
 
+    held = outbox.stats()["pending"]
     console.print(
         f"[green]Feed[/green] queued {new} new bite(s); delivered "
         f"[bold]{result.sent}[/bold] to {dest}"
         + (f", {result.failed} deferred" if result.failed else "")
         + (f", [red]{result.dead} dead[/red]" if result.dead else "")
+        + (f"; [dim]{held} still queued (paced)[/dim]" if held else "")
         + "."
     )
 
