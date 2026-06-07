@@ -150,11 +150,44 @@ shopping for a problem we don't have.
 
 ### Rich content — the initiative-storyline model (designed 2026-06-07)
 
+**Purpose (decided — the lens for everything below):** this is an **awareness
+feed for a busy *silent observer*, NOT a leadership decision/action dashboard.**
+The user is heads-down on their own work; the feed's job is to keep them quietly
+caught up so they're never blindsided by *"when did that go into the product, and
+what even was it?"*. Understanding, not action. Consequences:
+- **No health status, no risk/watch flags, no calls-to-action.** The user isn't
+  steering these efforts.
+- The renderer's central job is **translating technical git/Huly activity into
+  plain-language product understanding** — "what this actually is, in the
+  product" — not analysis. The *richness is explanation*.
+- **Shipped > in-flight.** The fear is something *went into* the product unseen,
+  so **merged/shipped work is the priority signal**; purely in-flight work stays
+  minimal (no "coming soon" heads-up wanted).
+- This makes the **Untracked lane matter** — work that shipped with no ticket is
+  exactly the "I had no idea that happened" case.
+
 **Unit & shape (decided):** the bite unit is the **initiative**, delivered as an
 **evolving storyline** — each message is the next *chapter* of an ongoing effort
-("what's new in the Item Details v3 migration since I last told you"), not a
-standalone event. This needs a **stable initiative identity** so chapters attach
-to the same subject over time.
+("here's what landed in the Item Details v3 migration since I last told you"),
+not a standalone event. This needs a **stable initiative identity** so chapters
+attach to the same subject over time.
+
+**Chapter anatomy (decided):** each delivered chapter is descriptive, no judgment:
+1. **Initiative name** — which thread of the product this is.
+2. **What happened** — what landed, plainly (lead with what shipped/merged).
+3. **What it is, in plain terms** — the technical→product translation that lets
+   the user understand it without digging. *This is the core deliverable.*
+4. *(thin footer)* — what shipped + timeframe; later a `[Dig deeper]` button
+   (reply-to-expand). Detail beyond the footer lives *behind* the button, so the
+   message stays bite-sized.
+
+Example:
+> **📦 Item Details v3 migration**
+> The backend APIs behind the item-details page moved to the v3 stack this week
+> (4 PRs merged, Pratik). In plain terms: the page that shows a product's details
+> now runs on the new architecture — no visible change for users, but it's the
+> groundwork for the Vue3 frontend rebuild coming next.
+> _since Tue · 4 merged_  `[Dig deeper]`
 
 **Anchor (decided) — normalized Huly parent-chain, identity pinned to Huly ID.**
 Grounded in a live investigation of the `ENG` workspace (2026-06-07):
@@ -208,21 +241,16 @@ per cycle:
         agent writes: (a) the next chapter (the bite)
                       (b) an updated story-state to remember
 ```
-The **per-initiative story-state** is the new memory that makes it a storyline
-(running summary + status/health + what's already been narrated). New table
-`initiatives(huly_parent_id PK, name, lane, status, story_state, last_narrated_at,
-…)`. The differ + outbox (built) are unchanged; this is the `bites`/renderer
-stage. PR→ticket linkage is partial, hence the LLM orphan fallback.
+The **per-initiative story-state** is the new memory that makes it a storyline:
+a running plain-language summary of the effort + what's already been narrated (so
+the next chapter only adds what's new). No health/status — the feed doesn't judge.
+New table `initiatives(huly_parent_id PK, name, lane, story_state,
+last_narrated_at, …)`. The differ + outbox (built) are unchanged; this is the
+`bites`/renderer stage. PR→ticket linkage is partial, hence the LLM orphan fallback.
 
-**Still to settle before building (content shape):**
-- **Bite anatomy** — what one chapter contains (headline + what's-new + why-it-
-  matters + status/health + links?), and how it stays *bite-sized* while rich
-  (headline + so-what, with detail behind a Telegram expand/button?).
-- **Story-state shape** — exactly what we persist per initiative to continue the
-  narrative well.
-- Notability *for pushing* a chapter (vs silently updating state) is a **delivery
-  concern** → deferred with the rest of pacing/cadence ("what should interrupt
-  me — TBD").
+**Still open (delivery-layer, deliberately deferred):** notability *for pushing* a
+chapter (vs silently updating state), pacing (bites/day, spacing, quiet hours),
+edit-in-place vs new messages. All wait until after rich content.
 
 **Build phasing (rich content):**
 1. Extend the Huly bridge to surface the **parent chain + tags** per issue (today
