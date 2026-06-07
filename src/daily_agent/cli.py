@@ -672,7 +672,9 @@ def feed(
             project = s.huly_default_project or "ENG"
             async with _huly() as huly:
                 issues = await huly.issues(project, limit=500)
-            return await chapters_to_bites(s.model, prs, issues, InitiativeStore(s.db_path))
+            return await chapters_to_bites(
+                s.model, prs, issues, InitiativeStore(s.db_path), cache=_cache()
+            )
 
         bites = asyncio.run(_build())
     else:

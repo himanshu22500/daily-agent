@@ -9,6 +9,7 @@ identity is never invented.
 from __future__ import annotations
 
 from ..agents.initiative_mapper import map_orphans, pr_key
+from ..cache import Cache
 from ..models import PullRequest
 from .catalog import build_catalog
 from .initiative import (
@@ -23,14 +24,28 @@ def _untracked() -> Initiative:
     return Initiative(lane="untracked", key=UNTRACKED_KEY, title="Untracked work")
 
 
+def _cache_key(pr: PullRequest) -> str:
+    """Namespaced cache key for a PR's LLM-mapped initiative assignment."""
+    return f"initiative-map:{pr_key(pr)}"
+
+
 async def resolve_initiatives(
-    model: str, prs: list[PullRequest], issues: list[dict]
+    model: str,
+    prs: list[PullRequest],
+    issues: list[dict],
+    *,
+    cache: Cache | None = None,
 ) -> dict[str, Initiative]:
     """Map each PR (by ``repo#number``) to its initiative.
 
     Deterministic first: PRs with a resolvable ticket (or oncall) are anchored
     without the LLM. The rest are mapped onto the catalog by the LLM; unmatched
     ones fall to the untracked lane.
+
+    A PR's initiative assignment is stable, so LLM results for orphan PRs are
+    cached permanently in the SQLite ``cache`` (keyed by ``repo#number``) when a
+    ``cache`` is supplied. Already-mapped orphans skip the LLM on later runs; only
+    cache-misses are sent to ``map_orphans``.
     """
     idx = index_issues(issues)
     catalog = build_catalog(issues)
@@ -45,9 +60,28 @@ async def resolve_initiatives(
         else:
             orphans.append(pr)
 
-    mapping = await map_orphans(model, orphans, catalog)
+    # The LLM-mapped initiative key per orphan, from cache hits then fresh calls.
+    keys: dict[str, str] = {}
+    misses: list[PullRequest] = []
     for pr in orphans:
-        chosen = mapping.get(pr_key(pr))
+        cached = cache.get(_cache_key(pr), ttl=None) if cache else None
+        if cached is not None:
+            keys[pr_key(pr)] = cached
+        else:
+            misses.append(pr)
+
+    # Only cache-misses go to the mapper; a fully warm run skips the LLM entirely.
+    if misses:
+        fresh = await map_orphans(model, misses, catalog)
+        for pr in misses:
+            chosen = fresh.get(pr_key(pr), UNTRACKED_KEY)
+            keys[pr_key(pr)] = chosen
+            if cache:
+                cache.set(_cache_key(pr), chosen, permanent=True)
+
+    for pr in orphans:
+        chosen = keys.get(pr_key(pr))
+        # A cached key absent from the current catalog → treat as untracked.
         resolved[pr_key(pr)] = by_key.get(chosen) if chosen else None
         if resolved[pr_key(pr)] is None:
             resolved[pr_key(pr)] = _untracked()

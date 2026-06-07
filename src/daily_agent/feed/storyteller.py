@@ -15,6 +15,7 @@ from datetime import datetime
 
 from ..agents.chapter_writer import write_chapter, write_untracked_items
 from ..agents.initiative_mapper import pr_key
+from ..cache import Cache
 from ..models import Bite, PullRequest
 from .initiative import Initiative
 from .initiatives_store import InitiativeStore
@@ -81,13 +82,14 @@ async def render_chapters(
     *,
     store: InitiativeStore | None = None,
     limit: int | None = None,
+    cache: Cache | None = None,
 ) -> list[RenderedChapter]:
     """Map PRs → initiatives, group, and render a chapter per initiative.
 
     Read-only w.r.t. story-state (uses prior state if a store is given, but does
     not persist) — safe for preview.
     """
-    mapping = await resolve_initiatives(model, prs, issues)
+    mapping = await resolve_initiatives(model, prs, issues, cache=cache)
     grouped = group_by_initiative(prs, mapping)
     if limit is not None:
         grouped = grouped[:limit]
@@ -128,7 +130,12 @@ def _chapter_dedup_key(initiative_key: str, new_prs: list[PullRequest]) -> str:
 
 
 async def chapters_to_bites(
-    model: str, prs: list[PullRequest], issues: list[dict], store: InitiativeStore
+    model: str,
+    prs: list[PullRequest],
+    issues: list[dict],
+    store: InitiativeStore,
+    *,
+    cache: Cache | None = None,
 ) -> list[Bite]:
     """Build deliverable chapter bites, advancing each initiative's storyline.
 
@@ -137,7 +144,7 @@ async def chapters_to_bites(
     rather than repeats. Story-state is advanced at build time (the outbox is
     at-least-once); the rare dead-letter case is a known tradeoff to revisit.
     """
-    mapping = await resolve_initiatives(model, prs, issues)
+    mapping = await resolve_initiatives(model, prs, issues, cache=cache)
     grouped = group_by_initiative(prs, mapping)
 
     bites: list[Bite] = []
