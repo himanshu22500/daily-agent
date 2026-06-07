@@ -137,9 +137,14 @@ shopping for a problem we don't have.
      `slack-check` exist (bot token, `chat.postMessage` DM) but Slack is **not**
      the path — workspace-admin gate + the feed will carry personal content that
      must not live on a shared workspace. Kept for a possible team-facing variant.
-3. Cadence engine — checkpoints + event nudges, wired to the scheduler. On
-   Telegram: use `disable_notification` for low-priority/quiet-hours bites
-   (built-in silent delivery) rather than holding them back entirely.
+3. [x] **Cadence engine (pacer)** — `feed/pacer.py`: a per-run delivery cap
+   (`DAILY_AGENT_FEED_MAX_PER_RUN`, default 3) + quiet hours (`FEED_QUIET_START/
+   END`, default 22→8, wraps midnight) wired into `feed`; `--limit` overrides.
+   Run periodically (`scripts/run-feed.sh` + `install-feed-launchd.sh`, default
+   hourly) so the backlog trickles instead of flooding — replaces the `--limit`
+   crutch. *Still future:* morning/EOD checkpoints, event nudges, a real
+   "notable enough to interrupt" bar, and Telegram `disable_notification` for
+   silent (vs held) quiet-hours delivery — all need real-use feedback first.
 4. Reply-to-expand — **on Telegram, via inline keyboard buttons + a long-poll
    loop** (`getUpdates`, outbound-only — no public webhook needed). Attach
    buttons to a bite (`[Dig deeper] [Mute project] [Snooze]`); a tap → a

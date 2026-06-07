@@ -76,6 +76,15 @@ class Settings(BaseSettings):
     # zero-config console; set DAILY_AGENT_FEED_CHANNEL=telegram to push by default.
     feed_channel: str = "console"
 
+    # --- Feed cadence (the pacer) ---
+    # Max chapters delivered per `feed` run; run feed periodically so the backlog
+    # trickles out instead of flooding. An explicit `--limit` overrides this.
+    feed_max_per_run: int = 3
+    # Quiet hours [start, end) on a 24h local clock; may wrap midnight. No
+    # delivery during quiet hours (bites stay queued). Set equal to disable.
+    feed_quiet_start: int = 22
+    feed_quiet_end: int = 8
+
     # --- Slack delivery (feed channel) ---
     # Bot User OAuth token (xoxb-...) with the chat:write scope.
     slack_bot_token: str = ""
