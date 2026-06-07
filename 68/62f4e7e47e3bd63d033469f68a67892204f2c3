@@ -1,0 +1,36 @@
+tests/test_storyteller.py
+  s_801bce6afa93a1::t_a83bb4fdc05e9c 65
+  s_801bce6afa93a1::t_e8df4caf8acc02 95
+src/daily_agent/feed/storyteller.py
+  s_801bce6afa93a1::t_5398ffde636b0c 147
+  s_801bce6afa93a1::t_755fed7d5cee93 85,92
+  s_801bce6afa93a1::t_c710a5a3764095 133-138
+  s_801bce6afa93a1::t_470f7497398fd9 18
+tests/test_mapping.py
+  s_801bce6afa93a1::t_7be5c8dea13122 57-58
+  s_801bce6afa93a1::t_7e851957f215c1 88-172
+  s_801bce6afa93a1::t_3c5c826132d302 9
+tests/test_feed_chapters.py
+  s_801bce6afa93a1::t_b215bd25ba2765 47
+src/daily_agent/feed/mapping.py
+  s_801bce6afa93a1::t_2dbbf7645796a8 73-80
+  s_801bce6afa93a1::t_38340deca6ab4b 12,27-31,33-37,44-48,63-72,83-84
+src/daily_agent/cli.py
+  s_801bce6afa93a1::t_2ac2cf9c71df21 675-677
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "6862f4e7e47e3bd63d033469f68a67892204f2c3",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
