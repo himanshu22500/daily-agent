@@ -927,6 +927,45 @@ def telegram_check() -> None:
     )
 
 
+@app.command(name="telegram-auth")
+def telegram_auth() -> None:
+    """One-time interactive login for MTProto (multi-stream channel creation).
+
+    Run this in your own terminal (prefix with `! ` in the agent) so you can type
+    the login code. Creates/authorizes the session file used to auto-create
+    Telegram channels. Needs DAILY_AGENT_TELEGRAM_API_ID / _API_HASH (from
+    my.telegram.org). Requires the optional dep: `uv sync --extra telegram`.
+    """
+    s = get_settings()
+    if not (s.telegram_api_id and s.telegram_api_hash):
+        console.print(
+            "[red]MTProto not configured.[/red] Set DAILY_AGENT_TELEGRAM_API_ID and "
+            "DAILY_AGENT_TELEGRAM_API_HASH (from my.telegram.org → API development tools)."
+        )
+        raise typer.Exit(1)
+    try:
+        from telethon.sync import TelegramClient
+    except ModuleNotFoundError:
+        console.print(
+            "[red]Telethon not installed.[/red] Run: uv sync --extra telegram"
+        )
+        raise typer.Exit(1)
+
+    console.print(
+        "Starting Telegram login — enter your phone, the code, and 2FA if set."
+    )
+    client = TelegramClient(
+        s.telegram_session, int(s.telegram_api_id), s.telegram_api_hash
+    )
+    client.start()  # interactive: prompts on stdin
+    me = client.get_me()
+    client.disconnect()
+    console.print(
+        f"[green]Authorized[/green] as {me.first_name} "
+        f"(@{me.username or me.id}). Session saved to {s.telegram_session}."
+    )
+
+
 def _print_digest(digest: ActivityDigest) -> None:
     console.print(
         Panel(

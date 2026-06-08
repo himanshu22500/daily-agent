@@ -98,6 +98,16 @@ class Settings(BaseSettings):
     # Your numeric chat ID (DM the bot /start first; get the ID via @userinfobot).
     telegram_chat_id: str = ""
 
+    # --- Telegram MTProto (multi-stream: auto-create per-type channels) ---
+    # From my.telegram.org (API development tools). The session file IS your
+    # account login — keep it gitignored, never in CI.
+    telegram_api_id: str = ""
+    telegram_api_hash: str = ""
+    telegram_session: str = "telegram.session"
+    # The bot's @username (without @), added as admin to created channels so it
+    # can post — e.g. himanshu_daily_agent_bot.
+    telegram_bot_username: str = ""
+
     # --- Response cache ---
     # Terminal entities (merged PRs, DONE Huly issues) are cached permanently;
     # everything else uses these TTLs (seconds). Docs change rarely -> long TTL.
@@ -121,6 +131,14 @@ class Settings(BaseSettings):
     @property
     def telegram_enabled(self) -> bool:
         return bool(self.telegram_bot_token and self.telegram_chat_id)
+
+    @property
+    def telegram_mtproto_enabled(self) -> bool:
+        return bool(
+            self.telegram_api_id
+            and self.telegram_api_hash
+            and self.telegram_bot_username
+        )
 
     @property
     def outline_enabled(self) -> bool:
