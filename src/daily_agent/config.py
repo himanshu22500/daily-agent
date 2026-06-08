@@ -87,6 +87,8 @@ class Settings(BaseSettings):
     # Route each notification type to its own auto-provisioned Telegram channel
     # (needs MTProto configured). Off => single channel/DM.
     feed_multi_stream: bool = False
+    # `telegram-reap` deletes channels unused for at least this many days.
+    channel_reap_idle_days: int = 30
 
     # --- Slack delivery (feed channel) ---
     # Bot User OAuth token (xoxb-...) with the chat:write scope.

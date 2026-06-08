@@ -31,7 +31,7 @@ from .agents.summarizer import summarize
 from .cache import Cache
 from .deliver import render_markdown, write_file
 from .config import get_settings
-from .feed.channel_registry import ChannelRegistry
+from .feed.channel_registry import ChannelRegistry, reap_stale
 from .feed.channels import (
     ConsoleChannel,
     FileChannel,
@@ -981,6 +981,37 @@ def telegram_auth() -> None:
         f"[green]Authorized[/green] as {me.first_name} "
         f"(@{me.username or me.id}). Session saved to {s.telegram_session}."
     )
+
+
+@app.command(name="telegram-reap")
+def telegram_reap(
+    idle_days: int = typer.Option(
+        None, help="Delete channels unused for at least N days (default from config)."
+    ),
+) -> None:
+    """Delete stale auto-created channels (unused past the idle threshold)."""
+    s = get_settings()
+    if not s.telegram_mtproto_enabled:
+        console.print(
+            "[red]MTProto not configured.[/red] Multi-stream channels require "
+            "DAILY_AGENT_TELEGRAM_API_ID / _API_HASH / _BOT_USERNAME + `telegram-auth`."
+        )
+        raise typer.Exit(1)
+    days = idle_days if idle_days is not None else s.channel_reap_idle_days
+    registry = ChannelRegistry(s.db_path)
+    provisioner = TelethonProvisioner(
+        api_id=s.telegram_api_id,
+        api_hash=s.telegram_api_hash,
+        session=s.telegram_session,
+        bot_username=s.telegram_bot_username,
+    )
+    reaped = reap_stale(registry, provisioner, days)
+    if reaped:
+        console.print(
+            f"[green]Reaped[/green] {len(reaped)} stale channel(s): {', '.join(reaped)}."
+        )
+    else:
+        console.print(f"No channels idle for {days}+ days.")
 
 
 def _print_digest(digest: ActivityDigest) -> None:
