@@ -1,0 +1,21 @@
+src/daily_agent/sources/telegram_provision.py
+  s_801bce6afa93a1::t_9bff4d40b0dca0 71,81-82
+tests/test_telegram_provision.py
+  s_801bce6afa93a1::t_438dd14cb41961 52-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "9fe387eecd1b552e851b1dd91ecedf39bbfeeb65",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
