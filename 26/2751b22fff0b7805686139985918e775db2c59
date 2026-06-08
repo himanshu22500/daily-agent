@@ -1,0 +1,37 @@
+.gitignore
+  s_801bce6afa93a1::t_f78a17f594c598 38-41
+pyproject.toml
+  s_801bce6afa93a1::t_ee124af4e1947f 16-20
+  s_801bce6afa93a1::t_68681d750ab70f 36
+tests/test_telegram_provision.py
+  s_801bce6afa93a1::t_fabb97e9b4aac8 40-42
+  s_801bce6afa93a1::t_08f071f4bc8e7e 1-39,43-65
+uv.lock
+  ai_agent 625-629,635,645,648,655,2076-2081,2866-2877,2981-2991
+src/daily_agent/sources/telegram_provision.py
+  s_801bce6afa93a1::t_fabb97e9b4aac8 80-82,91-93
+  s_801bce6afa93a1::t_d61fc228b31b37 1-79,83-90,94-102
+src/daily_agent/cli.py
+  s_801bce6afa93a1::t_fabb97e9b4aac8 954-959
+  s_801bce6afa93a1::t_e4082c07b2647a 930-953,960-968
+src/daily_agent/config.py
+  s_801bce6afa93a1::t_15499b06126abf 101-110
+  s_801bce6afa93a1::t_fabb97e9b4aac8 138-140
+  s_801bce6afa93a1::t_02f966aba37ae7 136-137,141-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "262751b22fff0b7805686139985918e775db2c59",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
