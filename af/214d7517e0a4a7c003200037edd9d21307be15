@@ -1,0 +1,25 @@
+tests/test_channel_registry.py
+  s_801bce6afa93a1::t_85174b88d3cc2c 5,52-53
+  s_801bce6afa93a1::t_1e7e651ab7e0fd 1-4,6-51,54-78
+src/daily_agent/feed/channel_registry.py
+  s_801bce6afa93a1::t_02481a322e8dff 1-78,87-112,117-167,173
+  s_801bce6afa93a1::t_85174b88d3cc2c 79-86,113-116,168-172
+docs/decisions.md
+  s_801bce6afa93a1::t_120fc8871dfaf0 7-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "af214d7517e0a4a7c003200037edd9d21307be15",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
