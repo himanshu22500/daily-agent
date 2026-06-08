@@ -31,9 +31,11 @@ from .agents.summarizer import summarize
 from .cache import Cache
 from .deliver import render_markdown, write_file
 from .config import get_settings
+from .feed.channel_registry import ChannelRegistry
 from .feed.channels import (
     ConsoleChannel,
     FileChannel,
+    MultiStreamTelegramChannel,
     SlackChannel,
     SlackError,
     TelegramChannel,
@@ -48,6 +50,7 @@ from .models import ActivityDigest
 from .sources.github import GitHubClient, GitHubError
 from .sources.huly import HulyClient, HulyError
 from .sources.outline import OutlineClient, OutlineError
+from .sources.telegram_provision import TelethonProvisioner
 from .storage import Store
 from .team import load_team, resolve_member
 
@@ -800,6 +803,20 @@ def feed(
     if choice == "slack":
         channel: Channel = SlackChannel(s.slack_bot_token, s.slack_destination)
         dest = "Slack"
+    elif choice == "telegram" and s.feed_multi_stream and s.telegram_mtproto_enabled:
+        registry = ChannelRegistry(s.db_path)
+        provisioner = TelethonProvisioner(
+            api_id=s.telegram_api_id,
+            api_hash=s.telegram_api_hash,
+            session=s.telegram_session,
+            bot_username=s.telegram_bot_username,
+        )
+        channel = MultiStreamTelegramChannel(
+            registry,
+            provisioner,
+            bot_factory=lambda cid: TelegramChannel(s.telegram_bot_token, str(cid)),
+        )
+        dest = "Telegram (multi-stream)"
     elif choice == "telegram":
         channel = TelegramChannel(s.telegram_bot_token, s.telegram_chat_id)
         dest = "Telegram"
