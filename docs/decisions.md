@@ -4,6 +4,20 @@ Durable decisions, in the repo so every agent (which starts with only the repo �
 no shared memory) inherits them. Newest first. Keep entries short; link to the
 ROADMAP section or PR for detail.
 
+## 2026-06-08 — Multi-stream Telegram delivery via MTProto channels
+The feed will carry several notification *types* (org-activity, insights, alerts,
+…); one channel for all would be poor UX. The tool will route each type to its
+own Telegram **channel** and **create/delete channels on its own**. A bot can't
+create channels, so this uses an **MTProto user-client (Telethon)** under the
+maintainer's account for provisioning, while the existing **bot** does the
+posting. (Forum topics — bot-doable — were the recommended alternative but the
+maintainer chose real channels.) Consequences: `api_id`/`api_hash` + the session
+are the most sensitive creds — **gitignored, never in CI**; the MTProto code is
+**local-only / `needs-local-verification`** (CI + cloud agents have no session)
+and offline tests mock Telethon; the one-time phone-login is run locally by the
+maintainer. Built provisioner-agnostic first (registry + ensure/reap). Issues
+#38–#41.
+
 ## 2026-06-07 — Agent collaboration model
 Work is tracked in **GitHub Issues** (`ready`/`in-progress`/`needs-local-verification`
 labels); `ROADMAP.md` is the strategy/vision doc, not a task tracker. **CI**
