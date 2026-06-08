@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     # delivery during quiet hours (bites stay queued). Set equal to disable.
     feed_quiet_start: int = 22
     feed_quiet_end: int = 8
+    # Route each notification type to its own auto-provisioned Telegram channel
+    # (needs MTProto configured). Off => single channel/DM.
+    feed_multi_stream: bool = False
 
     # --- Slack delivery (feed channel) ---
     # Bot User OAuth token (xoxb-...) with the chat:write scope.

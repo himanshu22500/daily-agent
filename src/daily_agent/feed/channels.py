@@ -159,3 +159,55 @@ class TelegramChannel:
 
     def close(self) -> None:
         self._client.close()
+
+
+# --------------------------------------------------------------------------- #
+# Multi-stream routing — deliver each notification type to its own channel
+# --------------------------------------------------------------------------- #
+# Map a bite's `kind` to its stream: (stable stream key, channel title). New feed
+# types (insights, alerts, …) add an entry; unknown kinds fall to org-activity.
+_STREAMS: dict[str, tuple[str, str]] = {
+    "chapter": ("org-activity", "daily-agent · Org Activity"),
+}
+_DEFAULT_STREAM: tuple[str, str] = ("org-activity", "daily-agent · Org Activity")
+
+
+def stream_for(item: OutboxItem) -> tuple[str, str]:
+    """Return the (stream_key, channel_title) a bite should be delivered to."""
+    return _STREAMS.get(item.kind, _DEFAULT_STREAM)
+
+
+class MultiStreamTelegramChannel:
+    """Routes each bite to the Telegram channel for its stream, creating it on demand.
+
+    Resolves the bite's stream, ensures (provisioning on first use) the channel
+    that backs it, and posts there with the bot. Channel create/delete is the
+    provisioner's job; ``bot_factory(channel_id)`` builds the posting channel
+    (injected for tests so this stays offline-testable).
+    """
+
+    name = "telegram-multi"
+
+    def __init__(self, registry, provisioner, *, bot_factory, resolver=stream_for):
+        self._registry = registry
+        self._provisioner = provisioner
+        self._bot_factory = bot_factory
+        self._resolver = resolver
+
+    def send(self, item: OutboxItem) -> None:
+        # Imported here to avoid a module import cycle (channel_registry is a peer).
+        from .channel_registry import ensure_channel
+
+        stream_key, title = self._resolver(item)
+        channel_id = ensure_channel(
+            stream_key, title, registry=self._registry, provisioner=self._provisioner
+        )
+        bot = self._bot_factory(channel_id)
+        try:
+            bot.send(item)
+        finally:
+            if hasattr(bot, "close"):
+                bot.close()
+
+    def close(self) -> None:
+        return None
