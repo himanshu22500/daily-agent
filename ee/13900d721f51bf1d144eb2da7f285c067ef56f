@@ -1,0 +1,25 @@
+.env.example
+  s_801bce6afa93a1::t_36b0d4b60c7d71 91-108
+src/daily_agent/cli.py
+  s_801bce6afa93a1::t_7355febb0d5861 986-1009,1013-1016
+  s_801bce6afa93a1::t_6aff3643c8a7b2 34
+  s_801bce6afa93a1::t_1ae036a9e16bcf 1010-1012
+src/daily_agent/config.py
+  s_801bce6afa93a1::t_853fcd5b471716 90-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "ee13900d721f51bf1d144eb2da7f285c067ef56f",
+  "prompts": {},
+  "sessions": {
+    "s_801bce6afa93a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9b46265-b58b-4d2f-96c2-96105880ed57",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
