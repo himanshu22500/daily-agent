@@ -35,3 +35,7 @@ team.json
 
 # Generated daily digests (contain names/work summaries — PII)
 digests/
+
+# Telegram MTProto session (account login — never commit)
+*.session
+*.session-journal
