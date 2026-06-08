@@ -68,7 +68,10 @@ class TelethonProvisioner:
 
     def create_channel(self, title: str, about: str = "") -> int:
         """Create a broadcast channel, add the bot as a posting admin, return its id."""
-        from telethon.tl.functions.channels import CreateChannelRequest, EditAdminRequest
+        from telethon.tl.functions.channels import (
+            CreateChannelRequest,
+            EditAdminRequest,
+        )
         from telethon.tl.types import ChatAdminRights
 
         client = self._conn()
