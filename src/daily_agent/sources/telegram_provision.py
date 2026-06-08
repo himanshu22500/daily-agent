@@ -68,11 +68,7 @@ class TelethonProvisioner:
 
     def create_channel(self, title: str, about: str = "") -> int:
         """Create a broadcast channel, add the bot as a posting admin, return its id."""
-        from telethon.tl.functions.channels import (
-            CreateChannelRequest,
-            EditAdminRequest,
-            InviteToChannelRequest,
-        )
+        from telethon.tl.functions.channels import CreateChannelRequest, EditAdminRequest
         from telethon.tl.types import ChatAdminRights
 
         client = self._conn()
@@ -82,8 +78,8 @@ class TelethonProvisioner:
             )
         )
         channel = result.chats[0]
-        # Add the bot, then promote it so it can post.
-        client(InviteToChannelRequest(channel, [self._bot]))
+        # A bot can't be invited to a channel as a member — promoting it to admin
+        # is what adds it (and lets it post). One EditAdminRequest does both.
         client(
             EditAdminRequest(
                 channel,

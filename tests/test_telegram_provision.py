@@ -49,11 +49,8 @@ def test_create_channel_creates_invites_promotes_and_marks_id():
     )
     cid = prov.create_channel("Org Activity", "about")
     assert cid == -10042  # marked id from the fake channel id 42
-    assert fake.calls == [
-        "CreateChannelRequest",
-        "InviteToChannelRequest",
-        "EditAdminRequest",
-    ]
+    # A bot can't be invited as a member — EditAdminRequest both adds + promotes it.
+    assert fake.calls == ["CreateChannelRequest", "EditAdminRequest"]
 
 
 def test_delete_channel_issues_delete_request():
