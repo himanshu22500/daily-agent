@@ -1,0 +1,9 @@
+src/daily_agent/sources/telegram_provision.py
+  ai_agent 71-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "3ba7e20d6ba0d7e3dfe0d77515434038125cc4b5",
+  "prompts": {}
+}
