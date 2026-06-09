@@ -117,6 +117,7 @@ class GitHubClient:
                     repo=repo,
                     number=p["number"],
                     title=p["title"],
+                    head_ref_name=(p.get("head") or {}).get("ref") or "",
                     author=(p.get("user") or {}).get("login", "unknown"),
                     state=p["state"],
                     merged=bool(p.get("merged_at")),
@@ -176,21 +177,30 @@ class GitHubClient:
         out: list[PullRequest] = []
         for it in resp.json().get("items", [])[:limit]:
             pr_meta = it.get("pull_request") or {}
+            pr_details: dict = {}
+            if pr_meta.get("url"):
+                try:
+                    pr_details = (await self._raw(pr_meta["url"])).json()
+                except GitHubError:
+                    pr_details = {}
             repo = it.get("repository_url", "/").rsplit("/", 1)[-1]
+            merged_at = pr_details.get("merged_at") or pr_meta.get("merged_at")
             out.append(
                 PullRequest(
                     repo=repo,
                     number=it["number"],
                     title=it["title"],
+                    head_ref_name=(pr_details.get("head") or {}).get("ref") or "",
                     author=author,
                     state=it["state"],
-                    merged=bool(pr_meta.get("merged_at")),
+                    merged=bool(merged_at),
                     created_at=_parse(it["created_at"]),
-                    merged_at=_parse(pr_meta["merged_at"])
-                    if pr_meta.get("merged_at")
-                    else None,
+                    merged_at=_parse(merged_at) if merged_at else None,
                     url=it["html_url"],
                     body=(it.get("body") or "")[:1000],
+                    additions=pr_details.get("additions") or 0,
+                    deletions=pr_details.get("deletions") or 0,
+                    changed_files=pr_details.get("changed_files") or 0,
                 )
             )
         if self._cache:

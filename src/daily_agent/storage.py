@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy import text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Field, SQLModel, select
 
@@ -28,6 +29,7 @@ class PullRequestRow(SQLModel, table=True):
     repo: str = Field(primary_key=True)
     number: int = Field(primary_key=True)
     title: str
+    head_ref_name: str = ""
     author: str
     state: str
     merged: int
@@ -57,6 +59,7 @@ class CommitRow(SQLModel, table=True):
 # created_at, url, author) are deliberately left untouched on conflict.
 _PR_MUTABLE = (
     "title",
+    "head_ref_name",
     "state",
     "merged",
     "merged_at",
@@ -76,6 +79,29 @@ class Store:
         self.db_path = str(db_path)
         self._engine = make_engine(self.db_path)
         create_tables(self._engine, PullRequestRow, CommitRow)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Add ``head_ref_name`` to a pre-existing ``pull_requests`` table.
+
+        ``create_all`` only creates missing *tables*, never adds columns, and
+        there is no migration system (see ``db.py``) — so a DB created before
+        issue #35 keeps its old schema. Bring it forward (issue #35).
+        """
+        with session_scope(self._engine) as session:
+            cols = {
+                row[1]
+                for row in session.execute(
+                    text("PRAGMA table_info(pull_requests)")
+                ).all()
+            }
+            if "head_ref_name" not in cols:
+                session.execute(
+                    text(
+                        "ALTER TABLE pull_requests "
+                        "ADD COLUMN head_ref_name TEXT NOT NULL DEFAULT ''"
+                    )
+                )
 
     # --- writes ----------------------------------------------------------- #
     def save_activity(self, activity: RepoActivity) -> tuple[int, int]:
@@ -87,6 +113,7 @@ class Store:
                     repo=pr.repo,
                     number=pr.number,
                     title=pr.title,
+                    head_ref_name=pr.head_ref_name,
                     author=pr.author,
                     state=pr.state,
                     merged=int(pr.merged),
@@ -159,6 +186,7 @@ def _to_pr(row: PullRequestRow) -> PullRequest:
         repo=row.repo,
         number=row.number,
         title=row.title,
+        head_ref_name=row.head_ref_name,
         author=row.author,
         state=row.state,
         merged=bool(row.merged),
