@@ -1,0 +1,34 @@
+src/daily_agent/feed/channels.py
+  s_83a5766dd5830a::t_470b67d792fbec 134-140,158,160-164
+  s_83a5766dd5830a::t_5e5dd76c38aa16 207,217
+  s_83a5766dd5830a::t_cbaed70871875f 21
+docs/decisions.md
+  s_83a5766dd5830a::t_0cd55118ba5ab9 7-21
+tests/test_telegram.py
+  s_83a5766dd5830a::t_624a85eb1699a8 45-62
+tests/test_outbox.py
+  s_83a5766dd5830a::t_43b2c0e9923b37 7,16,27-39
+  s_83a5766dd5830a::t_26814e9828b679 132-161
+src/daily_agent/feed/outbox.py
+  s_83a5766dd5830a::t_866f56177acac6 303-318
+  s_83a5766dd5830a::t_d0d327db101dcf 58-71
+  s_83a5766dd5830a::t_0ab9c55dec94b1 104-116,121-123,128
+  s_83a5766dd5830a::t_3c4da94ac42e0c 221,231
+  s_83a5766dd5830a::t_16cd7260873e03 236-240,260-276
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "d4c02676c19499b2d6811e02098d0f22252bdd6e",
+  "prompts": {},
+  "sessions": {
+    "s_83a5766dd5830a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a7fc2ff-2859-409c-8cb7-586dcfd5eed8",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
