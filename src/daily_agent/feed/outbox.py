@@ -63,6 +63,24 @@ class WatermarkRow(SQLModel, table=True):
     last_sent_at: str
 
 
+class SentMessageRow(SQLModel, table=True):
+    """Every message the bot has posted, keyed to the bite it carried. Two jobs:
+
+    1. the disambiguation set — an inbound ``channel_post`` whose id is in here is
+       one of our own posts, not a human follow-up (see issue #49);
+    2. grounding — an inbound reply whose ``reply_to`` id is in here maps back to a
+       bite's ``dedup_key``/``subject``, so the answer can be grounded on it.
+    """
+
+    __tablename__ = "sent_messages"
+
+    chat_id: str = Field(primary_key=True)
+    message_id: int = Field(primary_key=True)
+    dedup_key: str
+    subject: str
+    sent_at: str
+
+
 # A bite that has failed this many times is parked as `dead`.
 MAX_ATTEMPTS = 5
 # Exponential backoff base (seconds): wait grows 60s, 120s, 240s, ...
@@ -92,23 +110,44 @@ class DrainResult:
     dead: int
 
 
+@dataclass(frozen=True)
+class SendReceipt:
+    """Identifies the message a channel just posted, so it can be replied to.
+
+    Returned by channels that address messages (Telegram); the outbox persists it
+    to ``sent_messages`` keyed to the bite. Channels with no addressable message
+    (console, file) return ``None`` and nothing is persisted.
+    """
+
+    chat_id: str
+    message_id: int
+
+
 class Channel(Protocol):
     """Anything that can deliver an :class:`OutboxItem`.
 
     ``send`` must raise on failure (so the outbox retries) and return normally on
-    success (so the outbox commits the delivery).
+    success (so the outbox commits the delivery). It may return a
+    :class:`SendReceipt` identifying the posted message; ``None`` means the
+    channel has nothing addressable to record.
     """
 
     name: str
 
-    def send(self, item: OutboxItem) -> None: ...
+    def send(self, item: OutboxItem) -> "SendReceipt | None": ...
 
 
 class Outbox:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = str(db_path)
         self._engine = make_engine(self.db_path)
-        create_tables(self._engine, OutboxRow, DeliveredLedgerRow, WatermarkRow)
+        create_tables(
+            self._engine,
+            OutboxRow,
+            DeliveredLedgerRow,
+            WatermarkRow,
+            SentMessageRow,
+        )
 
     # --- enqueue ---------------------------------------------------------- #
     def enqueue(self, bite: Bite, *, now: datetime | None = None) -> bool:
@@ -185,7 +224,7 @@ class Outbox:
             due = self._due(session, moment, limit)
         for item in due:
             try:
-                channel.send(item)
+                receipt = channel.send(item)
             except Exception as exc:  # noqa: BLE001 - any send failure retries
                 with session_scope(self._engine) as session:
                     self._mark_failed(session, item, str(exc), moment)
@@ -195,11 +234,17 @@ class Outbox:
                     failed += 1
                 continue
             with session_scope(self._engine) as session:
-                self._mark_sent(session, item, moment)
+                self._mark_sent(session, item, moment, receipt)
             sent += 1
         return DrainResult(sent=sent, failed=failed, dead=dead)
 
-    def _mark_sent(self, session: Session, item: OutboxItem, now: datetime) -> None:
+    def _mark_sent(
+        self,
+        session: Session,
+        item: OutboxItem,
+        now: datetime,
+        receipt: "SendReceipt | None" = None,
+    ) -> None:
         stamp = now.isoformat()
         row = session.get(OutboxRow, item.id)
         if row is not None:
@@ -223,6 +268,25 @@ class Outbox:
                 where=wm.excluded.last_sent_at > WatermarkRow.last_sent_at,
             )
         )
+        if receipt is not None:
+            # Re-delivery to the same (chat, message) just refreshes the mapping.
+            sm = sqlite_insert(SentMessageRow).values(
+                chat_id=str(receipt.chat_id),
+                message_id=int(receipt.message_id),
+                dedup_key=item.dedup_key,
+                subject=item.subject,
+                sent_at=stamp,
+            )
+            session.execute(
+                sm.on_conflict_do_update(
+                    index_elements=["chat_id", "message_id"],
+                    set_={
+                        "dedup_key": sm.excluded.dedup_key,
+                        "subject": sm.excluded.subject,
+                        "sent_at": sm.excluded.sent_at,
+                    },
+                )
+            )
 
     def _mark_failed(
         self, session: Session, item: OutboxItem, error: str, now: datetime
@@ -246,6 +310,24 @@ class Outbox:
         with session_scope(self._engine) as session:
             row = session.get(WatermarkRow, subject)
             return datetime.fromisoformat(row.last_sent_at) if row else None
+
+    def sent_message(self, chat_id: str, message_id: int) -> dict | None:
+        """Look up a message the bot posted, by ``(chat_id, message_id)``.
+
+        Returns ``{dedup_key, subject, sent_at}`` if we sent it, else ``None``.
+        The listener uses this twice per inbound update: the incoming message id
+        (is it one of ours? → ignore) and its ``reply_to`` id (does it reply to a
+        known bite? → answer, grounded on that bite's subject).
+        """
+        with session_scope(self._engine) as session:
+            row = session.get(SentMessageRow, (str(chat_id), int(message_id)))
+            if row is None:
+                return None
+            return {
+                "dedup_key": row.dedup_key,
+                "subject": row.subject,
+                "sent_at": row.sent_at,
+            }
 
     def delivered_keys(self) -> set[str]:
         with session_scope(self._engine) as session:

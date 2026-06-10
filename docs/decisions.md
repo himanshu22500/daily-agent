@@ -20,6 +20,21 @@ per item. `session_scope` uses `expire_on_commit=False` so a fetched row maps to
 its return type after the scope closes. Verified offline that a pre-migration DB
 opens, round-trips, and keeps a byte-identical schema. Issue #51.
 
+## 2026-06-09 — Inbound feed follow-ups arrive as Telegram `channel_post`
+The feed gains an inbound path: reply to any bite to ask a grounded follow-up
+(issue #49). A live `getUpdates` test (2026-06-09) settled the architecture:
+because the maintainer is a **channel admin**, an in-channel reply arrives as a
+**`channel_post`** update via plain `getUpdates` — **no linked discussion group,
+no DM, no Telethon listener needed** (the bot's group-privacy flag gates *groups*,
+not channels). The one wrinkle: in a broadcast channel both the bot's posts and
+the maintainer's replies are attributed to the channel (`sender_chat`), so an
+inbound post can't be told from our own by sender. Disambiguation: **persist every
+`message_id` the bot sends**, keyed to its bite — an inbound reply whose id is in
+that set is our own post (ignore); one that replies to a stored bite is a human
+follow-up to answer, grounded on that bite's initiative. Phase 1 (this PR) adds
+the `sent_messages(chat_id, message_id → dedup_key, subject)` store; the
+long-poll listener + grounded reply land in later PRs.
+
 ## 2026-06-08 — Multi-stream Telegram delivery via MTProto channels
 The feed will carry several notification *types* (org-activity, insights, alerts,
 …); one channel for all would be poor UX. The tool will route each type to its
