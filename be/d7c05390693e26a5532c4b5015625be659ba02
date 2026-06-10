@@ -1,0 +1,37 @@
+uv.lock
+  s_83a5766dd5830a::t_e137c8084a2d1f 622,646,1024-1100,3034-3093
+src/daily_agent/db.py
+  s_83a5766dd5830a::t_cdaf74ab9dc517 43-49
+  s_83a5766dd5830a::t_23917bbf3a338b 1-42,50-54
+src/daily_agent/feed/outbox.py
+  s_83a5766dd5830a::t_e137c8084a2d1f 27,29-32,35-64,110-111,121-122,124-132,140-148,151,154-159,161,178-179,184-185,191-192,196,198-207,209-210,212-218,222,224-226,228-229,231-236,240-242,245-246,249,251-254,256-259
+src/daily_agent/cache.py
+  s_83a5766dd5830a::t_d86a80e38eabeb 10-11,19,21-33,40-42,44,50-51,54-57,63-68,70-78,83,92
+  s_83a5766dd5830a::t_8e4db42fe5b13d 84-85,93-101
+src/daily_agent/storage.py
+  s_83a5766dd5830a::t_63d11d0b589c99 6-10,18-21,24-67,77-78,84,86-100,102-104,106-117,125-138,142-148,153,155-167,171,173-178
+src/daily_agent/feed/initiatives_store.py
+  s_83a5766dd5830a::t_b5c4444ce9e0c2 15-29,48-49,52-54,58-60,62-70,77-84,87-91,94,96-100
+src/daily_agent/feed/channel_registry.py
+  s_83a5766dd5830a::t_2af0b48b1c230c 18-33,62-63,66-68,79-94,96,99-104,107-110,113-117,167,169-173
+pyproject.toml
+  s_83a5766dd5830a::t_097a53adbb2b27 14
+docs/decisions.md
+  s_83a5766dd5830a::t_eaedb0fa27ce15 7-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "bed7c05390693e26a5532c4b5015625be659ba02",
+  "prompts": {},
+  "sessions": {
+    "s_83a5766dd5830a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a7fc2ff-2859-409c-8cb7-586dcfd5eed8",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
