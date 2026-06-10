@@ -4,6 +4,22 @@ Durable decisions, in the repo so every agent (which starts with only the repo �
 no shared memory) inherits them. Newest first. Keep entries short; link to the
 ROADMAP section or PR for detail.
 
+## 2026-06-10 — DB access standardized on SQLModel (reverses "no ORM")
+All five stores (`Store`, `Cache`, `Outbox`, `InitiativeStore`, `ChannelRegistry`)
+now use **SQLModel** (SQLAlchemy + Pydantic) over a shared engine/session helper
+(`daily_agent/db.py`) instead of hand-rolled `sqlite3` + raw SQL. This **reverses
+the earlier implicit "no ORM, raw SQLite" stance** — chosen to fit the
+Pydantic-heavy stack and stop hand-writing SQL. The staged-pipeline-over-SQLite
+architecture is unchanged (still SQLite, still exact-key dedup, no broker/vector
+DB). Constraints honored so it's behavior-preserving with **no migration system**:
+on-disk schema is untouched (`create_all` is `IF NOT EXISTS`; timestamps stay ISO
+strings in TEXT columns, cache `fetched_at` stays epoch REAL); the public store
+API and return types are unchanged; upserts use the SQLite dialect `insert()`
+(incl. the watermark's forward-only conditional update); `drain` still commits
+per item. `session_scope` uses `expire_on_commit=False` so a fetched row maps to
+its return type after the scope closes. Verified offline that a pre-migration DB
+opens, round-trips, and keeps a byte-identical schema. Issue #51.
+
 ## 2026-06-08 — Multi-stream Telegram delivery via MTProto channels
 The feed will carry several notification *types* (org-activity, insights, alerts,
 …); one channel for all would be poor UX. The tool will route each type to its

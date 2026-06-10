@@ -12,22 +12,25 @@ the outbox was channel-agnostic before any real channel existed.
 
 from __future__ import annotations
 
-import sqlite3
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterator, Protocol
+from typing import Protocol
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS channels (
-    stream_key    TEXT    NOT NULL PRIMARY KEY,
-    channel_id    INTEGER NOT NULL,
-    title         TEXT    NOT NULL,
-    created_at    TEXT    NOT NULL,
-    last_used_at  TEXT    NOT NULL
-);
-"""
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlmodel import Field, SQLModel, select
+
+from ..db import create_tables, make_engine, session_scope
+
+
+class ChannelRow(SQLModel, table=True):
+    __tablename__ = "channels"
+
+    stream_key: str = Field(primary_key=True)
+    channel_id: int
+    title: str
+    created_at: str
+    last_used_at: str
 
 
 def _now() -> datetime:
@@ -56,25 +59,13 @@ class ChannelRegistry:
 
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = str(db_path)
-        with self._conn() as conn:
-            conn.executescript(_SCHEMA)
-
-    @contextmanager
-    def _conn(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-            conn.commit()
-        finally:
-            conn.close()
+        self._engine = make_engine(self.db_path)
+        create_tables(self._engine, ChannelRow)
 
     def get(self, stream_key: str) -> ChannelRecord | None:
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM channels WHERE stream_key=?", (stream_key,)
-            ).fetchone()
-        return _row(row) if row else None
+        with session_scope(self._engine) as session:
+            row = session.get(ChannelRow, stream_key)
+            return _to_record(row) if row else None
 
     def put(
         self,
@@ -85,35 +76,45 @@ class ChannelRegistry:
         now: datetime | None = None,
     ) -> None:
         stamp = (now or _now()).isoformat()
-        with self._conn() as conn:
-            conn.execute(
-                """
-                INSERT INTO channels (stream_key, channel_id, title, created_at, last_used_at)
-                VALUES (?,?,?,?,?)
-                ON CONFLICT(stream_key) DO UPDATE SET
-                  channel_id=excluded.channel_id, title=excluded.title,
-                  last_used_at=excluded.last_used_at
-                """,
-                (stream_key, channel_id, title, stamp, stamp),
+        with session_scope(self._engine) as session:
+            stmt = sqlite_insert(ChannelRow).values(
+                stream_key=stream_key,
+                channel_id=channel_id,
+                title=title,
+                created_at=stamp,
+                last_used_at=stamp,
             )
+            # created_at is intentionally left untouched on conflict.
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["stream_key"],
+                set_={
+                    "channel_id": stmt.excluded.channel_id,
+                    "title": stmt.excluded.title,
+                    "last_used_at": stmt.excluded.last_used_at,
+                },
+            )
+            session.execute(stmt)
 
     def touch(self, stream_key: str, *, now: datetime | None = None) -> None:
-        with self._conn() as conn:
-            conn.execute(
-                "UPDATE channels SET last_used_at=? WHERE stream_key=?",
-                ((now or _now()).isoformat(), stream_key),
-            )
+        with session_scope(self._engine) as session:
+            row = session.get(ChannelRow, stream_key)
+            if row is None:
+                return
+            row.last_used_at = (now or _now()).isoformat()
+            session.add(row)
 
     def delete(self, stream_key: str) -> None:
-        with self._conn() as conn:
-            conn.execute("DELETE FROM channels WHERE stream_key=?", (stream_key,))
+        with session_scope(self._engine) as session:
+            row = session.get(ChannelRow, stream_key)
+            if row is not None:
+                session.delete(row)
 
     def all(self) -> list[ChannelRecord]:
-        with self._conn() as conn:
-            return [
-                _row(r)
-                for r in conn.execute("SELECT * FROM channels ORDER BY created_at")
-            ]
+        with session_scope(self._engine) as session:
+            rows = session.exec(
+                select(ChannelRow).order_by(ChannelRow.created_at)
+            ).all()
+            return [_to_record(r) for r in rows]
 
 
 def ensure_channel(
@@ -163,11 +164,11 @@ def reap_stale(
     return reaped
 
 
-def _row(row: sqlite3.Row) -> ChannelRecord:
+def _to_record(row: ChannelRow) -> ChannelRecord:
     return ChannelRecord(
-        stream_key=row["stream_key"],
-        channel_id=row["channel_id"],
-        title=row["title"],
-        created_at=row["created_at"],
-        last_used_at=row["last_used_at"],
+        stream_key=row.stream_key,
+        channel_id=row.channel_id,
+        title=row.title,
+        created_at=row.created_at,
+        last_used_at=row.last_used_at,
     )
