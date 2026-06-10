@@ -42,6 +42,24 @@ def test_send_posts_to_sendmessage():
     assert "Add billing" in seen["body"]["text"]
 
 
+def test_send_returns_receipt_with_message_id():
+    # The message_id is what a reply threads under and how the inbound listener
+    # tells our own posts from human follow-ups (issue #49).
+    handler = lambda req: httpx.Response(  # noqa: E731
+        200, json={"ok": True, "result": {"message_id": 7}}
+    )
+    receipt = _channel(handler).send(_item())
+    assert receipt is not None
+    assert receipt.message_id == 7
+    assert receipt.chat_id == "42"
+
+
+def test_send_returns_none_when_no_message_id():
+    # A success without a result payload yields no receipt — nothing to persist.
+    handler = lambda req: httpx.Response(200, json={"ok": True})  # noqa: E731
+    assert _channel(handler).send(_item()) is None
+
+
 def test_api_ok_false_raises_with_description():
     ch = _channel(
         lambda req: httpx.Response(

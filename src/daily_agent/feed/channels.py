@@ -18,7 +18,7 @@ import httpx
 from rich.console import Console
 from rich.panel import Panel
 
-from .outbox import OutboxItem
+from .outbox import OutboxItem, SendReceipt
 
 
 class ConsoleChannel:
@@ -131,7 +131,13 @@ class TelegramChannel:
         self.chat_id = chat_id
         self._client = client or httpx.Client(timeout=10.0)
 
-    def _post(self, text: str) -> None:
+    def _post(self, text: str) -> int | None:
+        """Post ``text``; return Telegram's ``message_id`` (None if absent).
+
+        The message_id lets a reply be threaded under this message, and is the
+        identity the inbound listener stores to tell our own posts apart from
+        human follow-ups (issue #49).
+        """
         resp = self._client.post(
             f"https://api.telegram.org/bot{self.token}/sendMessage",
             json={
@@ -149,9 +155,13 @@ class TelegramChannel:
             raise TelegramError(f"non-JSON response (HTTP {resp.status_code})")
         if not data.get("ok"):
             raise TelegramError(data.get("description") or f"HTTP {resp.status_code}")
+        return (data.get("result") or {}).get("message_id")
 
-    def send(self, item: OutboxItem) -> None:
-        self._post(item.content)
+    def send(self, item: OutboxItem) -> SendReceipt | None:
+        message_id = self._post(item.content)
+        if message_id is None:
+            return None
+        return SendReceipt(chat_id=str(self.chat_id), message_id=message_id)
 
     def send_text(self, text: str) -> None:
         """Post an arbitrary message — used for connectivity checks."""
@@ -194,7 +204,7 @@ class MultiStreamTelegramChannel:
         self._bot_factory = bot_factory
         self._resolver = resolver
 
-    def send(self, item: OutboxItem) -> None:
+    def send(self, item: OutboxItem) -> SendReceipt | None:
         # Imported here to avoid a module import cycle (channel_registry is a peer).
         from .channel_registry import ensure_channel
 
@@ -204,7 +214,7 @@ class MultiStreamTelegramChannel:
         )
         bot = self._bot_factory(channel_id)
         try:
-            bot.send(item)
+            return bot.send(item)
         finally:
             if hasattr(bot, "close"):
                 bot.close()
