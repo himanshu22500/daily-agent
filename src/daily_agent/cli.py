@@ -43,6 +43,7 @@ from .feed.channels import (
 )
 from .feed.delta import bites_for_activity
 from .feed.initiatives_store import InitiativeStore
+from .feed.listener import FollowUp, Listener, ListenerStore, TelegramUpdates
 from .feed.outbox import Channel, Outbox
 from .feed.pacer import Pacer
 from .feed.storyteller import chapters_to_bites, render_chapters
@@ -942,6 +943,52 @@ def telegram_check() -> None:
     console.print(
         f"[green]Sent[/green] a test message to chat {s.telegram_chat_id}. Check Telegram."
     )
+
+
+@app.command(name="telegram-listen")
+def telegram_listen() -> None:
+    """Long-poll Telegram for replies to feed bites (inbound follow-ups).
+
+    The one persistent process: it watches every channel the bot posts to and,
+    when you reply to a bite, identifies that follow-up against the messages we
+    sent. Run it under launchd (`scripts/install-listen-launchd.sh`) so it stays
+    up. Phase 2 identifies + logs the follow-up; grounding an answer and posting
+    it threaded back land in later phases.
+    """
+    s = get_settings()
+    if not s.telegram_enabled:
+        console.print(
+            "[red]Telegram not configured.[/red] Set DAILY_AGENT_TELEGRAM_BOT_TOKEN "
+            "and DAILY_AGENT_TELEGRAM_CHAT_ID, then run `daily-agent telegram-check`."
+        )
+        raise typer.Exit(1)
+
+    outbox = Outbox(s.db_path)
+    updates = TelegramUpdates(s.telegram_bot_token)
+
+    def handler(f: FollowUp) -> None:
+        console.print(
+            f"[cyan]Follow-up[/cyan] on [bold]{f.subject}[/bold]: {f.text!r} "
+            f"(reply to bite {f.dedup_key})"
+        )
+
+    listener = Listener(
+        updates,
+        ListenerStore(s.db_path),
+        outbox.sent_message,
+        handler,
+        on_event=lambda m: console.print(f"[yellow]listener[/yellow] {m}"),
+    )
+    console.print(
+        "[green]Listening[/green] for Telegram follow-ups — reply to a bite in the "
+        "feed channel. Ctrl-C to stop."
+    )
+    try:
+        listener.run_forever()
+    except KeyboardInterrupt:
+        console.print("\nStopped.")
+    finally:
+        updates.close()
 
 
 @app.command(name="telegram-auth")

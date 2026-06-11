@@ -187,6 +187,25 @@ launchd. Uninstall with `launchctl unload ~/Library/LaunchAgents/com.daily-agent
 > Runs only while your Mac is awake. For always-on cloud scheduling you'd move
 > secrets into a CI provider — deferred for now.
 
+### Inbound follow-ups (reply to the feed)
+
+Reply to any bite in your Telegram feed channel and a long-poll listener picks it
+up. It's a persistent process (it long-polls `getUpdates`), so it runs under a
+`KeepAlive` launchd job rather than on an interval:
+
+```bash
+scripts/install-listen-launchd.sh           # keeps the listener running
+daily-agent telegram-listen                  # or run it in the foreground
+launchctl unload ~/Library/LaunchAgents/com.daily-agent.listen.plist   # stop
+```
+
+It identifies which replies are genuine follow-ups (a reply to a bite we sent,
+not one of the bot's own posts) using the message ids the outbox records, and
+survives restarts via a durable offset. Logs go to `digests/listen.{out,err}.log`.
+
+> Today it identifies and logs each follow-up; grounding an answer and posting it
+> back threaded under your reply land in the next phases of #49.
+
 ## Architecture
 
 ```
