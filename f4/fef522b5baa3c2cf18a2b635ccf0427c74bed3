@@ -1,0 +1,23 @@
+src/daily_agent/feed/outbox.py
+  s_83a5766dd5830a::t_e4612f6daf227c 124-134,144-146
+src/daily_agent/storage.py
+  s_83a5766dd5830a::t_e4612f6daf227c 108-120
+src/daily_agent/cache.py
+  s_83a5766dd5830a::t_e4612f6daf227c 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "f4fef522b5baa3c2cf18a2b635ccf0427c74bed3",
+  "prompts": {},
+  "sessions": {
+    "s_83a5766dd5830a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a7fc2ff-2859-409c-8cb7-586dcfd5eed8",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
