@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from daily_agent.feed.outbox import MAX_ATTEMPTS, Outbox, OutboxItem
+from daily_agent.feed.outbox import MAX_ATTEMPTS, Outbox, OutboxItem, SendReceipt
 from daily_agent.models import Bite
 
 
@@ -13,7 +13,7 @@ def _bite(key: str = "pr:api#1@merged", subject: str = "repo:api") -> Bite:
 
 
 class _Collector:
-    """A channel that records what it was asked to send."""
+    """A channel that records what it was asked to send (returns no receipt)."""
 
     name = "collector"
 
@@ -22,6 +22,21 @@ class _Collector:
 
     def send(self, item: OutboxItem) -> None:
         self.sent.append(item)
+
+
+class _Receipting:
+    """A channel that returns a :class:`SendReceipt`, like Telegram does."""
+
+    name = "receipting"
+
+    def __init__(self, chat_id: str = "-100", start_id: int = 100) -> None:
+        self.chat_id = chat_id
+        self._next = start_id
+
+    def send(self, item: OutboxItem) -> SendReceipt:
+        receipt = SendReceipt(chat_id=self.chat_id, message_id=self._next)
+        self._next += 1
+        return receipt
 
 
 class _Flaky:
@@ -114,3 +129,33 @@ def test_limit_caps_deliveries_per_drain(tmp_path):
     ch = _Collector()
     assert ob.drain(ch, limit=2).sent == 2
     assert ob.stats()["pending"] == 3
+
+
+def test_send_receipt_is_persisted_and_round_trips(tmp_path):
+    ob = Outbox(tmp_path / "f.db")
+    ob.enqueue(_bite(key="chapter:comms-v3:abc", subject="initiative:comms-v3"))
+    ob.drain(_Receipting(chat_id="-100", start_id=100))
+
+    found = ob.sent_message("-100", 100)
+    assert found is not None
+    assert found["dedup_key"] == "chapter:comms-v3:abc"
+    assert found["subject"] == "initiative:comms-v3"
+    # chat_id is matched as text, message_id as int.
+    assert ob.sent_message("-100", 100) == ob.sent_message(-100, "100")
+
+
+def test_no_receipt_when_channel_returns_none(tmp_path):
+    # Console/file channels return None — nothing is recorded to disambiguate.
+    ob = Outbox(tmp_path / "f.db")
+    ob.enqueue(_bite())
+    ob.drain(_Collector())
+    assert ob.sent_message("-100", 100) is None
+
+
+def test_unknown_message_lookup_returns_none(tmp_path):
+    ob = Outbox(tmp_path / "f.db")
+    ob.enqueue(_bite())
+    ob.drain(_Receipting(chat_id="-100", start_id=100))
+    # A reply to a message we never sent is not a known bite.
+    assert ob.sent_message("-100", 999) is None
+    assert ob.sent_message("-200", 100) is None
