@@ -105,15 +105,19 @@ class Store:
                 )
                 session.execute(stmt)
             for c in activity.commits:
-                stmt = sqlite_insert(CommitRow).values(
-                    repo=c.repo,
-                    sha=c.sha,
-                    author=c.author,
-                    message=c.message,
-                    date=c.date.isoformat(),
-                    url=c.url,
-                    seen_at=seen,
-                ).on_conflict_do_nothing(index_elements=["repo", "sha"])
+                stmt = (
+                    sqlite_insert(CommitRow)
+                    .values(
+                        repo=c.repo,
+                        sha=c.sha,
+                        author=c.author,
+                        message=c.message,
+                        date=c.date.isoformat(),
+                        url=c.url,
+                        seen_at=seen,
+                    )
+                    .on_conflict_do_nothing(index_elements=["repo", "sha"])
+                )
                 session.execute(stmt)
         return len(activity.pull_requests), len(activity.commits)
 

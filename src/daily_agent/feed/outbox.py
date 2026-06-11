@@ -121,13 +121,17 @@ class Outbox:
         with session_scope(self._engine) as session:
             if session.get(DeliveredLedgerRow, bite.dedup_key) is not None:
                 return False
-            stmt = sqlite_insert(OutboxRow).values(
-                dedup_key=bite.dedup_key,
-                subject=bite.subject,
-                kind=bite.kind,
-                content=bite.content,
-                created_at=stamp,
-            ).on_conflict_do_nothing(index_elements=["dedup_key"])
+            stmt = (
+                sqlite_insert(OutboxRow)
+                .values(
+                    dedup_key=bite.dedup_key,
+                    subject=bite.subject,
+                    kind=bite.kind,
+                    content=bite.content,
+                    created_at=stamp,
+                )
+                .on_conflict_do_nothing(index_elements=["dedup_key"])
+            )
             result = session.execute(stmt)
             return result.rowcount > 0
 
@@ -137,7 +141,9 @@ class Outbox:
         return sum(self.enqueue(b, now=stamp) for b in bites)
 
     # --- drain ------------------------------------------------------------ #
-    def _due(self, session: Session, now: datetime, limit: int | None) -> list[OutboxItem]:
+    def _due(
+        self, session: Session, now: datetime, limit: int | None
+    ) -> list[OutboxItem]:
         stmt = (
             select(OutboxRow)
             .where(OutboxRow.status.in_(("pending", "failed")))

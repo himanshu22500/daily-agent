@@ -51,9 +51,7 @@ class Cache:
             row = session.get(CacheRow, key)
         if row is None:
             return None
-        if row.permanent or (
-            ttl is not None and (time.time() - row.fetched_at) <= ttl
-        ):
+        if row.permanent or (ttl is not None and (time.time() - row.fetched_at) <= ttl):
             return json.loads(row.value)
         return None
 
