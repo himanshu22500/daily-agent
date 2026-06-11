@@ -21,42 +21,47 @@ channel before any Slack credentials exist.
 
 from __future__ import annotations
 
-import sqlite3
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterator, Protocol
+from typing import Protocol
 
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlmodel import Field, Session, SQLModel, func, select
+
+from ..db import create_tables, make_engine, session_scope
 from ..models import Bite
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS outbox (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    dedup_key   TEXT    NOT NULL UNIQUE,
-    subject     TEXT    NOT NULL,
-    kind        TEXT    NOT NULL,
-    content     TEXT    NOT NULL,
-    status      TEXT    NOT NULL DEFAULT 'pending',  -- pending|sent|failed|dead
-    attempts    INTEGER NOT NULL DEFAULT 0,
-    not_before  TEXT,
-    created_at  TEXT    NOT NULL,
-    sent_at     TEXT,
-    last_error  TEXT
-);
 
-CREATE TABLE IF NOT EXISTS delivered_ledger (
-    item_key  TEXT NOT NULL PRIMARY KEY,
-    sent_at   TEXT NOT NULL
-);
+class OutboxRow(SQLModel, table=True):
+    __tablename__ = "outbox"
 
-CREATE TABLE IF NOT EXISTS watermark (
-    subject       TEXT NOT NULL PRIMARY KEY,
-    last_sent_at  TEXT NOT NULL
-);
+    id: int | None = Field(default=None, primary_key=True)
+    dedup_key: str = Field(unique=True)
+    subject: str
+    kind: str
+    content: str
+    status: str = "pending"  # pending|sent|failed|dead
+    attempts: int = 0
+    not_before: str | None = None
+    created_at: str
+    sent_at: str | None = None
+    last_error: str | None = None
 
-CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox (status, not_before);
-"""
+
+class DeliveredLedgerRow(SQLModel, table=True):
+    __tablename__ = "delivered_ledger"
+
+    item_key: str = Field(primary_key=True)
+    sent_at: str
+
+
+class WatermarkRow(SQLModel, table=True):
+    __tablename__ = "watermark"
+
+    subject: str = Field(primary_key=True)
+    last_sent_at: str
+
 
 # A bite that has failed this many times is parked as `dead`.
 MAX_ATTEMPTS = 5
@@ -102,18 +107,8 @@ class Channel(Protocol):
 class Outbox:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = str(db_path)
-        with self._conn() as conn:
-            conn.executescript(_SCHEMA)
-
-    @contextmanager
-    def _conn(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-            conn.commit()
-        finally:
-            conn.close()
+        self._engine = make_engine(self.db_path)
+        create_tables(self._engine, OutboxRow, DeliveredLedgerRow, WatermarkRow)
 
     # --- enqueue ---------------------------------------------------------- #
     def enqueue(self, bite: Bite, *, now: datetime | None = None) -> bool:
@@ -123,22 +118,22 @@ class Outbox:
         already queued (same ``dedup_key``) or already delivered (in the ledger).
         """
         stamp = (now or _now()).isoformat()
-        with self._conn() as conn:
-            already = conn.execute(
-                "SELECT 1 FROM delivered_ledger WHERE item_key = ?",
-                (bite.dedup_key,),
-            ).fetchone()
-            if already:
+        with session_scope(self._engine) as session:
+            if session.get(DeliveredLedgerRow, bite.dedup_key) is not None:
                 return False
-            cur = conn.execute(
-                """
-                INSERT INTO outbox (dedup_key, subject, kind, content, created_at)
-                VALUES (?,?,?,?,?)
-                ON CONFLICT(dedup_key) DO NOTHING
-                """,
-                (bite.dedup_key, bite.subject, bite.kind, bite.content, stamp),
+            stmt = (
+                sqlite_insert(OutboxRow)
+                .values(
+                    dedup_key=bite.dedup_key,
+                    subject=bite.subject,
+                    kind=bite.kind,
+                    content=bite.content,
+                    created_at=stamp,
+                )
+                .on_conflict_do_nothing(index_elements=["dedup_key"])
             )
-            return cur.rowcount > 0
+            result = session.execute(stmt)
+            return result.rowcount > 0
 
     def enqueue_all(self, bites: list[Bite], *, now: datetime | None = None) -> int:
         """Enqueue many bites; returns how many were newly queued."""
@@ -147,28 +142,29 @@ class Outbox:
 
     # --- drain ------------------------------------------------------------ #
     def _due(
-        self, conn: sqlite3.Connection, now: datetime, limit: int | None
+        self, session: Session, now: datetime, limit: int | None
     ) -> list[OutboxItem]:
-        sql = (
-            "SELECT id, dedup_key, subject, kind, content, attempts FROM outbox "
-            "WHERE status IN ('pending','failed') "
-            "AND (not_before IS NULL OR not_before <= ?) "
-            "ORDER BY created_at, id"
+        stmt = (
+            select(OutboxRow)
+            .where(OutboxRow.status.in_(("pending", "failed")))
+            .where(
+                (OutboxRow.not_before.is_(None))
+                | (OutboxRow.not_before <= now.isoformat())
+            )
+            .order_by(OutboxRow.created_at, OutboxRow.id)
         )
-        params: tuple = (now.isoformat(),)
         if limit is not None:
-            sql += " LIMIT ?"
-            params += (limit,)
+            stmt = stmt.limit(limit)
         return [
             OutboxItem(
-                id=r["id"],
-                dedup_key=r["dedup_key"],
-                subject=r["subject"],
-                kind=r["kind"],
-                content=r["content"],
-                attempts=r["attempts"],
+                id=r.id,
+                dedup_key=r.dedup_key,
+                subject=r.subject,
+                kind=r.kind,
+                content=r.content,
+                attempts=r.attempts,
             )
-            for r in conn.execute(sql, params)
+            for r in session.exec(stmt).all()
         ]
 
     def drain(
@@ -185,89 +181,88 @@ class Outbox:
         """
         moment = now or _now()
         sent = failed = dead = 0
-        with self._conn() as conn:
-            due = self._due(conn, moment, limit)
+        with session_scope(self._engine) as session:
+            due = self._due(session, moment, limit)
         for item in due:
             try:
                 channel.send(item)
             except Exception as exc:  # noqa: BLE001 - any send failure retries
-                with self._conn() as conn:
-                    self._mark_failed(conn, item, str(exc), moment)
+                with session_scope(self._engine) as session:
+                    self._mark_failed(session, item, str(exc), moment)
                 if item.attempts + 1 >= MAX_ATTEMPTS:
                     dead += 1
                 else:
                     failed += 1
                 continue
-            with self._conn() as conn:
-                self._mark_sent(conn, item, moment)
+            with session_scope(self._engine) as session:
+                self._mark_sent(session, item, moment)
             sent += 1
         return DrainResult(sent=sent, failed=failed, dead=dead)
 
-    def _mark_sent(
-        self, conn: sqlite3.Connection, item: OutboxItem, now: datetime
-    ) -> None:
+    def _mark_sent(self, session: Session, item: OutboxItem, now: datetime) -> None:
         stamp = now.isoformat()
-        conn.execute(
-            "UPDATE outbox SET status='sent', sent_at=?, last_error=NULL WHERE id=?",
-            (stamp, item.id),
+        row = session.get(OutboxRow, item.id)
+        if row is not None:
+            row.status = "sent"
+            row.sent_at = stamp
+            row.last_error = None
+            session.add(row)
+        session.execute(
+            sqlite_insert(DeliveredLedgerRow)
+            .values(item_key=item.dedup_key, sent_at=stamp)
+            .on_conflict_do_nothing(index_elements=["item_key"])
         )
-        conn.execute(
-            "INSERT OR IGNORE INTO delivered_ledger (item_key, sent_at) VALUES (?,?)",
-            (item.dedup_key, stamp),
+        wm = sqlite_insert(WatermarkRow).values(
+            subject=item.subject, last_sent_at=stamp
         )
-        conn.execute(
-            """
-            INSERT INTO watermark (subject, last_sent_at) VALUES (?,?)
-            ON CONFLICT(subject) DO UPDATE SET
-              last_sent_at=excluded.last_sent_at
-              WHERE excluded.last_sent_at > watermark.last_sent_at
-            """,
-            (item.subject, stamp),
+        # Only advance the watermark forward, never backward.
+        session.execute(
+            wm.on_conflict_do_update(
+                index_elements=["subject"],
+                set_={"last_sent_at": wm.excluded.last_sent_at},
+                where=wm.excluded.last_sent_at > WatermarkRow.last_sent_at,
+            )
         )
 
     def _mark_failed(
-        self, conn: sqlite3.Connection, item: OutboxItem, error: str, now: datetime
+        self, session: Session, item: OutboxItem, error: str, now: datetime
     ) -> None:
-        attempts = item.attempts + 1
-        if attempts >= MAX_ATTEMPTS:
-            conn.execute(
-                "UPDATE outbox SET status='dead', attempts=?, last_error=? WHERE id=?",
-                (attempts, error, item.id),
-            )
+        row = session.get(OutboxRow, item.id)
+        if row is None:
             return
-        backoff = BACKOFF_BASE_SECONDS * (2 ** (attempts - 1))
-        not_before = (now + timedelta(seconds=backoff)).isoformat()
-        conn.execute(
-            "UPDATE outbox SET status='failed', attempts=?, not_before=?, last_error=? WHERE id=?",
-            (attempts, not_before, error, item.id),
-        )
+        attempts = item.attempts + 1
+        row.attempts = attempts
+        row.last_error = error
+        if attempts >= MAX_ATTEMPTS:
+            row.status = "dead"
+        else:
+            backoff = BACKOFF_BASE_SECONDS * (2 ** (attempts - 1))
+            row.status = "failed"
+            row.not_before = (now + timedelta(seconds=backoff)).isoformat()
+        session.add(row)
 
     # --- introspection ---------------------------------------------------- #
     def watermark_for(self, subject: str) -> datetime | None:
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT last_sent_at FROM watermark WHERE subject=?", (subject,)
-            ).fetchone()
-        return datetime.fromisoformat(row["last_sent_at"]) if row else None
+        with session_scope(self._engine) as session:
+            row = session.get(WatermarkRow, subject)
+            return datetime.fromisoformat(row.last_sent_at) if row else None
 
     def delivered_keys(self) -> set[str]:
-        with self._conn() as conn:
-            return {
-                r["item_key"]
-                for r in conn.execute("SELECT item_key FROM delivered_ledger")
-            }
+        with session_scope(self._engine) as session:
+            return set(session.exec(select(DeliveredLedgerRow.item_key)).all())
 
     def stats(self) -> dict[str, int]:
-        with self._conn() as conn:
+        with session_scope(self._engine) as session:
             counts = {
-                r["status"]: r["n"]
-                for r in conn.execute(
-                    "SELECT status, COUNT(*) n FROM outbox GROUP BY status"
-                )
+                status: n
+                for status, n in session.exec(
+                    select(OutboxRow.status, func.count()).group_by(OutboxRow.status)
+                ).all()
             }
-            delivered = conn.execute(
-                "SELECT COUNT(*) n FROM delivered_ledger"
-            ).fetchone()["n"]
+            delivered = (
+                session.scalar(select(func.count()).select_from(DeliveredLedgerRow))
+                or 0
+            )
         return {
             "pending": counts.get("pending", 0),
             "failed": counts.get("failed", 0),

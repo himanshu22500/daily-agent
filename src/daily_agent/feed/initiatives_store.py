@@ -8,23 +8,25 @@ it doesn't judge.
 
 from __future__ import annotations
 
-import sqlite3
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS initiatives (
-    key               TEXT NOT NULL PRIMARY KEY,
-    lane              TEXT NOT NULL,
-    title             TEXT NOT NULL,
-    story_state       TEXT,
-    last_narrated_at  TEXT,
-    updated_at        TEXT NOT NULL
-);
-"""
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlmodel import Field, SQLModel, select
+
+from ..db import create_tables, make_engine, session_scope
+
+
+class InitiativeRow(SQLModel, table=True):
+    __tablename__ = "initiatives"
+
+    key: str = Field(primary_key=True)
+    lane: str
+    title: str
+    story_state: str | None = None
+    last_narrated_at: str | None = None
+    updated_at: str
 
 
 def _now_iso() -> str:
@@ -43,65 +45,57 @@ class InitiativeState:
 class InitiativeStore:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = str(db_path)
-        with self._conn() as conn:
-            conn.executescript(_SCHEMA)
-
-    @contextmanager
-    def _conn(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-            conn.commit()
-        finally:
-            conn.close()
+        self._engine = make_engine(self.db_path)
+        create_tables(self._engine, InitiativeRow)
 
     def get(self, key: str) -> InitiativeState | None:
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM initiatives WHERE key=?", (key,)
-            ).fetchone()
-        return _row(row) if row else None
+        with session_scope(self._engine) as session:
+            row = session.get(InitiativeRow, key)
+            return _to_state(row) if row else None
 
     def upsert(self, key: str, lane: str, title: str) -> None:
         """Ensure the initiative row exists / refresh its lane + title."""
-        with self._conn() as conn:
-            conn.execute(
-                """
-                INSERT INTO initiatives (key, lane, title, updated_at)
-                VALUES (?,?,?,?)
-                ON CONFLICT(key) DO UPDATE SET
-                  lane=excluded.lane, title=excluded.title, updated_at=excluded.updated_at
-                """,
-                (key, lane, title, _now_iso()),
+        with session_scope(self._engine) as session:
+            stmt = sqlite_insert(InitiativeRow).values(
+                key=key, lane=lane, title=title, updated_at=_now_iso()
             )
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["key"],
+                set_={
+                    "lane": stmt.excluded.lane,
+                    "title": stmt.excluded.title,
+                    "updated_at": stmt.excluded.updated_at,
+                },
+            )
+            session.execute(stmt)
 
     def record_chapter(
         self, key: str, story_state: str, *, now: datetime | None = None
     ) -> None:
         """Persist the updated story-state after a chapter is delivered."""
         stamp = (now or datetime.now(timezone.utc)).isoformat()
-        with self._conn() as conn:
-            conn.execute(
-                "UPDATE initiatives SET story_state=?, last_narrated_at=?, updated_at=? WHERE key=?",
-                (story_state, stamp, stamp, key),
-            )
+        with session_scope(self._engine) as session:
+            row = session.get(InitiativeRow, key)
+            if row is None:
+                return
+            row.story_state = story_state
+            row.last_narrated_at = stamp
+            row.updated_at = stamp
+            session.add(row)
 
     def all(self) -> list[InitiativeState]:
-        with self._conn() as conn:
-            return [
-                _row(r)
-                for r in conn.execute(
-                    "SELECT * FROM initiatives ORDER BY updated_at DESC"
-                )
-            ]
+        with session_scope(self._engine) as session:
+            rows = session.exec(
+                select(InitiativeRow).order_by(InitiativeRow.updated_at.desc())
+            ).all()
+            return [_to_state(r) for r in rows]
 
 
-def _row(row: sqlite3.Row) -> InitiativeState:
+def _to_state(row: InitiativeRow) -> InitiativeState:
     return InitiativeState(
-        key=row["key"],
-        lane=row["lane"],
-        title=row["title"],
-        story_state=row["story_state"],
-        last_narrated_at=row["last_narrated_at"],
+        key=row.key,
+        lane=row.lane,
+        title=row.title,
+        story_state=row.story_state,
+        last_narrated_at=row.last_narrated_at,
     )
