@@ -16,7 +16,7 @@ from datetime import datetime
 from ..agents.chapter_writer import write_chapter, write_untracked_items
 from ..agents.initiative_mapper import pr_key
 from ..cache import Cache
-from ..models import Bite, PullRequest
+from ..models import Bite, PullRequest, StoryStateUpdate
 from .initiative import Initiative
 from .initiatives_store import InitiativeStore
 from .mapping import resolve_initiatives
@@ -107,7 +107,7 @@ async def render_chapters(
 
 
 # --------------------------------------------------------------------------- #
-# Live feed: incremental, story-state-persisting chapters → outbox bites
+# Live feed: incremental, story-state-gated chapters → outbox bites
 # --------------------------------------------------------------------------- #
 def _activity_ts(pr: PullRequest) -> datetime:
     """When a PR became news: when it merged, else when it opened."""
@@ -139,12 +139,11 @@ async def chapters_to_bites(
     *,
     cache: Cache | None = None,
 ) -> list[Bite]:
-    """Build deliverable chapter bites, advancing each initiative's storyline.
+    """Build deliverable chapter bites with pending storyline updates.
 
     For each initiative, narrate only the PRs that are *new since its last
-    chapter*, then persist the updated story-state so the next run continues
-    rather than repeats. Story-state is advanced at build time (the outbox is
-    at-least-once); the rare dead-letter case is a known tradeoff to revisit.
+    delivered chapter*. The updated story-state travels with the bite and is
+    persisted by the outbox only after the channel send succeeds.
     """
     mapping = await resolve_initiatives(model, prs, issues, cache=cache)
     grouped = group_by_initiative(prs, mapping)
@@ -169,7 +168,10 @@ async def chapters_to_bites(
                 subject=init.subject,
                 kind="chapter",
                 content=content,
+                story_state_update=StoryStateUpdate(
+                    initiative_key=init.key,
+                    story_state=story_state,
+                ),
             )
         )
-        store.record_chapter(init.key, story_state)
     return bites

@@ -6,15 +6,16 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from daily_agent.agents.chapter_writer import Chapter
 from daily_agent.feed import storyteller as st_mod
 from daily_agent.feed.initiative import Initiative
 from daily_agent.feed.initiatives_store import InitiativeStore
+from daily_agent.feed.outbox import MAX_ATTEMPTS, Outbox, OutboxItem
 from daily_agent.feed.storyteller import (
     _chapter_dedup_key,
     _new_since,
     chapters_to_bites,
 )
-from daily_agent.agents.chapter_writer import Chapter
 from daily_agent.models import PullRequest
 
 
@@ -69,8 +70,31 @@ def _patch(monkeypatch, mapping):
     monkeypatch.setattr(st_mod, "write_untracked_items", fake_items)
 
 
+class _Collector:
+    name = "collector"
+
+    def __init__(self) -> None:
+        self.sent: list[OutboxItem] = []
+
+    def send(self, item: OutboxItem) -> None:
+        self.sent.append(item)
+
+
+class _Flaky:
+    name = "flaky"
+
+    def __init__(self, fail_times: int) -> None:
+        self.fail_times = fail_times
+        self.calls = 0
+
+    def send(self, item: OutboxItem) -> None:
+        self.calls += 1
+        if self.calls <= self.fail_times:
+            raise RuntimeError("boom")
+
+
 @pytest.mark.asyncio
-async def test_first_run_emits_bites_and_records_state(tmp_path, monkeypatch):
+async def test_first_run_emits_bites_without_recording_state(tmp_path, monkeypatch):
     init = Initiative(lane="initiative", key="ENG-1", title="Billing")
     _patch(monkeypatch, {"api#1": init, "api#2": init})
     store = InitiativeStore(tmp_path / "i.db")
@@ -80,22 +104,95 @@ async def test_first_run_emits_bites_and_records_state(tmp_path, monkeypatch):
     assert bites[0].subject == "initiative:ENG-1"
     assert bites[0].kind == "chapter"
     assert "2 merged" in bites[0].content
-    # Story-state advanced + persisted.
+    assert bites[0].story_state_update is not None
+    assert bites[0].story_state_update.initiative_key == "ENG-1"
+    assert bites[0].story_state_update.story_state == "state@2"
     st = store.get("ENG-1")
-    assert st.story_state == "state@2" and st.last_narrated_at is not None
+    assert st.story_state is None and st.last_narrated_at is None
 
 
 @pytest.mark.asyncio
-async def test_second_run_no_new_activity_emits_nothing(tmp_path, monkeypatch):
+async def test_delivery_success_records_state_and_stops_reruns(tmp_path, monkeypatch):
     init = Initiative(lane="initiative", key="ENG-1", title="Billing")
     _patch(monkeypatch, {"api#1": init})
-    store = InitiativeStore(tmp_path / "i.db")
+    db = tmp_path / "feed.db"
+    store = InitiativeStore(db)
+    outbox = Outbox(db)
 
-    first = await chapters_to_bites("m", [_pr(1)], [], store)
-    assert len(first) == 1
-    # Same PRs again — all older than last_narrated → nothing new.
+    bites = await chapters_to_bites("m", [_pr(1)], [], store)
+    assert outbox.enqueue_all(bites) == 1
+    assert outbox.drain(_Collector()).sent == 1
+
+    st = store.get("ENG-1")
+    assert st.story_state == "state@1" and st.last_narrated_at is not None
+
     second = await chapters_to_bites("m", [_pr(1)], [], store)
     assert second == []
+
+
+@pytest.mark.asyncio
+async def test_failed_delivery_does_not_record_state_then_success_does(
+    tmp_path, monkeypatch
+):
+    init = Initiative(lane="initiative", key="ENG-1", title="Billing")
+    _patch(monkeypatch, {"api#1": init})
+    db = tmp_path / "feed.db"
+    store = InitiativeStore(db)
+    outbox = Outbox(db)
+    now = datetime.now(timezone.utc)
+
+    assert outbox.enqueue_all(await chapters_to_bites("m", [_pr(1)], [], store)) == 1
+    flaky = _Flaky(fail_times=1)
+    assert outbox.drain(flaky, now=now).failed == 1
+    assert store.get("ENG-1").story_state is None
+
+    assert outbox.drain(flaky, now=now + timedelta(minutes=10)).sent == 1
+    assert store.get("ENG-1").story_state == "state@1"
+
+
+@pytest.mark.asyncio
+async def test_dead_chapter_does_not_record_state_and_prs_remain_eligible(
+    tmp_path, monkeypatch
+):
+    init = Initiative(lane="initiative", key="ENG-1", title="Billing")
+    _patch(monkeypatch, {"api#1": init, "api#2": init})
+    db = tmp_path / "feed.db"
+    store = InitiativeStore(db)
+    outbox = Outbox(db)
+    now = datetime.now(timezone.utc)
+
+    assert outbox.enqueue_all(await chapters_to_bites("m", [_pr(1)], [], store)) == 1
+    flaky = _Flaky(fail_times=MAX_ATTEMPTS)
+    for i in range(MAX_ATTEMPTS):
+        outbox.drain(flaky, now=now + timedelta(hours=i))
+
+    assert outbox.stats()["dead"] == 1
+    assert store.get("ENG-1").story_state is None
+
+    next_bites = await chapters_to_bites("m", [_pr(1), _pr(2)], [], store)
+    assert len(next_bites) == 1
+    assert "2 merged" in next_bites[0].content
+    assert outbox.enqueue_all(next_bites) == 1
+
+    assert outbox.drain(_Collector(), now=now + timedelta(days=1)).sent == 1
+    assert store.get("ENG-1").story_state == "state@2"
+
+
+@pytest.mark.asyncio
+async def test_rerun_before_delivery_is_idempotent(tmp_path, monkeypatch):
+    init = Initiative(lane="initiative", key="ENG-1", title="Billing")
+    _patch(monkeypatch, {"api#1": init})
+    db = tmp_path / "feed.db"
+    store = InitiativeStore(db)
+    outbox = Outbox(db)
+
+    first = await chapters_to_bites("m", [_pr(1)], [], store)
+    second = await chapters_to_bites("m", [_pr(1)], [], store)
+
+    assert [b.dedup_key for b in first] == [b.dedup_key for b in second]
+    assert outbox.enqueue_all(first) == 1
+    assert outbox.enqueue_all(second) == 0
+    assert store.get("ENG-1").story_state is None
 
 
 @pytest.mark.asyncio

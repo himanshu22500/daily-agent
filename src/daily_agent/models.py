@@ -50,6 +50,15 @@ class RepoActivity(BaseModel):
 # --------------------------------------------------------------------------- #
 # Delivery feed
 # --------------------------------------------------------------------------- #
+class StoryStateUpdate(BaseModel):
+    """Pending storyline memory to commit after a feed item is delivered."""
+
+    initiative_key: str = Field(
+        description="Initiative key whose story-state advances."
+    )
+    story_state: str = Field(description="Updated running summary for the initiative.")
+
+
 class Bite(BaseModel):
     """One bite-sized, deliverable update — the atom of the feed.
 
@@ -64,6 +73,10 @@ class Bite(BaseModel):
     subject: str = Field(description="Rolling-delta subject, e.g. 'repo:api'.")
     kind: str = Field(description="Event kind, e.g. 'pr_merged' | 'pr_opened'.")
     content: str = Field(description="Human-readable text of the update.")
+    story_state_update: StoryStateUpdate | None = Field(
+        default=None,
+        description="Story-state to commit only after this bite is delivered.",
+    )
 
 
 # --------------------------------------------------------------------------- #

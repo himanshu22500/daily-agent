@@ -26,11 +26,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Protocol
 
+from sqlalchemy import text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Field, Session, SQLModel, func, select
 
 from ..db import create_tables, make_engine, session_scope
-from ..models import Bite
+from ..models import Bite, StoryStateUpdate
+from .initiatives_store import InitiativeRow
 
 
 class OutboxRow(SQLModel, table=True):
@@ -41,6 +43,10 @@ class OutboxRow(SQLModel, table=True):
     subject: str
     kind: str
     content: str
+    # Story-state to commit to the initiative *only after* this bite is
+    # delivered (issue #27). NULL for bites with no storyline to advance.
+    story_state_key: str | None = None
+    story_state: str | None = None
     status: str = "pending"  # pending|sent|failed|dead
     attempts: int = 0
     not_before: str | None = None
@@ -101,6 +107,11 @@ class OutboxItem:
     kind: str
     content: str
     attempts: int
+    # Pending storyline update to commit on successful delivery (issue #27).
+    story_state_update: StoryStateUpdate | None = None
+    # The bite's enqueue time — guards against an older queued chapter
+    # overwriting a story-state already advanced by a newer one.
+    created_at: str = ""
 
 
 @dataclass(frozen=True)
@@ -147,7 +158,28 @@ class Outbox:
             DeliveredLedgerRow,
             WatermarkRow,
             SentMessageRow,
+            # The outbox advances an initiative's story-state on delivery
+            # (issue #27); ensure the table exists even if no InitiativeStore
+            # has touched this DB yet.
+            InitiativeRow,
         )
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Add story-state columns to a pre-existing ``outbox`` table.
+
+        ``create_all`` only creates missing *tables*, never adds columns, and
+        there is no migration system (see ``db.py``) — so a live DB created
+        before issue #27 keeps its old ``outbox`` schema. Bring it forward.
+        """
+        with session_scope(self._engine) as session:
+            cols = {
+                row[1]
+                for row in session.execute(text("PRAGMA table_info(outbox)")).all()
+            }
+            for col in ("story_state_key", "story_state"):
+                if col not in cols:
+                    session.execute(text(f"ALTER TABLE outbox ADD COLUMN {col} TEXT"))
 
     # --- enqueue ---------------------------------------------------------- #
     def enqueue(self, bite: Bite, *, now: datetime | None = None) -> bool:
@@ -160,6 +192,7 @@ class Outbox:
         with session_scope(self._engine) as session:
             if session.get(DeliveredLedgerRow, bite.dedup_key) is not None:
                 return False
+            ssu = bite.story_state_update
             stmt = (
                 sqlite_insert(OutboxRow)
                 .values(
@@ -167,6 +200,8 @@ class Outbox:
                     subject=bite.subject,
                     kind=bite.kind,
                     content=bite.content,
+                    story_state_key=ssu.initiative_key if ssu else None,
+                    story_state=ssu.story_state if ssu else None,
                     created_at=stamp,
                 )
                 .on_conflict_do_nothing(index_elements=["dedup_key"])
@@ -202,6 +237,15 @@ class Outbox:
                 kind=r.kind,
                 content=r.content,
                 attempts=r.attempts,
+                story_state_update=(
+                    StoryStateUpdate(
+                        initiative_key=r.story_state_key,
+                        story_state=r.story_state,
+                    )
+                    if r.story_state_key and r.story_state is not None
+                    else None
+                ),
+                created_at=r.created_at,
             )
             for r in session.exec(stmt).all()
         ]
@@ -285,6 +329,25 @@ class Outbox:
                         "subject": sm.excluded.subject,
                         "sent_at": sm.excluded.sent_at,
                     },
+                )
+            )
+        ssu = item.story_state_update
+        if ssu is not None:
+            # Advance the initiative's storyline now that the chapter is out the
+            # door — atomically with the sent/ledger/watermark writes (issue #27).
+            # Guard so an older queued chapter can't clobber a story-state a newer
+            # one already advanced (delivery order isn't guaranteed monotone).
+            session.execute(
+                update(InitiativeRow)
+                .where(InitiativeRow.key == ssu.initiative_key)
+                .where(
+                    (InitiativeRow.last_narrated_at.is_(None))
+                    | (InitiativeRow.last_narrated_at <= item.created_at)
+                )
+                .values(
+                    story_state=ssu.story_state,
+                    last_narrated_at=stamp,
+                    updated_at=stamp,
                 )
             )
 
