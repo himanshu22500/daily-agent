@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from daily_agent.models import Commit, PullRequest, RepoActivity
@@ -21,6 +22,7 @@ def _activity(repo: str = "api") -> RepoActivity:
                 repo=repo,
                 number=1,
                 title="Add billing",
+                head_ref_name="feat/billing",
                 author="alice",
                 state="closed",
                 merged=True,
@@ -49,6 +51,7 @@ def test_save_and_read_back(tmp_path):
     assert len(out) == 1
     assert out[0].repo == "api"
     assert out[0].pull_requests[0].title == "Add billing"
+    assert out[0].pull_requests[0].head_ref_name == "feat/billing"
     assert out[0].commits[0].sha == "abc123"
 
 
@@ -89,3 +92,35 @@ def test_pr_state_updates_on_reupsert(tmp_path):
     pr = out[0].pull_requests[0]
     assert pr.merged is True
     assert pr.state == "closed"
+
+
+def test_existing_database_gets_head_ref_name_column(tmp_path):
+    db_path = tmp_path / "legacy.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE pull_requests (
+                repo TEXT NOT NULL,
+                number INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                author TEXT NOT NULL,
+                state TEXT NOT NULL,
+                merged INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                merged_at TEXT,
+                url TEXT NOT NULL,
+                body TEXT NOT NULL DEFAULT '',
+                additions INTEGER NOT NULL DEFAULT 0,
+                deletions INTEGER NOT NULL DEFAULT 0,
+                changed_files INTEGER NOT NULL DEFAULT 0,
+                seen_at TEXT NOT NULL,
+                PRIMARY KEY (repo, number)
+            )
+            """
+        )
+
+    store = Store(db_path)
+    store.save_activity(_activity())
+    out = store.activity_since(_now() - timedelta(days=1))
+
+    assert out[0].pull_requests[0].head_ref_name == "feat/billing"

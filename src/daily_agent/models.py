@@ -23,6 +23,7 @@ class PullRequest(BaseModel):
     repo: str
     number: int
     title: str
+    head_ref_name: str = ""
     author: str
     state: str  # "open" | "closed"
     merged: bool

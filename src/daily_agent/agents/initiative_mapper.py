@@ -31,9 +31,9 @@ class _Mapping(BaseModel):
 _SYSTEM_PROMPT = """\
 You route engineering pull requests to the initiative each one belongs to, for an
 awareness feed. You are given a CATALOG of known initiatives (key + name) and a
-list of PRs (key + title + description). PR titles use conventional-commit scopes
-like feat(inventory-v3) or refactor(documents_v3) — these scopes are your best
-signal for which initiative a PR serves.
+list of PRs (key + title + branch + description). PR titles and branch names use
+conventional-commit scopes like feat(inventory-v3) or refactor/documents_v3 —
+these scopes are your best signal for which initiative a PR serves.
 
 Rules:
 - For each PR, output its key and the initiative key it belongs to.
@@ -65,9 +65,11 @@ def _render(prs: list[PullRequest], catalog: list[Initiative]) -> str:
     lines.append("PRs to assign:")
     for pr in prs:
         lines.append(f"  {pr_key(pr)} — {pr.title}")
+        if pr.head_ref_name:
+            lines.append(f"      branch: {pr.head_ref_name}")
         body = " ".join((pr.body or "").split())[:200]
         if body:
-            lines.append(f"      {body}")
+            lines.append(f"      description: {body}")
     lines.append("")
     lines.append("Assign every PR to a catalog key or 'untracked'.")
     return "\n".join(lines)
