@@ -3,8 +3,8 @@
 # Usage: scripts/install-launchd.sh [HOUR]    (HOUR 0-23, default 9)
 #   Uninstall: launchctl unload ~/Library/LaunchAgents/com.daily-agent.daily.plist
 #
-# Bakes the *current* PATH into the job so `uv` and `node` (Huly bridge) resolve
-# under launchd's minimal environment. Run this from your normal shell.
+# Bakes the *current* PATH into the job so `uv` resolves under launchd's minimal
+# environment. Run this from your normal shell.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
