@@ -1,0 +1,38 @@
+src/daily_agent/feed/transcripts.py
+  s_9830c9d8da3c61::t_703466cf8eac0e 1-83
+src/daily_agent/models.py
+  s_9830c9d8da3c61::t_e9a73017169ac6 96-98
+  s_9830c9d8da3c61::t_ecd56e92d38d26 83-95,99-106
+src/daily_agent/feed/insights_capture.py
+  s_9830c9d8da3c61::t_ff2ec592800298 1-86
+tests/test_insights.py
+  s_9830c9d8da3c61::t_e9a73017169ac6 33-37,83-86,100-102,111-113
+  s_9830c9d8da3c61::t_f75dc5ae0a61de 1-32,38-82,87-99,103-110,114-205
+src/daily_agent/cli.py
+  s_9830c9d8da3c61::t_ea8452ebcc949a 64-68
+  s_9830c9d8da3c61::t_12a503fb770419 46-47
+  s_9830c9d8da3c61::t_306fa7d86f0e97 728-751
+  s_9830c9d8da3c61::t_73484cb6eb297c 15
+src/daily_agent/config.py
+  s_9830c9d8da3c61::t_15bf0c4d8cacdc 174-181
+  s_9830c9d8da3c61::t_45fe2051464676 16
+  s_9830c9d8da3c61::t_0034e98cb572eb 69-75
+src/daily_agent/feed/insights_store.py
+  s_9830c9d8da3c61::t_9bd2d64245bb51 1-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "02d775baf310ecd26a5525e1238636a3d1bf592d",
+  "prompts": {},
+  "sessions": {
+    "s_9830c9d8da3c61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5ec54d5a-6c65-4881-bfbe-af9ac98dfc26",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
