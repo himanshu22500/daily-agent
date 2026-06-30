@@ -5,7 +5,7 @@
 #
 # The pacer caps how many chapters each run delivers and stays silent during
 # quiet hours, so frequent runs trickle the backlog out. Bakes the current PATH
-# into the job so `uv` and `node` (Huly bridge) resolve under launchd.
+# into the job so `uv` resolves under launchd.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
