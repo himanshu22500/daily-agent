@@ -24,7 +24,7 @@ def test_render_includes_pr_branch_name():
         url="https://github.example/api/pull/42",
         body="Adds the bulk processing flow for variants.",
     )
-    catalog = [Initiative(lane="initiative", key="ENG-1", title="Variant V3 Migration")]
+    catalog = [Initiative(lane="initiative", key="pm#1", title="Variant V3 Migration")]
 
     rendered = _render([pr], catalog)
 

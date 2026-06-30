@@ -10,7 +10,6 @@ daily-agent feed               Deliver accumulated activity as deduped bites.
 from __future__ import annotations
 
 import asyncio
-import re
 from contextlib import AsyncExitStack
 from datetime import datetime, timedelta, timezone
 
@@ -49,7 +48,7 @@ from .feed.pacer import Pacer
 from .feed.storyteller import chapters_to_bites, render_chapters
 from .models import ActivityDigest
 from .sources.github import GitHubClient, GitHubError
-from .sources.huly import HulyClient, HulyError
+from .sources.github_projects import GitHubProjectsClient, GitHubProjectsError
 from .sources.outline import OutlineClient, OutlineError
 from .sources.telegram_provision import TelethonProvisioner
 from .storage import Store
@@ -81,17 +80,14 @@ def _github() -> GitHubClient:
     )
 
 
-def _huly() -> HulyClient:
+def _projects() -> GitHubProjectsClient:
     s = get_settings()
-    return HulyClient(
-        url=s.huly_url,
-        workspace=s.huly_workspace,
-        email=s.huly_email,
-        password=s.huly_password,
-        token=s.huly_token,
-        node_bin=s.node_bin,
+    return GitHubProjectsClient(
+        token=s.project_token,
+        owner=s.project_owner,
+        number=s.github_project_number,
         cache=_cache(),
-        cache_ttl=s.huly_cache_ttl,
+        cache_ttl=s.projects_cache_ttl,
     )
 
 
@@ -180,7 +176,7 @@ def ask(
         None, "--repo", help="Optional: pin the investigation to one repo."
     ),
 ) -> None:
-    """Ask anything; the agent investigates across repos, PRs, Huly tasks, docs, and people."""
+    """Ask anything; the agent investigates across repos, PRs, docs, and people."""
     s = get_settings()
 
     async def _run() -> str:
@@ -191,7 +187,6 @@ def ask(
                 if s.outline_enabled
                 else None
             )
-            huly = await stack.enter_async_context(_huly()) if s.huly_enabled else None
             team = load_team(s.team_path)
             return await ask_anything(
                 s.model,
@@ -199,7 +194,6 @@ def ask(
                 gh,
                 settings=s,
                 team=team,
-                huly=huly,
                 outline=outline,
                 repo_hint=repo,
             )
@@ -232,13 +226,11 @@ def chat(
                 if s.outline_enabled
                 else None
             )
-            huly = await stack.enter_async_context(_huly()) if s.huly_enabled else None
             agent = build_assistant(s.model)
             deps = AssistantDeps(
                 github=gh,
                 settings=s,
                 team=load_team(s.team_path),
-                huly=huly,
                 outline=outline,
             )
             history: list = []
@@ -373,134 +365,6 @@ def howto(
 
 
 @app.command()
-def tasks(
-    project: str = typer.Argument(
-        None,
-        help="Huly project identifier (e.g. ENG). Defaults to DAILY_AGENT_HULY_DEFAULT_PROJECT.",
-    ),
-    limit: int = typer.Option(30, help="Max issues to list."),
-    status: str = typer.Option(
-        None, "--status", help="Filter by status name, e.g. 'In Review'."
-    ),
-    assignee: str = typer.Option(
-        None, "--assignee", help="Filter by assignee name (substring match)."
-    ),
-    priority: str = typer.Option(
-        None, "--priority", help="Filter by priority: none|urgent|high|medium|low."
-    ),
-    projects: bool = typer.Option(
-        False, "--projects", "-p", help="List projects instead of issues."
-    ),
-) -> None:
-    """List Huly issues for a project (defaults to the configured project)."""
-    s = get_settings()
-    if not s.huly_enabled:
-        console.print(
-            "[red]Huly not configured[/red] (set DAILY_AGENT_HULY_WORKSPACE + creds)."
-        )
-        raise typer.Exit(1)
-    target = project or s.huly_default_project
-
-    # Resolve an assignee name/handle (e.g. "me", "harshit") to a Huly name.
-    if assignee:
-        member = resolve_member(load_team(s.team_path), assignee, me=s.me)
-        if member:
-            assignee = member.huly
-
-    async def _run():
-        async with _huly() as h:
-            if projects or not target:
-                return ("projects", await h.projects())
-            return (
-                "issues",
-                await h.issues(
-                    target,
-                    limit=limit,
-                    status=status,
-                    assignee=assignee,
-                    priority=priority,
-                ),
-            )
-
-    try:
-        kind, rows = asyncio.run(_run())
-    except HulyError as e:
-        console.print(f"[red]Huly error:[/red] {e}")
-        raise typer.Exit(1)
-    if kind == "projects":
-        console.print(f"[bold]{len(rows)} Huly projects:[/bold]")
-        for p in rows:
-            console.print(f"  • [cyan]{p['identifier']}[/cyan] — {p['name']}")
-        if not target:
-            console.print(
-                "[dim]Tip: set DAILY_AGENT_HULY_DEFAULT_PROJECT to list its issues by default.[/dim]"
-            )
-        return
-    active = [
-        f"{k}={v}"
-        for k, v in (("status", status), ("assignee", assignee), ("priority", priority))
-        if v
-    ]
-    suffix = f" [dim](filters: {', '.join(active)})[/dim]" if active else ""
-    console.print(f"[bold]{len(rows)} issues in {target}:[/bold]{suffix}")
-    for i in rows:
-        console.print(
-            f"  • [cyan]{i['identifier']}[/cyan] [{i['status']}] {i['title']}"
-            f"  [dim]({i['assignee'] or 'unassigned'})[/dim]"
-        )
-
-
-@app.command()
-def task(
-    identifier: str = typer.Argument(
-        ..., help="Huly issue identifier, e.g. ENG-16845."
-    ),
-) -> None:
-    """Show one Huly task's details (status, assignee, priority, description, PR links)."""
-    s = get_settings()
-    if not s.huly_enabled:
-        console.print(
-            "[red]Huly not configured[/red] (set DAILY_AGENT_HULY_WORKSPACE + creds)."
-        )
-        raise typer.Exit(1)
-
-    async def _run():
-        async with _huly() as h:
-            return await h.issue(identifier)
-
-    try:
-        issue = asyncio.run(_run())
-    except HulyError as e:
-        console.print(f"[red]Huly error:[/red] {e}")
-        raise typer.Exit(1)
-    if issue is None:
-        console.print(f"No Huly issue found: [bold]{identifier}[/bold]")
-        raise typer.Exit(1)
-
-    meta = (
-        f"[bold]{issue['identifier']}[/bold]  {issue['title']}\n\n"
-        f"Project: {issue.get('project', '?')}    Status: {issue['status']} "
-        f"({issue['statusCategory']})\n"
-        f"Assignee: {issue['assignee'] or 'unassigned'}    Priority: {issue['priority']}"
-        f"    Due: {issue.get('dueDate') or '—'}"
-    )
-    console.print(
-        Panel(meta, title=f"Task {issue['identifier']}", border_style="yellow")
-    )
-
-    desc = (issue.get("description") or "").strip()
-    if desc:
-        console.print(Panel(Markdown(desc), title="Description", border_style="blue"))
-        prs = _github_pr_links(desc)
-        if prs:
-            console.print("[bold]Linked GitHub PRs:[/bold]")
-            for url in prs:
-                console.print(f"  • {url}")
-    else:
-        console.print("[dim](no description)[/dim]")
-
-
-@app.command()
 def daily(
     days: int = typer.Option(
         None, help="Window in days (default from config lookback_days)."
@@ -531,21 +395,6 @@ def daily(
             team = load_team(s.team_path)
             active = [m for m in team.values() if m.github in authors]
 
-            tasks_by_assignee: dict[str, list[dict]] = {}
-            if s.huly_enabled and active:
-                try:
-                    async with _huly() as h:
-                        issues = await h.issues(
-                            s.huly_default_project or None, limit=200
-                        )
-                    for i in issues:
-                        if (i.get("modifiedOn") or "") >= since.isoformat():
-                            tasks_by_assignee.setdefault(i.get("assignee"), []).append(
-                                i
-                            )
-                except HulyError as e:
-                    console.print(f"[yellow]Huly unavailable for briefs: {e}[/yellow]")
-
             sem = asyncio.Semaphore(5)
 
             async def one(m):
@@ -561,7 +410,7 @@ def daily(
                             s.bulk_model,
                             m.name,
                             person_prs,
-                            tasks_by_assignee.get(m.huly, []),
+                            [],
                         )
                         return (m, pb)
                     except Exception as e:  # one bad brief shouldn't sink the digest
@@ -593,10 +442,10 @@ def brief(
     person: str = typer.Argument(None, help="Person name/handle. Omit for 'me'."),
     days: int = typer.Option(7, help="Look back this many days ('this week')."),
     no_ai: bool = typer.Option(
-        False, "--no-ai", help="Skip the LLM summary; just list tasks/PRs."
+        False, "--no-ai", help="Skip the LLM summary; just list PRs."
     ),
 ) -> None:
-    """What someone is working on lately: a synthesized briefing + their tasks/PRs."""
+    """What someone is working on lately: a synthesized briefing + their PRs."""
     s = get_settings()
     team = load_team(s.team_path)
     if not team:
@@ -612,41 +461,29 @@ def brief(
         raise typer.Exit(1)
 
     since = _since(days)
-    since_iso = since.isoformat()
 
     async def _run():
-        huly_issues: list[dict] = []
-        if s.huly_enabled:
-            async with _huly() as h:
-                issues = await h.issues(
-                    s.huly_default_project or None, assignee=member.huly, limit=100
-                )
-            huly_issues = [
-                i for i in issues if (i.get("modifiedOn") or "") >= since_iso
-            ]
         prs: list = []
         if member.github:
             async with _github() as gh:
                 prs = await gh.search_pull_requests(member.github, since, limit=50)
-        return huly_issues, prs
+        return prs
 
     try:
-        huly_issues, prs = asyncio.run(_run())
-    except (HulyError, GitHubError) as e:
+        prs = asyncio.run(_run())
+    except GitHubError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
-    title = f"{member.name} — last {days} days  [dim](huly: {member.huly} · gh: {member.github})[/dim]"
+    title = f"{member.name} — last {days} days  [dim](gh: {member.github})[/dim]"
     console.print(Panel(title, border_style="magenta"))
 
     # Lead with a synthesized briefing (unless --no-ai or there's nothing to summarize).
-    if not no_ai and (huly_issues or prs):
+    if not no_ai and prs:
         from .agents.person_brief import summarize_person
 
         try:
-            pb = asyncio.run(
-                summarize_person(s.bulk_model, member.name, prs, huly_issues)
-            )
+            pb = asyncio.run(summarize_person(s.bulk_model, member.name, prs, []))
             body = f"**{pb.headline}**\n\n{pb.summary}"
             if pb.themes:
                 body += "\n\n" + "\n".join(f"- {t}" for t in pb.themes)
@@ -656,33 +493,13 @@ def brief(
                 f"[yellow]Summary unavailable ({type(e).__name__}); showing details only.[/yellow]"
             )
 
-    console.print(f"[bold]Huly tasks ({len(huly_issues)}):[/bold]")
-    for i in huly_issues:
-        console.print(
-            f"  • [cyan]{i['identifier']}[/cyan] [{i['status']}] {i['title']}"
-            f"  [dim]({i['priority']})[/dim]"
-        )
-    if not huly_issues:
-        console.print("  [dim](none updated in window)[/dim]")
-
-    console.print(f"\n[bold]GitHub PRs ({len(prs)}):[/bold]")
+    console.print(f"[bold]GitHub PRs ({len(prs)}):[/bold]")
     for pr in prs:
         state = "merged" if pr.merged else pr.state
         console.print(f"  • [cyan]{pr.repo}#{pr.number}[/cyan] [{state}] {pr.title}")
         console.print(f"    [dim]{pr.url}[/dim]")
     if not prs:
         console.print("  [dim](no PRs in window)[/dim]")
-
-
-_PR_URL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/pull/\d+")
-
-
-def _github_pr_links(text: str) -> list[str]:
-    seen: list[str] = []
-    for m in _PR_URL_RE.findall(text):
-        if m not in seen:
-            seen.append(m)
-    return seen
 
 
 @app.command()
@@ -773,19 +590,22 @@ def feed(
         for a in Store(s.db_path).activity_since(_since(days))
         for pr in a.pull_requests
     ]
-    if s.huly_enabled and prs:
+    if s.projects_enabled and prs:
         # Rich feed: PRs → initiatives → plain-language storyline chapters.
         async def _build():
-            project = s.huly_default_project or "ENG"
-            async with _huly() as huly:
-                issues = await huly.issues(project, limit=500)
+            async with _projects() as projects:
+                issues = await projects.issues(limit=500)
             return await chapters_to_bites(
                 s.model, prs, issues, InitiativeStore(s.db_path), cache=_cache()
             )
 
-        bites = asyncio.run(_build())
+        try:
+            bites = asyncio.run(_build())
+        except GitHubProjectsError as e:
+            console.print(f"[red]GitHub Projects error:[/red] {e}")
+            raise typer.Exit(1)
     else:
-        # Fallback without Huly: mechanical per-PR bites.
+        # Fallback without GitHub Projects: mechanical per-PR bites.
         bites = bites_for_activity(Store(s.db_path).activity_since(_since(days)))
     new = outbox.enqueue_all(bites)
 
@@ -858,11 +678,17 @@ def feed_preview(
     tone/length before wiring chapters into the live feed.
     """
     s = get_settings()
+    if not s.projects_enabled:
+        console.print(
+            "[red]GitHub Projects not configured.[/red] Set "
+            "DAILY_AGENT_GITHUB_PROJECT_NUMBER (and an owner + a token with the "
+            "read:project scope) to preview initiative chapters."
+        )
+        raise typer.Exit(1)
 
     async def _run():
-        project = s.huly_default_project or "ENG"
-        async with _huly() as huly:
-            issues = await huly.issues(project, limit=500)
+        async with _projects() as projects:
+            issues = await projects.issues(limit=500)
         prs = [
             pr
             for a in Store(s.db_path).activity_since(_since(days))
@@ -874,7 +700,11 @@ def feed_preview(
         chapters = await render_chapters(s.model, prs, issues, store=store, limit=limit)
         return chapters, len(prs)
 
-    chapters, n_prs = asyncio.run(_run())
+    try:
+        chapters, n_prs = asyncio.run(_run())
+    except GitHubProjectsError as e:
+        console.print(f"[red]GitHub Projects error:[/red] {e}")
+        raise typer.Exit(1)
     if not chapters:
         console.print(
             "[yellow]No PR activity in the window. Run `collect` first.[/yellow]"

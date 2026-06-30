@@ -164,7 +164,7 @@ caught up so they're never blindsided by *"when did that go into the product, an
 what even was it?"*. Understanding, not action. Consequences:
 - **No health status, no risk/watch flags, no calls-to-action.** The user isn't
   steering these efforts.
-- The renderer's central job is **translating technical git/Huly activity into
+- The renderer's central job is **translating technical git/project activity into
   plain-language product understanding** — "what this actually is, in the
   product" — not analysis. The *richness is explanation*.
 - **Shipped > in-flight.** The fear is something *went into* the product unseen,
@@ -195,6 +195,17 @@ Example:
 > now runs on the new architecture — no visible change for users, but it's the
 > groundwork for the Vue3 frontend rebuild coming next.
 > _since Tue · 4 merged_  `[Dig deeper]`
+
+> **Update 2026-06-30 — re-sourced from Huly to GitHub Project #86.** The design
+> below is the original Huly-anchored rationale, kept as history (see
+> `docs/decisions.md` for the migration). The model carries over directly onto the
+> GitHub Project board: read **"Huly parent-chain" → the board's native sub-issue
+> tree**, **"Huly parent _id" → the issue's `<repo>#<number>`** (e.g. `pm#56`), and
+> the **deterministic anchor → `closedByPullRequestsReferences`** (each issue's
+> closing PRs) instead of the ~17% `ENG-` text match — so coverage is far higher and
+> the build phasing below is superseded by `sources/github_projects.py`. There are
+> no QA/`Test ||` buckets on the board (QA is a field), so the resolver just anchors
+> on the chain root; the ops lane keys on "Project OnCall [dates]" / incidents.
 
 **Anchor (decided) — normalized Huly parent-chain, identity pinned to Huly ID.**
 Grounded in a live investigation of the `ENG` workspace (2026-06-07):

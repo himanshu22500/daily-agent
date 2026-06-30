@@ -59,19 +59,8 @@ class Settings(BaseSettings):
     outline_url: str = ""
     outline_token: str = ""
 
-    # --- Huly (task tracking, via the Node bridge) ---
-    huly_url: str = "https://huly.app"
-    huly_workspace: str = ""
-    huly_email: str = ""
-    huly_password: str = ""
-    huly_token: str = ""
-    # All work often lives in one project; set this so `tasks` lists its issues
-    # by default instead of the (single-item) project list.
-    huly_default_project: str = ""
-    node_bin: str = "node"
-
     # --- Team identity mapping ---
-    # Path to the (gitignored, PII) team.json mapping name <-> huly <-> github.
+    # Path to the (gitignored, PII) team.json mapping name <-> github.
     team_path: str = "team.json"
     # Canonical name (or handle) that "me" resolves to in `brief` / `--assignee me`.
     me: str = ""
@@ -123,12 +112,11 @@ class Settings(BaseSettings):
     telegram_bot_username: str = ""
 
     # --- Response cache ---
-    # Terminal entities (merged PRs, DONE Huly issues) are cached permanently;
-    # everything else uses these TTLs (seconds). Docs change rarely -> long TTL.
+    # Terminal entities (merged PRs) are cached permanently; everything else uses
+    # these TTLs (seconds). Docs change rarely -> long TTL.
     cache_enabled: bool = True
     github_cache_ttl: int = 600  # 10 min
     projects_cache_ttl: int = 600  # 10 min (project board)
-    huly_cache_ttl: int = 600  # 10 min (non-DONE issues / lists)
     outline_cache_ttl: int = 604800  # 7 days
 
     def repo_allowlist(self) -> list[str]:
@@ -174,11 +162,6 @@ class Settings(BaseSettings):
         return bool(
             self.project_token and self.github_project_number and self.project_owner
         )
-
-    @property
-    def huly_enabled(self) -> bool:
-        has_auth = bool(self.huly_token or (self.huly_email and self.huly_password))
-        return bool(self.huly_workspace and has_auth)
 
 
 @lru_cache

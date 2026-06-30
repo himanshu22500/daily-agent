@@ -1,6 +1,6 @@
 """Person brief agent — synthesize what one person is working on.
 
-Turns a person's recent GitHub PRs and Huly tasks into a short, readable
+Turns a person's recent GitHub PRs (and any tracked tasks) into a short, readable
 briefing (themes and intent), instead of a raw list of links.
 """
 
@@ -27,12 +27,12 @@ class PersonBrief(BaseModel):
 _SYSTEM_PROMPT = """\
 You summarize what a single engineer is currently working on, for a busy leader.
 
-Given their recent GitHub PRs (titles + descriptions) and Huly tasks, infer the
-THEMES and intent of their work — what they're building or fixing and why — not
+Given their recent GitHub PRs (titles + descriptions) and any tracked tasks, infer
+the THEMES and intent of their work — what they're building or fixing and why — not
 a list of PRs. Group related PRs into workstreams. Be concise and concrete.
 
-Some people don't use the task tracker (e.g. founders); if Huly tasks are
-absent, rely on the PRs and don't remark on the absence.
+Often only PRs are available (no task list); if tasks are absent, rely on the PRs
+and don't remark on the absence.
 """
 
 
@@ -48,7 +48,7 @@ def build_person_brief_agent(model: str) -> Agent[None, PersonBrief]:
 def _render(name: str, prs: list[PullRequest], tasks: list[dict]) -> str:
     lines = [f"Person: {name}", ""]
     if tasks:
-        lines.append("Huly tasks:")
+        lines.append("Tracked tasks:")
         for t in tasks:
             lines.append(f"  - {t['identifier']} [{t['status']}] {t['title']}")
         lines.append("")
