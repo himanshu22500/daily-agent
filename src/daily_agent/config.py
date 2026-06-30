@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     # Don't bother summarizing repos with no pushes in this many days.
     github_active_within_days: int = 30
 
+    # --- GitHub Projects (v2) — the org's PM board, feeds the initiative model ---
+    # Project number from its URL (…/orgs/<org>/projects/<NUMBER>).
+    github_project_number: int = 0
+    # Org/user that owns the project; empty => use github_org.
+    github_project_owner: str = ""
+    # Token with the read:project scope; empty => fall back to github_token (which
+    # may lack project scope — set this if so).
+    github_project_token: str = ""
+
     # --- Collection ---
     lookback_days: int = 1
 
@@ -118,6 +127,7 @@ class Settings(BaseSettings):
     # everything else uses these TTLs (seconds). Docs change rarely -> long TTL.
     cache_enabled: bool = True
     github_cache_ttl: int = 600  # 10 min
+    projects_cache_ttl: int = 600  # 10 min (project board)
     huly_cache_ttl: int = 600  # 10 min (non-DONE issues / lists)
     outline_cache_ttl: int = 604800  # 7 days
 
@@ -148,6 +158,22 @@ class Settings(BaseSettings):
     @property
     def outline_enabled(self) -> bool:
         return bool(self.outline_url and self.outline_token)
+
+    @property
+    def project_owner(self) -> str:
+        """The project's owner — explicit override, else the GitHub org."""
+        return self.github_project_owner or self.github_org
+
+    @property
+    def project_token(self) -> str:
+        """Token used for Projects v2 — dedicated one if set, else github_token."""
+        return self.github_project_token or self.github_token
+
+    @property
+    def projects_enabled(self) -> bool:
+        return bool(
+            self.project_token and self.github_project_number and self.project_owner
+        )
 
     @property
     def huly_enabled(self) -> bool:
