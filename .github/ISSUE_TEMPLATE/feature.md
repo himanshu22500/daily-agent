@@ -19,4 +19,4 @@ labels: ["feature", "ready"]
 ## Notes for the agent
 <!-- Files/area to touch, constraints, dependencies on other issues. -->
 - Area: <!-- feed | sources | agents | infra -->
-- Needs live verification after merge? <!-- yes/no — Huly/Telegram/live data/LLM -->
+- Needs live verification after merge? <!-- yes/no — GitHub Projects/Telegram/live data/LLM -->

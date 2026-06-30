@@ -1,10 +1,11 @@
-"""Initiative mapper agent — assign ticket-less PRs onto the Huly catalog.
+"""Initiative mapper agent — assign unlinked PRs onto the project catalog.
 
-Only ~17% of PRs cite an `ENG-` ticket; the rest use conventional-commit scopes
-(`feat(comm-v3)`, `feat(inventory-v3)`) that line up with real initiatives. This
-agent reads those scopes/titles/bodies and assigns each PR to one of the known
-initiatives — or "untracked" if none fits. It is constrained to the catalog: it
-must NOT invent initiatives (that would drift identity and break storylines).
+PRs that natively close a tracked issue are anchored deterministically; this agent
+handles the rest. They tend to use conventional-commit scopes (`feat(comm-v3)`,
+`feat(inventory-v3)`) that line up with real initiatives, so the agent reads those
+scopes/titles/bodies and assigns each PR to one of the known initiatives — or
+"untracked" if none fits. It is constrained to the catalog: it must NOT invent
+initiatives (that would drift identity and break storylines).
 """
 
 from __future__ import annotations

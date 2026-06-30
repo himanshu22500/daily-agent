@@ -1,1 +1,1 @@
-"""Data sources the agent gathers from (GitHub, Huly, Outline, ...)."""
+"""Data sources the agent gathers from (GitHub, GitHub Projects, Outline, ...)."""

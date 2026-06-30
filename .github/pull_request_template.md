@@ -9,5 +9,5 @@ Closes #
 <!-- Tests added/updated; `uv run pytest` green. What the tests prove. -->
 
 ## Needs live verification (maintainer)
-<!-- Anything touching Huly / Telegram / live data / real LLM output. "None" if
+<!-- Anything touching GitHub Projects / Telegram / live data / real LLM output. "None" if
      fully covered by offline tests. Add the `needs-local-verification` label if so. -->

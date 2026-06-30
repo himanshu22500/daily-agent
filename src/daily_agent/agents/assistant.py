@@ -1,9 +1,9 @@
 """General-purpose assistant agent — ask anything across the org.
 
 Unlike the repo-pinned researcher, this agent isn't tied to a single repo. It
-has tools spanning all sources (GitHub repos + PRs, Huly tasks, Outline docs),
-plus the team identity map and the latest daily digest. It can resolve a person,
-find the right repos itself, and "double-click" on what someone is working on.
+has tools spanning all sources (GitHub repos + PRs, Outline docs), plus the team
+identity map and the latest daily digest. It can resolve a person, find the right
+repos itself, and "double-click" on what someone is working on.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from pydantic_ai import Agent, RunContext
 
 from ..config import Settings
 from ..sources.github import GitHubClient
-from ..sources.huly import HulyClient, HulyError
 from ..sources.outline import OutlineClient, OutlineError
 from ..team import TeamMember, resolve_member
 from .model import build_model, cache_settings
@@ -27,7 +26,6 @@ class AssistantDeps:
     github: GitHubClient
     settings: Settings
     team: dict[str, TeamMember]
-    huly: HulyClient | None = None
     outline: OutlineClient | None = None
 
 
@@ -36,20 +34,19 @@ You are an engineering assistant for a software org. Answer the user's question
 by investigating with your tools — don't guess. You can:
   - list and inspect repositories (file tree, README, files, recent PRs),
   - look up what a *person* is working on (person_activity resolves names),
-  - read the Huly task tracker (projects, issues, one issue's detail),
   - search and read Outline engineering docs,
   - read the latest daily digest (for questions about "the report").
 
 Approach:
   1. If the question names a person, start with person_activity to see their
-     PRs and tasks, then read the relevant repos/docs to "double-click".
+     PRs, then read the relevant repos/docs to "double-click".
   2. If it names a topic/initiative, use list_repos + recent PRs + docs to find
      where it lives.
   3. If it references "the report"/"the digest", read latest_digest first.
 
 Synthesize a clear, concrete answer grounded in what you find. Cite specific
-repos, PR numbers, task ids, or doc titles. Be honest about gaps. Don't dump raw
-file contents — explain.
+repos, PR numbers, or doc titles. Be honest about gaps. Don't dump raw file
+contents — explain.
 """
 
 
@@ -99,7 +96,7 @@ def build_assistant(model: str) -> Agent[AssistantDeps, str]:
 
     @agent.tool
     async def person_activity(ctx: RunContext[AssistantDeps], name: str) -> str:
-        """What a person is working on: their recent GitHub PRs + Huly tasks.
+        """What a person is working on: their recent GitHub PRs.
 
         Resolves a name/handle/"me" via the team map. Use this to double-click
         on someone's work.
@@ -110,7 +107,7 @@ def build_assistant(model: str) -> Agent[AssistantDeps, str]:
             return f"(unknown person '{name}'. Known: {known})"
         since = datetime.now(timezone.utc) - timedelta(days=14)
         lines = [
-            f"{member.name} (huly: {member.huly}, github: {member.github})",
+            f"{member.name} (github: {member.github})",
             "",
             "Recent PRs:",
         ]
@@ -119,60 +116,7 @@ def build_assistant(model: str) -> Agent[AssistantDeps, str]:
             f"- {pr.repo}#{pr.number} [{'merged' if pr.merged else pr.state}] {pr.title}"
             for pr in prs
         ] or ["(none)"]
-        if ctx.deps.huly:
-            try:
-                issues = await ctx.deps.huly.issues(
-                    ctx.deps.settings.huly_default_project or None,
-                    assignee=member.huly,
-                    limit=50,
-                )
-                lines += ["", "Huly tasks:"] + (
-                    [
-                        f"- {i['identifier']} [{i['status']}] {i['title']}"
-                        for i in issues
-                    ]
-                    or ["(none)"]
-                )
-            except (HulyError, Exception) as e:  # noqa: BLE001 - degrade gracefully
-                lines.append(f"(Huly unavailable: {e})")
         return "\n".join(lines)
-
-    @agent.tool
-    async def huly_issues(
-        ctx: RunContext[AssistantDeps], project: str = "", status: str = ""
-    ) -> str:
-        """List Huly issues, optionally filtered by project and status name."""
-        if ctx.deps.huly is None:
-            return "(Huly not configured)"
-        proj = project or ctx.deps.settings.huly_default_project or None
-        try:
-            issues = await ctx.deps.huly.issues(proj, status=status or None, limit=50)
-        except HulyError as e:
-            return f"(Huly error: {e})"
-        return (
-            "\n".join(
-                f"- {i['identifier']} [{i['status']}] {i['title']} ({i['assignee'] or 'unassigned'})"
-                for i in issues
-            )
-            or "(no issues)"
-        )
-
-    @agent.tool
-    async def huly_issue(ctx: RunContext[AssistantDeps], identifier: str) -> str:
-        """One Huly issue's full detail (incl. description)."""
-        if ctx.deps.huly is None:
-            return "(Huly not configured)"
-        try:
-            issue = await ctx.deps.huly.issue(identifier)
-        except HulyError as e:
-            return f"(Huly error: {e})"
-        if not issue:
-            return f"(no issue {identifier})"
-        return (
-            f"{issue['identifier']} [{issue['status']}] {issue['title']}\n"
-            f"assignee: {issue['assignee']}, priority: {issue['priority']}\n\n"
-            f"{issue.get('description') or '(no description)'}"
-        )
 
     @agent.tool
     async def search_docs(ctx: RunContext[AssistantDeps], query: str) -> str:
@@ -221,14 +165,11 @@ async def ask_anything(
     *,
     settings: Settings,
     team: dict[str, TeamMember],
-    huly: HulyClient | None = None,
     outline: OutlineClient | None = None,
     repo_hint: str | None = None,
 ) -> str:
     agent = build_assistant(model)
-    deps = AssistantDeps(
-        github=github, settings=settings, team=team, huly=huly, outline=outline
-    )
+    deps = AssistantDeps(github=github, settings=settings, team=team, outline=outline)
     prompt = (
         question if not repo_hint else f"(Focus on the repo: {repo_hint})\n\n{question}"
     )

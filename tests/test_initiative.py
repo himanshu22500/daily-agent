@@ -1,130 +1,103 @@
-"""Initiative resolver — chain-walking, bucket-skipping, lane routing (offline)."""
+"""Initiative resolver — chain-walking, lane routing, linked-PR mapping (offline)."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
 from daily_agent.feed.initiative import (
-    extract_ticket,
-    index_issues,
+    index_by_linked_pr,
     initiative_for_pr,
     is_ops,
-    is_process_bucket,
     resolve_initiative,
 )
 from daily_agent.models import PullRequest
 
 
 # --- helpers --------------------------------------------------------------- #
-def _issue(
-    identifier: str, title: str, parents: list[tuple[str, str]] | None = None
-) -> dict:
-    """Build a bridge-shaped issue dict. parents = [(identifier, title), ...]
-    immediate parent first → root last."""
+def _issue(identifier, title, parents=None, prs=None) -> dict:
+    """A GitHub-Projects-shaped issue dict.
+
+    ``parents`` = [(identifier, title), ...] immediate parent first → root last.
+    ``prs`` = [(repo, number), ...] the PRs that close this issue.
+    """
     return {
         "identifier": identifier,
         "title": title,
-        "parents": [
-            {"identifier": i, "id": f"hid-{i}", "title": t} for i, t in (parents or [])
-        ],
+        "parents": [{"identifier": i, "title": t} for i, t in (parents or [])],
+        "linked_prs": [{"repo": r, "number": n} for r, n in (prs or [])],
     }
 
 
-def _pr(title: str, body: str = "") -> PullRequest:
+def _pr(repo: str, number: int, title: str = "") -> PullRequest:
     now = datetime.now(timezone.utc)
     return PullRequest(
-        repo="tranzact-v2",
-        number=1,
+        repo=repo,
+        number=number,
         title=title,
         author="alice",
         state="closed",
         merged=True,
         created_at=now,
         merged_at=now,
-        url="http://x/1",
-        body=body,
+        url=f"http://x/{number}",
     )
 
 
-# --- ticket extraction ----------------------------------------------------- #
-def test_extract_ticket_from_title_and_body():
-    assert extract_ticket("ENG-16326 add thing") == "ENG-16326"
-    assert extract_ticket("no ticket", "fixes eng-42 here") == "ENG-42"
-    assert extract_ticket("nothing", "") is None
-
-
-def test_extract_ticket_first_wins_and_uppercases():
-    assert extract_ticket("eng-7 and ENG-9") == "ENG-7"
-
-
-# --- bucket / ops detection ------------------------------------------------ #
-def test_process_bucket_detection():
-    assert is_process_bucket("Perform QA Testing")
-    assert is_process_bucket("Perform QA Testing | Item Details v3")
-    assert is_process_bucket("Test || Stock Valuation")
-    assert not is_process_bucket("TZ-Agents Phase 2")
-    assert not is_process_bucket(None)
-
-
-def test_ops_detection():
-    assert is_ops("Project Oncall [1st Jun '26 - 7th Jun '26]")
-    assert is_ops("Project OnCall [25th May]")
+# --- ops detection --------------------------------------------------------- #
+def test_ops_detection_matches_oncall_rotation_and_incidents():
+    assert is_ops("Project OnCall [29nd Jun '26 - 5th July '26]")
+    assert is_ops("Project Oncall [25th May]")
     assert is_ops("Production incident: webhook outage")
-    assert not is_ops("Item Details v3")
+
+
+def test_ops_detection_does_not_swallow_oncall_product():
+    # A real product initiative — must NOT be routed to ops just for "Oncall".
+    assert not is_ops("CX - Oncall Helper ChatBot")
+    assert not is_ops("Document Create Schemas (v2.5) [Phase-2]")
+    assert not is_ops(None)
 
 
 # --- resolution ------------------------------------------------------------ #
-def test_topmost_non_bucket_is_the_initiative():
-    # ENG-16970 "Usecase7 Skill" -> Use Case 7 -> TZ-Agents Phase 2 (root).
+def test_root_of_chain_is_the_initiative():
+    # A leaf issue -> its sub-issue parent -> the root (the initiative).
     issue = _issue(
-        "ENG-16970",
-        "TZ-Agents Usecase7 Skill",
-        [("ENG-16938", "Use Case 7: Invite Users"), ("ENG-16326", "TZ-Agents Phase 2")],
+        "pm#86",
+        "AI Chat Widget — stacked PR rollout",
+        [("pm#56", "Tranzact Agents [Phase 1]")],
     )
     init = resolve_initiative(issue)
     assert init.lane == "initiative"
-    assert init.key == "ENG-16326"
-    assert init.title == "TZ-Agents Phase 2"
-    assert init.subject == "initiative:ENG-16326"
+    assert init.key == "pm#56"
+    assert init.title == "Tranzact Agents [Phase 1]"
+    assert init.subject == "initiative:pm#56"
 
 
-def test_qa_bucket_in_chain_is_skipped():
-    # ENG-16974 "Test || ..." -> "Perform QA Testing" (bucket) -> "TS - 80".
+def test_deeper_chain_anchors_on_the_topmost_ancestor():
     issue = _issue(
-        "ENG-16974",
-        "Test || Stock Valuation",
-        [("ENG-16966", "Perform QA Testing"), ("ENG-16442", "TS - 80")],
+        "pm#200",
+        "leaf",
+        [("pm#100", "mid"), ("pm#16", "Document Create Schemas (v2.5) [Phase-2]")],
     )
     init = resolve_initiative(issue)
+    assert init.key == "pm#16"
+
+
+def test_standalone_issue_is_its_own_initiative():
+    issue = _issue("pm#105", "Fix currency conversion in doc create.")  # no parents
+    init = resolve_initiative(issue)
     assert init.lane == "initiative"
-    assert (
-        init.key == "ENG-16442"
-    )  # skipped both the Test|| self-node and the QA parent
+    assert init.key == "pm#105"
 
 
-def test_oncall_routes_to_ops_lane():
+def test_oncall_anywhere_in_chain_routes_to_ops_lane():
     issue = _issue(
-        "ENG-16951",
+        "pm#120",
         "Fix flaky job",
-        [("ENG-16903", "Project Oncall [1st Jun '26 - 7th Jun '26]")],
+        [("pm#112", "Project OnCall [29nd Jun '26 - 5th July '26]")],
     )
     init = resolve_initiative(issue)
     assert init.lane == "ops"
     assert init.key == "ops"
-
-
-def test_standalone_issue_is_its_own_initiative():
-    issue = _issue("ENG-16999", "Report generation times out")  # no parents
-    init = resolve_initiative(issue)
-    assert init.lane == "initiative"
-    assert init.key == "ENG-16999"
-
-
-def test_all_bucket_chain_falls_back_to_root():
-    issue = _issue("ENG-1", "Test || x", [("ENG-2", "Perform QA Testing")])
-    init = resolve_initiative(issue)
-    # No non-bucket node exists; fall back to the root rather than dropping it.
-    assert init.key == "ENG-2"
 
 
 def test_no_issue_is_untracked():
@@ -134,22 +107,40 @@ def test_no_issue_is_untracked():
     assert init.subject == "untracked:untracked"
 
 
-# --- PR mapping ------------------------------------------------------------ #
-def test_pr_with_ticket_resolves_through_index():
-    issues = [_issue("ENG-16326", "TZ-Agents Phase 2")]
-    idx = index_issues(issues)
-    init = initiative_for_pr(_pr("ENG-16326 wire up skill"), idx)
-    assert init.key == "ENG-16326"
+# --- PR mapping (via inverted linked-PR graph) ----------------------------- #
+def test_index_by_linked_pr_inverts_the_graph_with_bare_repos():
+    issues = [
+        _issue("pm#56", "Tranzact Agents [Phase 1]", prs=[("tz-vue-3", 1596)]),
+        _issue("pm#33", "Document Create API", prs=[("tranzact-v2", 5639)]),
+    ]
+    idx = index_by_linked_pr(issues)
+    assert set(idx) == {"tz-vue-3#1596", "tranzact-v2#5639"}
+    assert idx["tz-vue-3#1596"]["identifier"] == "pm#56"
 
 
-def test_pr_without_ticket_is_untracked():
-    init = initiative_for_pr(_pr("quick fix, no ticket"), {})
+def test_pr_resolves_through_its_linked_issue():
+    issues = [
+        _issue(
+            "pm#86",
+            "AI Chat Widget",
+            [("pm#56", "Tranzact Agents [Phase 1]")],
+            prs=[("tz-vue-3", 1596)],
+        )
+    ]
+    idx = index_by_linked_pr(issues)
+    init = initiative_for_pr(_pr("tz-vue-3", 1596, "feat(chat): panel"), idx)
+    assert init.key == "pm#56"  # resolves to the root initiative
+
+
+def test_pr_closing_no_tracked_issue_is_untracked():
+    init = initiative_for_pr(_pr("api", 9, "quick fix"), {})
     assert init.lane == "untracked"
 
 
-def test_pr_with_unknown_ticket_is_untracked():
-    # References a ticket we don't have in the index (e.g. older than our window).
-    init = initiative_for_pr(
-        _pr("ENG-99999 mystery"), index_issues([_issue("ENG-1", "x")])
-    )
-    assert init.lane == "untracked"
+def test_first_issue_wins_when_a_pr_closes_two():
+    issues = [
+        _issue("pm#1", "First", prs=[("api", 7)]),
+        _issue("pm#2", "Second", prs=[("api", 7)]),
+    ]
+    idx = index_by_linked_pr(issues)
+    assert idx["api#7"]["identifier"] == "pm#1"

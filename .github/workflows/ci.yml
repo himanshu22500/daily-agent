@@ -1,8 +1,8 @@
 name: CI
 
 # The objective gate before a human reviews a PR. Runs the OFFLINE test suite
-# only — every test mocks Huly/Telegram/the LLM, so no secrets are needed and
-# none are exposed to CI. Live verification (real Huly/Telegram/data) happens on
+# only — every test mocks GitHub/Telegram/the LLM, so no secrets are needed and
+# none are exposed to CI. Live verification (real GitHub Projects/Telegram/data) happens on
 # the maintainer's machine before merge.
 
 on:
