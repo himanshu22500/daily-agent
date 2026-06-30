@@ -14,9 +14,8 @@ any project by pulling together code, tasks, and docs.
    driving each project.
 3. **Ask anything, on demand.** A tool-using agent answers free-form questions —
    about a person, a project, a topic, or the daily report — by investigating
-   across repos (code + PRs), Huly tasks, and Outline docs, resolving people via
-   the team map. It finds the right sources itself; pin a repo with `--repo` if
-   you want.
+   across repos (code + PRs) and Outline docs, resolving people via the team map.
+   It finds the right sources itself; pin a repo with `--repo` if you want.
 4. **Answers from your docs.** Ask a how-to / setup / "how does X work" question
    and a docs-first agent searches Outline, reads the relevant documents, and
    synthesizes a cited, step-by-step answer (and tells you honestly when the
@@ -53,21 +52,20 @@ Optional, to enable the docs commands (`docs`, `howto`) and doc-grounded deep di
 - `DAILY_AGENT_OUTLINE_URL` — your Outline base URL (e.g. `https://outline.yourco.com`)
 - `DAILY_AGENT_OUTLINE_TOKEN` — an Outline API token (`ol_api_…`)
 
-Optional, to enable the Huly task tracker (`tasks` command + task context in deep dives).
-Huly has no Python SDK, so this uses a small Node bridge — install it once:
+Optional, to enable the **rich initiative feed** — `feed` / `feed-preview` deliver
+per-initiative storyline chapters (grouped by the org's GitHub Project board)
+instead of mechanical per-PR bites. Point it at the project:
+
+- `DAILY_AGENT_GITHUB_PROJECT_NUMBER` — the project number from its URL (`…/projects/<N>`)
+- `DAILY_AGENT_GITHUB_PROJECT_OWNER` — defaults to `DAILY_AGENT_GITHUB_ORG`
+- The board is read over GitHub's GraphQL API, which needs the **`read:project`**
+  scope. If `DAILY_AGENT_GITHUB_TOKEN` lacks it, set `DAILY_AGENT_GITHUB_PROJECT_TOKEN`
+  to a project-scoped token (`gh auth token` prints one if you use the `gh` CLI).
+
+Optional, to enable person-centric queries (`brief`):
 
 ```bash
-cd bridges/huly && yarn install && cd -
-```
-
-- `DAILY_AGENT_HULY_WORKSPACE` — your workspace name (from the workspace URL)
-- `DAILY_AGENT_HULY_EMAIL` + `DAILY_AGENT_HULY_PASSWORD` — or `DAILY_AGENT_HULY_TOKEN`
-- `DAILY_AGENT_HULY_URL` — defaults to `https://huly.app`
-
-Optional, to enable person-centric queries (`brief`, `tasks --assignee me`):
-
-```bash
-cp team.example.json team.json   # then edit: maps name -> Huly name + GitHub login
+cp team.example.json team.json   # then edit: maps name -> GitHub login
 ```
 
 `team.json` is **gitignored** (it holds names/handles — PII). Set
@@ -85,7 +83,7 @@ uv run daily-agent collect --days 1
 # Read a cross-project digest of accumulated activity
 uv run daily-agent summary --days 7
 
-# Ask anything — the agent finds the right repos/tasks/docs/people itself
+# Ask anything — the agent finds the right repos/docs/people itself
 uv run daily-agent ask "How does refund handling work, and what changed recently?"
 uv run daily-agent ask "double-click on what Sharad is working on in Routing V2"
 uv run daily-agent ask "summarize the report and tell me who's blocked"
@@ -100,26 +98,17 @@ uv run daily-agent docs "settings v3 migration"
 # Ask a how-to / setup question answered from the docs (reads + synthesizes steps)
 uv run daily-agent howto "how do I set up the comms service?"
 
-# List Huly issues (defaults to DAILY_AGENT_HULY_DEFAULT_PROJECT)
-uv run daily-agent tasks
-uv run daily-agent tasks ENG --limit 50   # a specific project
-uv run daily-agent tasks --projects       # list projects instead
-
-# Filter by status / assignee / priority (combinable)
-uv run daily-agent tasks --status "In Review"
-uv run daily-agent tasks --assignee "Himanshu" --priority high
-
-# Show one task's details (status, assignee, description, linked PRs)
-uv run daily-agent task ENG-16845
+# Preview the rich initiative feed — groups recent PRs into per-initiative
+# storyline chapters by the GitHub Project board (read-only; nothing delivered)
+uv run daily-agent feed-preview --days 14
 
 # Run the full daily job: collect -> digest -> per-person briefs -> digests/<date>.md
 uv run daily-agent daily
 
-# What someone is working on lately — a synthesized briefing + their tasks/PRs
+# What someone is working on lately — a synthesized briefing + their PRs
 uv run daily-agent brief                # me
 uv run daily-agent brief "Harshit"      # any teammate by name/handle
 uv run daily-agent brief "Sharad" --no-ai   # skip the LLM summary, list only
-uv run daily-agent tasks --assignee me  # filters also accept "me" / a name
 ```
 
 ### Commands
@@ -129,13 +118,12 @@ uv run daily-agent tasks --assignee me  # filters also accept "me" / a name
 | `repos` | List the org repos being watched (active in the last N days) | No |
 | `collect --days N` | Fetch recent PRs + commits from GitHub into the local store (idempotent; run on a schedule) | No |
 | `summary --days N` | Synthesize accumulated activity into a cross-project digest | Yes |
-| `ask "question"` | Ask anything; the agent investigates across repos, PRs, Huly tasks, docs, and people (optionally pin `--repo`) | Yes |
+| `ask "question"` | Ask anything; the agent investigates across repos, PRs, docs, and people (optionally pin `--repo`) | Yes |
 | `chat` | Interactive session over the same tools; follow-ups keep context (`/reset` to clear, `exit` to leave) | Yes |
 | `docs "query"` | Fast full-text search of the Outline knowledge base (titles + links) | No |
 | `howto "question"` | Reads the relevant Outline docs and synthesizes a cited, step-by-step answer | Yes |
-| `tasks [PROJECT]` | List Huly issues (defaults to configured project; filter by `--status`/`--assignee`/`--priority`; `--projects` lists projects) | No |
-| `task ID` | Show one Huly task's details + linked GitHub PRs | No |
-| `brief [PERSON]` | Synthesized briefing of what a person is working on + their Huly tasks/PRs (defaults to "me"; `--no-ai` to skip the summary) | Yes (unless `--no-ai`) |
+| `brief [PERSON]` | Synthesized briefing of what a person is working on + their PRs (defaults to "me"; `--no-ai` to skip the summary) | Yes (unless `--no-ai`) |
+| `feed` / `feed-preview` | Deliver (or dry-run) the paced initiative feed: recent PRs grouped into storyline chapters by the GitHub Project board | Yes |
 | `daily` | The full daily job: collect → cross-project digest → per-person briefs → writes `digests/<date>.md` | Yes |
 | `cache [--clear]` | Inspect or clear the response cache | No |
 
@@ -149,16 +137,15 @@ prior `collect`.
 Source responses are cached in SQLite so repeated calls don't re-pull. The TTL
 policy mirrors what can actually change:
 
-- **Terminal entities cache forever** — a **merged PR** and a **DONE Huly issue**
-  never change, so they're stored permanently.
-- **Everything else uses a TTL** — open issues, lists, and search results
-  (`DAILY_AGENT_HULY_CACHE_TTL` / `GITHUB_CACHE_TTL`, default 10 min).
+- **Terminal entities cache forever** — a **merged PR** never changes, so it's
+  stored permanently.
+- **Everything else uses a TTL** — open PRs, project lists, and search results
+  (`DAILY_AGENT_GITHUB_CACHE_TTL` / `DAILY_AGENT_PROJECTS_CACHE_TTL`, default 10 min).
 - **Outline docs use a long TTL** (`DAILY_AGENT_OUTLINE_CACHE_TTL`, default 7
   days) since they rarely change.
 
-This also sidesteps the per-call Huly bridge spawn — a warm `tasks`/`brief` is
-several times faster. Inspect with `daily-agent cache`; reset with
-`daily-agent cache --clear`; disable with `DAILY_AGENT_CACHE_ENABLED=false`.
+Inspect with `daily-agent cache`; reset with `daily-agent cache --clear`; disable
+with `DAILY_AGENT_CACHE_ENABLED=false`.
 
 ### Other performance
 
@@ -181,8 +168,8 @@ launchctl start com.daily-agent.daily   # test it now
 
 The digest lands in `digests/<date>.md` (gitignored — it contains names + work
 summaries). Logs go to `digests/launchd.{out,err}.log`. The installer bakes your
-current `PATH` into the job so `uv` and `node` (the Huly bridge) resolve under
-launchd. Uninstall with `launchctl unload ~/Library/LaunchAgents/com.daily-agent.daily.plist`.
+current `PATH` into the job so `uv` resolves under launchd. Uninstall with
+`launchctl unload ~/Library/LaunchAgents/com.daily-agent.daily.plist`.
 
 > Runs only while your Mac is awake. For always-on cloud scheduling you'd move
 > secrets into a CI provider — deferred for now.
@@ -216,21 +203,19 @@ src/daily_agent/
   sources/
     github.py          GitHub REST collection (real)
     outline.py         engineering docs — Outline API (real)
-    huly.py            task tracker — shells out to the Node bridge (real)
+    github_projects.py GitHub Projects v2 board — GraphQL (real); feeds initiatives
   agents/
     summarizer.py      Pydantic AI agent -> cross-project digest
     assistant.py       tool-using agent -> ask anything (all sources + people); powers `ask` + `chat`
     docs_qa.py         docs-first Q&A agent -> answers from Outline
     person_brief.py    synthesizes what one person is working on (for `brief`)
-  team.py              team identity map (name <-> Huly <-> GitHub); powers `brief`
+  team.py              team identity map (name <-> GitHub); powers `brief`
   cache.py             SQLite response cache (terminal entities permanent; else TTL)
   deliver.py           render a digest to Markdown + write digests/<date>.md
-  cli.py               collect / summary / ask / chat / repos / docs / howto / tasks / task / brief / daily
+  cli.py               collect / summary / ask / chat / repos / docs / howto / feed / brief / daily
 scripts/
   run-daily.sh         wrapper the scheduler calls
   install-launchd.sh   install the macOS launchd job
-bridges/
-  huly/                Node bridge: reads Huly via @hcengineering SDK, emits JSON
 
 ```
 
@@ -248,8 +233,8 @@ and `howto` all run against real data today.
 - [x] Repo deep-dive researcher — business-logic layer (code + PRs + docs)
 - [x] Outline integration — search + read, wired into the deep dive
 - [x] Docs Q&A agent (`howto`) — finds, reads, and synthesizes answers from docs
-- [x] Huly (task tracking) — Node bridge (`@hcengineering` SDK) + `tasks` command,
-      wired into the deep dive for issue/status context
+- [x] GitHub Projects (v2) source — the feed's initiative model (sub-issue parent
+      chains + closing-PR links, read over GraphQL)
 - [x] OpenAI codex / Responses-API support (`openai-responses:` model prefix)
 - [x] Offline test suite (storage + Outline client via httpx mock)
 

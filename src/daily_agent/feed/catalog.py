@@ -1,8 +1,8 @@
-"""Initiative catalog — the set of real initiatives derived from Huly.
+"""Initiative catalog — the set of real initiatives derived from GitHub Projects.
 
-The catalog is the fixed menu the LLM mapper assigns PRs onto. Building it from
-Huly's parent tree (via the deterministic resolver) is what keeps initiative
-identity stable and anchored to Huly: the LLM never invents an initiative, it
+The catalog is the fixed menu the LLM mapper assigns PRs onto. Building it from the
+board's sub-issue tree (via the deterministic resolver) is what keeps initiative
+identity stable and anchored to the project: the LLM never invents an initiative, it
 only picks from this catalog (or "untracked").
 """
 
@@ -12,7 +12,7 @@ from .initiative import Initiative, resolve_initiative
 
 
 def build_catalog(issues: list[dict]) -> list[Initiative]:
-    """Distinct ``initiative``-lane subjects across the given Huly issues.
+    """Distinct ``initiative``-lane subjects across the given project issues.
 
     Each active issue resolves (through its parent chain) to its top initiative;
     the distinct set of those is the catalog. Ops/untracked are fixed lanes, not

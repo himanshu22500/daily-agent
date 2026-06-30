@@ -4,6 +4,28 @@ Durable decisions, in the repo so every agent (which starts with only the repo �
 no shared memory) inherits them. Newest first. Keep entries short; link to the
 ROADMAP section or PR for detail.
 
+## 2026-06-30 — PM source migrated from Huly to GitHub Project #86
+The org stopped using Huly; project management now lives in **GitHub Project #86**
+(`fcbtech`, "Engineering"). The feed's initiative model is re-sourced onto it and
+**all Huly code is removed** (client, Node bridge, `tasks`/`task` commands, config).
+**Supersedes the two Huly-anchored entries below** (2026-06-07, 2026-06-06).
+
+The board fits better than Huly did:
+- **Native sub-issues** form the parent chain; the **root issue is the initiative**.
+  There are no "Perform QA Testing"/"Test ||" buckets to skip (QA is a project
+  *field* now), so the resolver just anchors on the chain root.
+- **`closedByPullRequestsReferences`** links each issue to the PRs that close it.
+  Inverting that graph gives a **deterministic** PR→initiative map — far better than
+  Huly's ~17% `ENG-` text match — with the LLM mapper handling only the unlinked tail.
+
+Read over the GraphQL API (`sources/github_projects.py`), which needs the
+**`read:project`** token scope (`DAILY_AGENT_GITHUB_PROJECT_TOKEN` if the main token
+lacks it). Initiative identity is now `<repo>#<number>` (e.g. `pm#56`); the ops lane
+keys on "Project OnCall [dates]" / incidents (NOT a bare "oncall" — that's a real
+product, "CX - Oncall Helper"). `brief`/`daily` are PR-only until a project-backed
+task source lands (follow-up), along with GitHub-Issues `tasks`/`task` commands. The
+downstream chapter/story-state machinery is unchanged.
+
 ## 2026-06-10 — DB access standardized on SQLModel (reverses "no ORM")
 All five stores (`Store`, `Cache`, `Outbox`, `InitiativeStore`, `ChannelRegistry`)
 now use **SQLModel** (SQLAlchemy + Pydantic) over a shared engine/session helper
@@ -72,6 +94,11 @@ short (~2 sentences); the Untracked lane is itemized bullets, not prose. Feed
 content is the heart of the project and will keep iterating with real use.
 
 ## 2026-06-07 — PR→initiative mapping is LLM-primary onto a Huly catalog
+> **Superseded 2026-06-30** (Huly → GitHub Project #86): the catalog is now built
+> from the board's sub-issue tree, and the deterministic anchor is the native
+> closing-PR link (`closedByPullRequestsReferences`), not the `ENG-` text match. The
+> LLM-onto-catalog fallback for unlinked PRs is unchanged.
+
 Only ~17% of PRs cite an `ENG-` ticket (not in title/body or branch). So: a
 deterministic resolver builds the initiative **catalog** from Huly's parent tree
 and anchors the ticketed minority; an **LLM maps the rest onto that catalog** by
@@ -79,6 +106,11 @@ PR scope/title/body. It is constrained to the catalog or `untracked` — it neve
 invents an initiative (keeps storyline identity stable). Validated ~81% coverage.
 
 ## 2026-06-06 — Initiative model: evolving storyline, Huly-anchored
+> **Superseded 2026-06-30** (Huly → GitHub Project #86): identity is now the GitHub
+> issue `<repo>#<number>`; the parent chain comes from native sub-issues; there are
+> no QA/`Test ||` mirror tasks to collapse. The evolving-storyline model and the
+> three lanes (Initiatives / Ops / Untracked) carry over unchanged.
+
 The feed's unit is the **initiative**, delivered as an **evolving storyline**
 (chapters that only add what's new). Identity is anchored to the **Huly parent
 issue** (stable forever). A cached LLM normalizer picks the right level in the

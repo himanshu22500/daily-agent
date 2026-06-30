@@ -2,7 +2,7 @@
 
 Two modes per entry:
   * **permanent** — the cached value represents a terminal entity that will
-    never change again (a merged PR, a DONE Huly issue). Never expires.
+    never change again (e.g. a merged PR). Never expires.
   * **TTL** — everything else (open issues, lists, search results). Expires
     after ``ttl`` seconds so it stays reasonably fresh.
 

@@ -9,8 +9,8 @@ from daily_agent.team import load_team, resolve_member
 # Fake data only — never put real teammate names/handles (PII) in the repo.
 _TEAM = {
     "_comment": "ignored",
-    "Jane Doe": {"huly": "Jane Doe", "github": "janedoe"},
-    "John Smith": {"huly": "John Smith", "github": "jsmith-corp"},
+    "Jane Doe": {"github": "janedoe"},
+    "John Smith": {"github": "jsmith-corp"},
 }
 
 

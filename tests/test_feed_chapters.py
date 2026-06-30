@@ -45,9 +45,9 @@ def test_new_since_filters_by_activity():
 
 
 def test_dedup_key_stable_for_same_set_changes_with_new_pr():
-    a = _chapter_dedup_key("ENG-1", [_pr(1), _pr(2)])
-    b = _chapter_dedup_key("ENG-1", [_pr(2), _pr(1)])  # order-independent
-    c = _chapter_dedup_key("ENG-1", [_pr(1), _pr(2), _pr(3)])
+    a = _chapter_dedup_key("pm#1", [_pr(1), _pr(2)])
+    b = _chapter_dedup_key("pm#1", [_pr(2), _pr(1)])  # order-independent
+    c = _chapter_dedup_key("pm#1", [_pr(1), _pr(2), _pr(3)])
     assert a == b
     assert a != c
 
@@ -95,25 +95,25 @@ class _Flaky:
 
 @pytest.mark.asyncio
 async def test_first_run_emits_bites_without_recording_state(tmp_path, monkeypatch):
-    init = Initiative(lane="initiative", key="ENG-1", title="Billing")
+    init = Initiative(lane="initiative", key="pm#1", title="Billing")
     _patch(monkeypatch, {"api#1": init, "api#2": init})
     store = InitiativeStore(tmp_path / "i.db")
 
     bites = await chapters_to_bites("m", [_pr(1), _pr(2)], [], store)
     assert len(bites) == 1
-    assert bites[0].subject == "initiative:ENG-1"
+    assert bites[0].subject == "initiative:pm#1"
     assert bites[0].kind == "chapter"
     assert "2 merged" in bites[0].content
     assert bites[0].story_state_update is not None
-    assert bites[0].story_state_update.initiative_key == "ENG-1"
+    assert bites[0].story_state_update.initiative_key == "pm#1"
     assert bites[0].story_state_update.story_state == "state@2"
-    st = store.get("ENG-1")
+    st = store.get("pm#1")
     assert st.story_state is None and st.last_narrated_at is None
 
 
 @pytest.mark.asyncio
 async def test_delivery_success_records_state_and_stops_reruns(tmp_path, monkeypatch):
-    init = Initiative(lane="initiative", key="ENG-1", title="Billing")
+    init = Initiative(lane="initiative", key="pm#1", title="Billing")
     _patch(monkeypatch, {"api#1": init})
     db = tmp_path / "feed.db"
     store = InitiativeStore(db)
@@ -123,7 +123,7 @@ async def test_delivery_success_records_state_and_stops_reruns(tmp_path, monkeyp
     assert outbox.enqueue_all(bites) == 1
     assert outbox.drain(_Collector()).sent == 1
 
-    st = store.get("ENG-1")
+    st = store.get("pm#1")
     assert st.story_state == "state@1" and st.last_narrated_at is not None
 
     second = await chapters_to_bites("m", [_pr(1)], [], store)
@@ -134,7 +134,7 @@ async def test_delivery_success_records_state_and_stops_reruns(tmp_path, monkeyp
 async def test_failed_delivery_does_not_record_state_then_success_does(
     tmp_path, monkeypatch
 ):
-    init = Initiative(lane="initiative", key="ENG-1", title="Billing")
+    init = Initiative(lane="initiative", key="pm#1", title="Billing")
     _patch(monkeypatch, {"api#1": init})
     db = tmp_path / "feed.db"
     store = InitiativeStore(db)
@@ -144,17 +144,17 @@ async def test_failed_delivery_does_not_record_state_then_success_does(
     assert outbox.enqueue_all(await chapters_to_bites("m", [_pr(1)], [], store)) == 1
     flaky = _Flaky(fail_times=1)
     assert outbox.drain(flaky, now=now).failed == 1
-    assert store.get("ENG-1").story_state is None
+    assert store.get("pm#1").story_state is None
 
     assert outbox.drain(flaky, now=now + timedelta(minutes=10)).sent == 1
-    assert store.get("ENG-1").story_state == "state@1"
+    assert store.get("pm#1").story_state == "state@1"
 
 
 @pytest.mark.asyncio
 async def test_dead_chapter_does_not_record_state_and_prs_remain_eligible(
     tmp_path, monkeypatch
 ):
-    init = Initiative(lane="initiative", key="ENG-1", title="Billing")
+    init = Initiative(lane="initiative", key="pm#1", title="Billing")
     _patch(monkeypatch, {"api#1": init, "api#2": init})
     db = tmp_path / "feed.db"
     store = InitiativeStore(db)
@@ -167,7 +167,7 @@ async def test_dead_chapter_does_not_record_state_and_prs_remain_eligible(
         outbox.drain(flaky, now=now + timedelta(hours=i))
 
     assert outbox.stats()["dead"] == 1
-    assert store.get("ENG-1").story_state is None
+    assert store.get("pm#1").story_state is None
 
     next_bites = await chapters_to_bites("m", [_pr(1), _pr(2)], [], store)
     assert len(next_bites) == 1
@@ -175,12 +175,12 @@ async def test_dead_chapter_does_not_record_state_and_prs_remain_eligible(
     assert outbox.enqueue_all(next_bites) == 1
 
     assert outbox.drain(_Collector(), now=now + timedelta(days=1)).sent == 1
-    assert store.get("ENG-1").story_state == "state@2"
+    assert store.get("pm#1").story_state == "state@2"
 
 
 @pytest.mark.asyncio
 async def test_rerun_before_delivery_is_idempotent(tmp_path, monkeypatch):
-    init = Initiative(lane="initiative", key="ENG-1", title="Billing")
+    init = Initiative(lane="initiative", key="pm#1", title="Billing")
     _patch(monkeypatch, {"api#1": init})
     db = tmp_path / "feed.db"
     store = InitiativeStore(db)
@@ -192,16 +192,16 @@ async def test_rerun_before_delivery_is_idempotent(tmp_path, monkeypatch):
     assert [b.dedup_key for b in first] == [b.dedup_key for b in second]
     assert outbox.enqueue_all(first) == 1
     assert outbox.enqueue_all(second) == 0
-    assert store.get("ENG-1").story_state is None
+    assert store.get("pm#1").story_state is None
 
 
 @pytest.mark.asyncio
 async def test_untracked_and_initiative_are_separate_subjects(tmp_path, monkeypatch):
-    init = Initiative(lane="initiative", key="ENG-1", title="Billing")
+    init = Initiative(lane="initiative", key="pm#1", title="Billing")
     untr = Initiative(lane="untracked", key="untracked", title="Untracked work")
     _patch(monkeypatch, {"api#1": init, "api#2": untr})
     store = InitiativeStore(tmp_path / "i.db")
 
     bites = await chapters_to_bites("m", [_pr(1), _pr(2)], [], store)
     subjects = {b.subject for b in bites}
-    assert subjects == {"initiative:ENG-1", "untracked:untracked"}
+    assert subjects == {"initiative:pm#1", "untracked:untracked"}

@@ -19,7 +19,7 @@ the test suite (everything is mocked, so it runs anywhere):
 |---|---|---|
 | Write code + offline tests | ✅ | ✅ |
 | Run `uv run pytest` (all mocked) | ✅ | ✅ |
-| Verify against **live Huly / Telegram / real data** | ❌ no secrets | ✅ |
+| Verify against **live GitHub Projects / Telegram / real data** | ❌ no secrets | ✅ |
 | Merge to `main`; run the scheduled feed | ❌ | ✅ |
 
 A cloud agent's whole job is: **pick a `ready` issue → do it → open a PR → stop.**
@@ -44,9 +44,9 @@ It never merges. The maintainer merges after any needed live verification.
    patterns: `httpx.MockTransport`, monkeypatched agent calls, `tmp_path` SQLite).
 3. **PR description** links the issue (`Closes #N`), says what you did, and
    **separates what you verified offline from what still needs live verification**.
-4. If the change touches **Huly, Telegram, the live DB, or real LLM output**, add
-   the **`needs-local-verification`** label so the maintainer knows to test it
-   live before merging.
+4. If the change touches **GitHub Projects, Telegram, the live DB, or real LLM
+   output**, add the **`needs-local-verification`** label so the maintainer knows
+   to test it live before merging.
 5. **Durable decisions go into the repo** — `ROADMAP.md` for strategy, `docs/
    decisions.md` for the log. Never leave a decision only in chat or an agent's
    private memory; the next agent starts with only the repo.
@@ -58,7 +58,7 @@ It never merges. The maintainer merges after any needed live verification.
 
 - `main` is protected: PRs only, CI must be green, no direct pushes.
 - CI runs the **offline** suite only (no secrets in CI, ever — especially not the
-  company Huly credentials).
+  company GitHub/project token).
 - Keep PRs small; small blast radius, fewer conflicts, easier live-verification.
 
 ## Project map (where things live)
@@ -67,7 +67,7 @@ It never merges. The maintainer merges after any needed live verification.
   resolver/catalog/mapping, story-state, storyteller, pacer, channels).
 - `src/daily_agent/agents/` — the LLM agents (summarizer, person brief, chapter
   writer, initiative mapper, assistant, docs Q&A) + model wiring.
-- `src/daily_agent/sources/` — GitHub, Huly (via `bridges/huly/` Node bridge),
+- `src/daily_agent/sources/` — GitHub, GitHub Projects (v2 board via GraphQL),
   Outline clients.
 - `src/daily_agent/{cli,config,storage,cache,models,team,deliver}.py` — CLI and
   core plumbing.
