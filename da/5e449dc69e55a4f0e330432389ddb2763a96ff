@@ -1,0 +1,28 @@
+tests/test_github_projects.py
+  s_9830c9d8da3c61::t_10e450b7617eac 15-17,50-53,81-83,94-106,128-135,149-154
+  s_9830c9d8da3c61::t_180f330f4b4a05 1-14,18-49,54-80,84-93,107-127,136-148,155-171
+src/daily_agent/config.py
+  s_9830c9d8da3c61::t_a68d7dfddce28c 162-173,177
+  s_9830c9d8da3c61::t_633be16da14260 43-51
+  s_9830c9d8da3c61::t_10e450b7617eac 174-176
+  s_9830c9d8da3c61::t_70ff7a2d355147 130
+src/daily_agent/sources/github_projects.py
+  s_9830c9d8da3c61::t_b623daf7cd8a90 1-116,119-126,131-222,226-252
+  s_9830c9d8da3c61::t_10e450b7617eac 117-118,127-130,223-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "da5e449dc69e55a4f0e330432389ddb2763a96ff",
+  "prompts": {},
+  "sessions": {
+    "s_9830c9d8da3c61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5ec54d5a-6c65-4881-bfbe-af9ac98dfc26",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
