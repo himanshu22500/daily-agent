@@ -400,22 +400,22 @@ observing during real use for further length/format feedback.
 
 ## Long-term / needs research
 
-- [ ] **Personal insight feed (from Claude Code sessions).** While pairing with
-      Claude Code, lots of useful technical/repo knowledge surfaces — gotchas,
-      techniques, "I didn't know the repo did X" — that's easy to forget. Capture
-      those insights and **resurface them later through the same notification
-      feed**. This is a *distinct* feed from the org-activity one: a personal
-      learning / recall stream, not what-shipped. Likely reuses the existing
-      outbox + Telegram delivery.
-      - **TO DISCUSS — design not started** (the user wants a dedicated session):
-        - **Capture:** mine local Claude Code session transcripts
-          (`~/.claude/projects/<proj>/*.jsonl`)? a "remember this" marker mid-
-          session? an LLM extraction pass over a session afterwards?
-        - **What:** which insights are worth keeping (signal vs noise) and how to
-          dedupe/rank them.
-        - **How/when:** spaced resurfacing (remind-me-later) vs a periodic digest;
-          same paced Telegram feed; how it interleaves with the activity feed.
-      - Bring ideas to that discussion before building.
+- **Personal insight feed (from Claude Code sessions) — DESIGNED** (#46; decision
+      logged 2026-06-30). A *distinct* feed from the org-activity one: a personal
+      learning / recall stream (*what did I learn while building?*), not what-shipped.
+      **Reuses** the existing outbox + multi-stream channels (#38–41) + inbound
+      listener (#49); adds a capture → extract → rank → resurface front-end.
+      - **Capture:** `insights collect` mines `~/.claude/projects/<proj>/*.jsonl` since
+        a watermark — a **marker lane** (in-chat `insight:`, verbatim) + an **LLM
+        extraction lane** (ranked candidates, tight rubric).
+      - **Dedup/rank/type:** exact-key dedup on a canonical key; ranked; each insight
+        typed (repo / technique / gotcha / architecture) → routes to its own channel.
+      - **Resurface (phased):** Phase 1 trickles new insights to **per-type Telegram
+        channels** with an in-channel **`stop`** to mute a type; Phase 2 adds
+        spaced-repetition + a retention signal.
+      - **Build:** Phase 1 (ready) → #60 capture substrate → #61 LLM extraction ·
+        #62 resurface to per-type channels → #63 in-channel `stop`. Phase 2 (deferred)
+        → #64 spaced-repetition. Full rationale: `docs/decisions.md`.
 
 - [ ] **Voice-note delivery.** Once feed *content* is genuinely good, deliver
       chapters as **voice notes** (not just text). Gated on content quality on

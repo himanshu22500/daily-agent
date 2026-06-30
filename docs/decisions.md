@@ -4,6 +4,40 @@ Durable decisions, in the repo so every agent (which starts with only the repo �
 no shared memory) inherits them. Newest first. Keep entries short; link to the
 ROADMAP section or PR for detail.
 
+## 2026-06-30 — Personal insight feed: design (issue #46)
+A second, **distinct** feed — a personal **learning/recall stream** from Claude Code
+pairing sessions (#46), separate from the org-activity feed (*what shipped?* vs *what
+did I learn while building?*). It **reuses the delivery half** (outbox + multi-stream
+channels + pacer + inbound listener) and adds a capture → extract → rank → resurface
+front-end. Decisions from the design session:
+
+- **Capture (local-only, batch).** An `insights collect` CLI mines
+  `~/.claude/projects/<proj>/*.jsonl` since a watermark (mirrors `collect`). **Two
+  lanes** into one `insights` store: a **marker lane** (a configurable in-chat marker,
+  default `insight:`, kept verbatim, top rank) and an **LLM extraction lane** (a
+  per-session pass proposing ranked candidates under a tight rubric — durable
+  repo/architecture facts, gotchas, non-obvious techniques; **not** transient
+  debugging/chatter).
+- **Signal / dedup / rank.** Each insight gets a concise **canonical key**; dedup is
+  **exact-key** on it (honors the "exact-key, not similarity" architecture), so the same
+  gotcha across sessions collapses. Rank = durability × non-obviousness × reusability.
+  Each insight carries a **type** (repo-specific / technique / gotcha / architecture —
+  tunable) that drives channel routing.
+- **Resurface (phased).** **Phase 1:** new insights trickle via the **existing outbox**
+  to **per-type Telegram channels** (one channel per type, via the multi-stream registry
+  #38–41) on a **quiet pacer** independent of the activity feed; the user can **reply
+  `stop` in a channel to mute that type** (extends the #49 inbound listener — control
+  lives where the messages arrive). **Phase 2 (deferred):** spaced-repetition
+  resurfacing (re-show on 1d/3d/1w/1mo) + a retention signal, once capture quality is
+  proven in real use.
+- **Why per-type channels + in-channel stop (maintainer):** each insight type stays
+  isolated and individually mutable from its own channel, so a noisy type can be silenced
+  without touching the rest — the use case multi-stream (#38–41) was built for.
+
+Build: Phase 1 = **#60** (capture substrate) → **#61** (LLM extraction) · **#62**
+(resurface to per-type channels) → **#63** (in-channel `stop`); Phase 2 = **#64**
+(blocked). See `ROADMAP.md` → "Personal insight feed".
+
 ## 2026-06-30 — PM source migrated from Huly to GitHub Project #86
 The org stopped using Huly; project management now lives in **GitHub Project #86**
 (`fcbtech`, "Engineering"). The feed's initiative model is re-sourced onto it and
