@@ -1,0 +1,21 @@
+scripts/install-launchd.sh
+  s_9830c9d8da3c61::t_1d45c23e9bfbde 6-7
+scripts/install-feed-launchd.sh
+  s_9830c9d8da3c61::t_dbde6ecbb9320a 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "e9962e4b23fa4af30ecff55f1eaa3691a8627263",
+  "prompts": {},
+  "sessions": {
+    "s_9830c9d8da3c61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5ec54d5a-6c65-4881-bfbe-af9ac98dfc26",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
