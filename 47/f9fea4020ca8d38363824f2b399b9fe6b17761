@@ -1,0 +1,21 @@
+docs/decisions.md
+  s_9830c9d8da3c61::t_63968786b5a570 7-40
+ROADMAP.md
+  s_9830c9d8da3c61::t_106920015a58df 403-418
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "47f9fea4020ca8d38363824f2b399b9fe6b17761",
+  "prompts": {},
+  "sessions": {
+    "s_9830c9d8da3c61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5ec54d5a-6c65-4881-bfbe-af9ac98dfc26",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
