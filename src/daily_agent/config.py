@@ -13,6 +13,7 @@ key is read from that provider's own standard env var (``ANTHROPIC_API_KEY``,
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -64,6 +65,13 @@ class Settings(BaseSettings):
     team_path: str = "team.json"
     # Canonical name (or handle) that "me" resolves to in `brief` / `--assignee me`.
     me: str = ""
+
+    # --- Insight feed (personal recall stream from Claude Code sessions) ---
+    # Marker that flags a verbatim insight in a chat message (case-insensitive).
+    insights_marker: str = "insight:"
+    # Where Claude Code stores THIS project's transcripts. Empty => derive from the
+    # current working dir (~/.claude/projects/<cwd-with-slashes-as-dashes>).
+    insights_transcripts_dir: str = ""
 
     # --- Daily digest ---
     digest_dir: str = "digests"
@@ -162,6 +170,14 @@ class Settings(BaseSettings):
         return bool(
             self.project_token and self.github_project_number and self.project_owner
         )
+
+    @property
+    def transcripts_path(self) -> str:
+        """Claude Code transcript dir for this project (explicit, else derived)."""
+        if self.insights_transcripts_dir:
+            return self.insights_transcripts_dir
+        mangled = str(Path.cwd().resolve()).replace("/", "-")
+        return str(Path.home() / ".claude" / "projects" / mangled)
 
 
 @lru_cache

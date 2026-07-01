@@ -81,6 +81,30 @@ class Bite(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
+# Personal insight feed
+# --------------------------------------------------------------------------- #
+class Insight(BaseModel):
+    """A captured learning/recall item from a Claude Code pairing session.
+
+    ``key`` is the canonical identity used for **exact-key dedup** (the same gotcha
+    captured across sessions collapses to one). ``type`` tags the insight and later
+    routes it to its own Telegram channel.
+    """
+
+    key: str = Field(description="Canonical identity for exact-key dedup.")
+    text: str = Field(description="The insight, in plain language.")
+    type: str = Field(
+        default="general", description="Category; drives channel routing."
+    )
+    tags: list[str] = Field(default_factory=list)
+    score: float = Field(default=0.0, description="Rank; higher resurfaces first.")
+    source_session: str = Field(default="", description="Originating session id.")
+    git_branch: str = Field(default="", description="Branch active when captured.")
+    captured_at: datetime
+    status: str = Field(default="new", description="new | queued | delivered.")
+
+
+# --------------------------------------------------------------------------- #
 # LLM outputs
 # --------------------------------------------------------------------------- #
 class ProjectSummary(BaseModel):
