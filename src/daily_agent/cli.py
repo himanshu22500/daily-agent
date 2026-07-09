@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import AsyncExitStack
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import typer
 from dotenv import load_dotenv
@@ -43,6 +44,8 @@ from .feed.channels import (
 from .feed.delta import bites_for_activity
 from .feed.followups import answer_followup, post_followup_answer
 from .feed.initiatives_store import InitiativeStore
+from .feed.insights_capture import collect_marked
+from .feed.insights_store import InsightStore
 from .feed.listener import FollowUp, Listener, ListenerStore, TelegramUpdates
 from .feed.outbox import Channel, Outbox
 from .feed.pacer import Pacer
@@ -59,6 +62,11 @@ app = typer.Typer(
     add_completion=False,
     help="AI agents that watch your org's repos and summarize what's being worked on.",
 )
+insights_app = typer.Typer(
+    no_args_is_help=True,
+    help="Personal insight feed — capture + recall from Claude Code sessions.",
+)
+app.add_typer(insights_app, name="insights")
 console = Console()
 
 
@@ -716,6 +724,30 @@ def feed_preview(
     )
     for rc in chapters:
         console.print(Panel(rc.content, border_style="cyan"))
+
+
+@insights_app.command("collect")
+def insights_collect() -> None:
+    """Capture marked insights from local Claude Code transcripts into the store.
+
+    Scans this project's `*.jsonl` transcripts for messages containing the marker
+    (DAILY_AGENT_INSIGHTS_MARKER, default `insight:`) and stores each verbatim,
+    deduped. Only records appended since the last run are read (a per-file
+    watermark). Local-only — it reads `~/.claude/projects/...` on your machine.
+    """
+    s = get_settings()
+    path = s.transcripts_path
+    if not Path(path).exists():
+        console.print(
+            f"[yellow]No transcripts found[/yellow] at {path}. "
+            "Set DAILY_AGENT_INSIGHTS_TRANSCRIPTS_DIR if they live elsewhere."
+        )
+        raise typer.Exit(1)
+    new, scanned = collect_marked(InsightStore(s.db_path), path, s.insights_marker)
+    console.print(
+        f"[green]Insights[/green] captured [bold]{new}[/bold] new "
+        f"(marker '{s.insights_marker}') from {scanned} new record(s) in {path}"
+    )
 
 
 @app.command(name="slack-check")
