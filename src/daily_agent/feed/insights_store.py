@@ -93,6 +93,24 @@ class InsightStore:
             ).all()
             return [_to_insight(r) for r in rows]
 
+    def by_status(self, status: str) -> list[Insight]:
+        with session_scope(self._engine) as session:
+            rows = session.exec(
+                select(InsightRow)
+                .where(InsightRow.status == status)
+                .order_by(InsightRow.score.desc(), InsightRow.captured_at.desc())
+            ).all()
+            return [_to_insight(r) for r in rows]
+
+    def set_status(self, key: str, status: str) -> bool:
+        with session_scope(self._engine) as session:
+            row = session.get(InsightRow, key)
+            if row is None:
+                return False
+            row.status = status
+            session.add(row)
+            return True
+
     # --- per-file watermark ---------------------------------------------- #
     def cursor(self, file_path: str) -> int:
         with session_scope(self._engine) as session:

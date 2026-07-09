@@ -26,6 +26,7 @@ from rich.panel import Panel
 
 from .agents.assistant import AssistantDeps, ask_anything, build_assistant
 from .agents.docs_qa import ask_docs
+from .agents.insight_extractor import extract_insights
 from .agents.person_brief import summarize_person
 from .agents.summarizer import summarize
 from .cache import Cache
@@ -43,7 +44,12 @@ from .feed.channels import (
 )
 from .feed.delta import bites_for_activity
 from .feed.initiatives_store import InitiativeStore
-from .feed.insights_capture import collect_marked
+from .feed.insights_capture import collect_insights, collect_marked
+from .feed.insights_feed import (
+    INSIGHT_KIND,
+    enqueue_new_insights,
+    insight_stream_resolver,
+)
 from .feed.insights_store import InsightStore
 from .feed.listener import FollowUp, Listener, ListenerStore, TelegramUpdates
 from .feed.outbox import Channel, Outbox
@@ -658,7 +664,7 @@ def feed(
         dest = "console"
 
     try:
-        result = outbox.drain(channel, limit=allow)
+        result = outbox.drain(channel, limit=allow, exclude_kind=INSIGHT_KIND)
     finally:
         if hasattr(channel, "close"):
             channel.close()
@@ -670,6 +676,88 @@ def feed(
         + (f", {result.failed} deferred" if result.failed else "")
         + (f", [red]{result.dead} dead[/red]" if result.dead else "")
         + (f"; [dim]{held} still queued (paced)[/dim]" if held else "")
+        + "."
+    )
+
+
+@insights_app.command("feed")
+def insights_feed(
+    to_telegram: bool = typer.Option(
+        False,
+        "--to-telegram",
+        help="Deliver insight bites to per-type Telegram channels.",
+    ),
+    to_file: str = typer.Option(
+        None,
+        "--to-file",
+        help="Append insight bites to this file instead of the console.",
+    ),
+    limit: int = typer.Option(None, help="Deliver at most N insight bites this run."),
+) -> None:
+    """Queue captured insights and trickle them through the outbox."""
+    s = get_settings()
+    store = InsightStore(s.db_path)
+    outbox = Outbox(s.db_path)
+    queued = enqueue_new_insights(store, outbox)
+
+    pacer = Pacer(s.insights_feed_max_per_run, s.feed_quiet_start, s.feed_quiet_end)
+    allow = limit if limit is not None else pacer.allowance(datetime.now())
+    if allow == 0:
+        held = outbox.stats()["pending"]
+        console.print(
+            f"[yellow]Quiet hours[/yellow] — queued {queued} new insight bite(s); "
+            f"holding {held} pending bite(s) for later."
+        )
+        return
+
+    if to_telegram:
+        if not s.telegram_bot_token:
+            console.print(
+                "[red]Telegram bot not configured.[/red] Set "
+                "DAILY_AGENT_TELEGRAM_BOT_TOKEN."
+            )
+            raise typer.Exit(1)
+        if not s.telegram_mtproto_enabled:
+            console.print(
+                "[red]Telegram MTProto not configured.[/red] Per-type insight "
+                "channels require DAILY_AGENT_TELEGRAM_API_ID / _API_HASH / "
+                "_BOT_USERNAME + `daily-agent telegram-auth`."
+            )
+            raise typer.Exit(1)
+        registry = ChannelRegistry(s.db_path)
+        provisioner = TelethonProvisioner(
+            api_id=s.telegram_api_id,
+            api_hash=s.telegram_api_hash,
+            session=s.telegram_session,
+            bot_username=s.telegram_bot_username,
+        )
+        channel: Channel = MultiStreamTelegramChannel(
+            registry,
+            provisioner,
+            bot_factory=lambda cid: TelegramChannel(s.telegram_bot_token, str(cid)),
+            resolver=insight_stream_resolver(store),
+        )
+        dest = "Telegram (per-type channels)"
+    elif to_file:
+        channel = FileChannel(to_file)
+        dest = to_file
+    else:
+        channel = ConsoleChannel(console)
+        dest = "console"
+
+    try:
+        result = outbox.drain(channel, limit=allow, kind=INSIGHT_KIND)
+    finally:
+        if hasattr(channel, "close"):
+            channel.close()
+
+    held = outbox.stats()["pending"]
+    console.print(
+        f"[green]Insight feed[/green] queued {queued} new bite(s); delivered "
+        f"[bold]{result.sent}[/bold] to {dest}"
+        + (f", {result.failed} deferred" if result.failed else "")
+        + (f", [red]{result.dead} dead[/red]" if result.dead else "")
+        + (f"; [dim]{held} pending bite(s) remain[/dim]" if held else "")
         + "."
     )
 
@@ -726,13 +814,19 @@ def feed_preview(
 
 
 @insights_app.command("collect")
-def insights_collect() -> None:
-    """Capture marked insights from local Claude Code transcripts into the store.
+def insights_collect(
+    extract: bool = typer.Option(
+        True,
+        "--extract/--no-extract",
+        help="Run the LLM extraction lane in addition to explicit markers.",
+    ),
+) -> None:
+    """Capture insights from local Claude Code transcripts into the store.
 
     Scans this project's `*.jsonl` transcripts for messages containing the marker
-    (DAILY_AGENT_INSIGHTS_MARKER, default `insight:`) and stores each verbatim,
-    deduped. Only records appended since the last run are read (a per-file
-    watermark). Local-only — it reads `~/.claude/projects/...` on your machine.
+    (DAILY_AGENT_INSIGHTS_MARKER, default `insight:`) and, by default, also asks
+    the extraction agent for durable unmarked insights. Only records appended
+    since the last run are read (a per-file watermark).
     """
     s = get_settings()
     path = s.transcripts_path
@@ -742,10 +836,28 @@ def insights_collect() -> None:
             "Set DAILY_AGENT_INSIGHTS_TRANSCRIPTS_DIR if they live elsewhere."
         )
         raise typer.Exit(1)
-    new, scanned = collect_marked(InsightStore(s.db_path), path, s.insights_marker)
+    store = InsightStore(s.db_path)
+    if extract:
+        result = asyncio.run(
+            collect_insights(
+                store,
+                path,
+                s.insights_marker,
+                lambda messages: extract_insights(s.model, messages),
+            )
+        )
+        console.print(
+            f"[green]Insights[/green] captured [bold]{result.new}[/bold] new "
+            f"({result.marked} marker, {result.extracted} extracted) "
+            f"from {result.scanned} new record(s) in {path}"
+        )
+        return
+
+    new, scanned = collect_marked(store, path, s.insights_marker)
     console.print(
         f"[green]Insights[/green] captured [bold]{new}[/bold] new "
-        f"(marker '{s.insights_marker}') from {scanned} new record(s) in {path}"
+        f"(marker '{s.insights_marker}', extraction disabled) "
+        f"from {scanned} new record(s) in {path}"
     )
 
 

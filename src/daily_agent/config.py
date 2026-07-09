@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     # Where Claude Code stores THIS project's transcripts. Empty => derive from the
     # current working dir (~/.claude/projects/<cwd-with-slashes-as-dashes>).
     insights_transcripts_dir: str = ""
+    # Max insight bites delivered per `insights feed` run. Kept separate from the
+    # activity feed cap so personal recall never competes with org activity.
+    insights_feed_max_per_run: int = 2
 
     # --- Daily digest ---
     digest_dir: str = "digests"

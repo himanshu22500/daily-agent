@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from daily_agent.feed.channel_registry import ChannelRegistry
-from daily_agent.feed.channels import MultiStreamTelegramChannel, stream_for
+from daily_agent.feed.channels import (
+    MultiStreamTelegramChannel,
+    TelegramError,
+    stream_for,
+)
 from daily_agent.feed.outbox import OutboxItem
 
 
@@ -36,6 +40,22 @@ class _FakeBot:
 
     def send(self, item: OutboxItem) -> None:
         _FakeBot.posted.append((self.channel_id, item.content))
+
+    def close(self) -> None: ...
+
+
+class _TransientFakeBot:
+    posted: list[tuple[int, str]] = []
+    calls = 0
+
+    def __init__(self, channel_id: int) -> None:
+        self.channel_id = channel_id
+
+    def send(self, item: OutboxItem) -> None:
+        type(self).calls += 1
+        if type(self).calls == 1:
+            raise TelegramError("Forbidden: bot is not a member of the channel chat")
+        type(self).posted.append((self.channel_id, item.content))
 
     def close(self) -> None: ...
 
@@ -80,3 +100,22 @@ def test_distinct_streams_route_to_distinct_channels(tmp_path):
     assert act != ins
     assert (act, "activity") in _FakeBot.posted
     assert (ins, "learned") in _FakeBot.posted
+
+
+def test_transient_bot_membership_error_is_retried(tmp_path):
+    _TransientFakeBot.posted = []
+    _TransientFakeBot.calls = 0
+    reg = ChannelRegistry(tmp_path / "c.db")
+    prov = _FakeProvisioner()
+    ch = MultiStreamTelegramChannel(
+        reg,
+        prov,
+        bot_factory=_TransientFakeBot,
+        post_retry_seconds=0,
+    )
+
+    ch.send(_item("chapter", "after retry", 1))
+
+    assert _TransientFakeBot.calls == 2
+    chan = reg.get("org-activity").channel_id
+    assert _TransientFakeBot.posted == [(chan, "after retry")]
