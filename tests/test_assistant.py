@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 from daily_agent.agents import assistant as assistant_mod
-from daily_agent.agents.assistant import AssistantGrounding, ask_anything
+from daily_agent.agents.assistant import (
+    AssistantGrounding,
+    ask_anything,
+    person_activity_text,
+)
 from daily_agent.config import Settings
+from daily_agent.sources.github import GitHubError
+from daily_agent.team import TeamMember
 
 
 class _Result:
@@ -47,3 +53,20 @@ async def test_ask_anything_includes_followup_grounding(monkeypatch):
     assert "Invoices now use the new export pipeline." in fake.prompt
     assert "Report generation moved to workers." in fake.prompt
     assert "what does this mean?" in fake.prompt
+
+
+async def test_person_activity_returns_github_error_as_context():
+    class _GitHub:
+        async def search_pull_requests(self, author, since, *, limit):
+            raise GitHubError("GET /search/issues -> 422: invalid author")
+
+    text = await person_activity_text(
+        _GitHub(),
+        Settings(),
+        {"Alice": TeamMember(name="Alice", github="alice-missing")},
+        "Alice",
+    )
+
+    assert "Alice (github: alice-missing)" in text
+    assert "GitHub error while searching this person's PRs" in text
+    assert "invalid author" in text
