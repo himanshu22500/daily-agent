@@ -51,6 +51,13 @@ from .feed.insights_feed import (
     enqueue_new_insights,
     insight_stream_resolver,
 )
+from .feed.insights_flush import (
+    FlushPaths,
+    RunLock,
+    mark_ran,
+    recently_ran,
+    wait_for_quiet_path,
+)
 from .feed.insights_store import InsightStore
 from .feed.listener import FollowUp, Listener, ListenerStore, TelegramUpdates
 from .feed.outbox import Channel, Outbox
@@ -761,6 +768,138 @@ def insights_feed(
         + (f"; [dim]{held} pending bite(s) remain[/dim]" if held else "")
         + "."
     )
+
+
+@insights_app.command("flush")
+def insights_flush(
+    extract: bool = typer.Option(
+        True,
+        "--extract/--no-extract",
+        help="Run LLM extraction while collecting new transcript lines.",
+    ),
+    to_telegram: bool = typer.Option(
+        False,
+        "--to-telegram",
+        help="Deliver flushed insight bites to per-type Telegram channels.",
+    ),
+    to_file: str = typer.Option(
+        None,
+        "--to-file",
+        help="Append flushed insight bites to this file instead of the console.",
+    ),
+    limit: int = typer.Option(None, help="Deliver at most N insight bites."),
+    quiet_seconds: int = typer.Option(
+        30,
+        help="Wait until transcript files stop changing for this many seconds.",
+    ),
+    debounce_seconds: int = typer.Option(
+        20,
+        help="Skip if another flush completed within this many seconds.",
+    ),
+    lock_ttl_seconds: int = typer.Option(
+        600,
+        help="Treat an older lock file as stale after this many seconds.",
+    ),
+) -> None:
+    """Collect then deliver insights, safe for transcript-watch automation."""
+    s = get_settings()
+    path = Path(s.transcripts_path)
+    if not path.exists():
+        console.print(
+            f"[yellow]No transcripts found[/yellow] at {path}. "
+            "Set DAILY_AGENT_INSIGHTS_TRANSCRIPTS_DIR if they live elsewhere."
+        )
+        raise typer.Exit(1)
+
+    paths = FlushPaths.for_db(s.db_path)
+    lock = RunLock(paths.lock, ttl_seconds=lock_ttl_seconds)
+    if not lock.acquire():
+        console.print("[yellow]Insight flush already running[/yellow] — skipping.")
+        return
+
+    try:
+        if recently_ran(paths.stamp, debounce_seconds=debounce_seconds):
+            console.print("[yellow]Insight flush debounced[/yellow] — skipping.")
+            return
+        if not wait_for_quiet_path(path, quiet_seconds=quiet_seconds):
+            console.print(
+                f"[yellow]Transcripts still changing[/yellow] at {path}; "
+                "skipping this flush."
+            )
+            return
+
+        store = InsightStore(s.db_path)
+        if extract:
+            captured = asyncio.run(
+                collect_insights(
+                    store,
+                    path,
+                    s.insights_marker,
+                    lambda messages: extract_insights(s.model, messages),
+                )
+            )
+            captured_msg = (
+                f"{captured.new} new ({captured.marked} marker, "
+                f"{captured.extracted} extracted) from {captured.scanned} records"
+            )
+        else:
+            new, scanned = collect_marked(store, path, s.insights_marker)
+            captured_msg = f"{new} new marker insight(s) from {scanned} records"
+
+        outbox = Outbox(s.db_path)
+        queued = enqueue_new_insights(store, outbox)
+        pacer = Pacer(s.insights_feed_max_per_run, s.feed_quiet_start, s.feed_quiet_end)
+        allow = limit if limit is not None else pacer.allowance(datetime.now())
+        if allow == 0:
+            console.print(
+                f"[green]Insight flush[/green] captured {captured_msg}; queued "
+                f"{queued} bite(s); quiet hours hold delivery."
+            )
+            mark_ran(paths.stamp)
+            return
+
+        if to_telegram:
+            if not s.telegram_bot_token or not s.telegram_mtproto_enabled:
+                console.print(
+                    "[red]Telegram not configured.[/red] Insight flush Telegram "
+                    "delivery requires bot token plus MTProto settings."
+                )
+                raise typer.Exit(1)
+            channel: Channel = MultiStreamTelegramChannel(
+                ChannelRegistry(s.db_path),
+                TelethonProvisioner(
+                    api_id=s.telegram_api_id,
+                    api_hash=s.telegram_api_hash,
+                    session=s.telegram_session,
+                    bot_username=s.telegram_bot_username,
+                ),
+                bot_factory=lambda cid: TelegramChannel(s.telegram_bot_token, str(cid)),
+                resolver=insight_stream_resolver(store),
+            )
+            dest = "Telegram (per-type channels)"
+        elif to_file:
+            channel = FileChannel(to_file)
+            dest = to_file
+        else:
+            channel = ConsoleChannel(console)
+            dest = "console"
+
+        try:
+            result = outbox.drain(channel, limit=allow, kind=INSIGHT_KIND)
+        finally:
+            if hasattr(channel, "close"):
+                channel.close()
+
+        mark_ran(paths.stamp)
+        console.print(
+            f"[green]Insight flush[/green] captured {captured_msg}; queued "
+            f"{queued} bite(s); delivered [bold]{result.sent}[/bold] to {dest}"
+            + (f", {result.failed} deferred" if result.failed else "")
+            + (f", [red]{result.dead} dead[/red]" if result.dead else "")
+            + "."
+        )
+    finally:
+        lock.release()
 
 
 @app.command(name="feed-preview")
