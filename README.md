@@ -192,6 +192,23 @@ the answer in the replied-to bite plus its initiative story-state, and posts the
 answer threaded under your reply. The listener survives restarts via a durable
 offset. Logs go to `digests/listen.{out,err}.log`.
 
+### Insight auto-flush (after Claude sessions)
+
+To collect and send personal insights after Claude transcript writes, install the
+transcript watcher:
+
+```bash
+scripts/install-insights-flush-launchd.sh 30
+launchctl start com.daily-agent.insights-flush   # test it now
+launchctl unload ~/Library/LaunchAgents/com.daily-agent.insights-flush.plist
+```
+
+launchd watches the configured Claude transcript directory and runs
+`daily-agent insights flush --to-telegram`. There is no formal "chat closed"
+signal, so the flush waits until transcript files have been quiet for the given
+number of seconds, then uses a file lock + debounce before collecting and feeding.
+Logs go to `digests/insights-flush.{out,err}.log`.
+
 ## Architecture
 
 ```
