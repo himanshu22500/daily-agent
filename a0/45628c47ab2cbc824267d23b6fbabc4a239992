@@ -1,0 +1,21 @@
+ROADMAP.md
+  s_f1a74ed7377a69::t_24bdf1acb0a91a 430-434
+docs/decisions.md
+  s_f1a74ed7377a69::t_0dc770cbdb2497 9-10,21-24,26-28,35-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "a045628c47ab2cbc824267d23b6fbabc4a239992",
+  "prompts": {},
+  "sessions": {
+    "s_f1a74ed7377a69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f46c3-8cde-7493-b620-ea58c654cc88",
+        "model": "unknown"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
