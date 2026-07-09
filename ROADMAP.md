@@ -429,7 +429,9 @@ observing during real use for further length/format feedback.
         MP3 output works with the likely Telegram path, and cost is listed at
         $15 / 1M characters. A local API probe generated 24 kHz / 128 kbps MP3s
         for `rigel`, `sal`, and `carina` in about 5 seconds each; maintainer
-        listening and Telegram `sendVoice` rendering are still unverified.
+        listening is still pending. Telegram `sendVoice` accepted those MP3s and
+        returned `voice` payloads, so no ffmpeg/OGG conversion is needed unless
+        client UX proves otherwise.
       - Open research questions: subjective voice quality; per-chapter voice
         notes vs one short daily audio digest; you
         can't *skim* audio, so prefer testing a spoken headline + text detail

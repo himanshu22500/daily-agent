@@ -22,6 +22,10 @@ Research findings so far:
   and `carina` succeeded for a 200-character feed-like sample. The API returned
   `audio/mpeg` MP3 files at 24 kHz / 128 kbps, with generation latency around
   4.7-5.6 seconds and durations around 11.6-13.5 seconds depending on voice.
+- **Telegram delivery.** Uploading those MP3s via Telegram `sendVoice` succeeded
+  and Telegram returned `voice` payloads (`mime_type=audio/mpeg`, durations
+  11-13s). This validates the no-transcoding MP3 path at the Bot API level;
+  maintainer still needs to confirm the client UX and voice preference.
 - **Cost.** xAI lists Text to Speech at $15.00 / 1M characters. At the current
   short-chapter length, cost is not the limiting factor: a 200-character sample
   costs about $0.003 per voice, and a 250-450 character bite should be roughly
@@ -33,8 +37,8 @@ Research findings so far:
 
 No production code should be added until (1) feed chapter quality has earned the
 extra delivery surface, (2) the maintainer has listened to candidate voices and
-chosen a default, and (3) a live Telegram `sendVoice` MP3 test confirms client
-rendering.
+chosen a default, and (3) the maintainer confirms the Telegram client rendering
+is acceptable.
 
 ## 2026-06-30 — Personal insight feed: design (issue #46)
 A second, **distinct** feed — a personal **learning/recall stream** from Claude Code
