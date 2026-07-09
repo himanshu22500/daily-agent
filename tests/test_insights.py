@@ -5,14 +5,18 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+import pytest
+
 from daily_agent.feed.insights_capture import (
     canonical_key,
+    collect_insights,
     collect_marked,
     extract_marked,
+    insight_from_candidate,
 )
 from daily_agent.feed.insights_store import InsightStore
 from daily_agent.feed.transcripts import TranscriptMessage, parse_line
-from daily_agent.models import Insight
+from daily_agent.models import Insight, InsightCandidate
 
 
 # --- fixtures -------------------------------------------------------------- #
@@ -132,6 +136,30 @@ def test_canonical_key_normalizes_for_dedup():
     assert canonical_key("a") != canonical_key("b")
 
 
+def test_insight_from_candidate_normalizes_key_type_and_tags():
+    msg = TranscriptMessage(
+        "s1", "feat/demo", "2026-06-30T10:00:00Z", "assistant", "reply"
+    )
+    ins = insight_from_candidate(
+        InsightCandidate(
+            text="  Prefer httpx.MockTransport for offline source tests. ",
+            canonical_key="Insight: Testing / Mock Transport",
+            type="Technique",
+            tags=["Testing", "HTTPX", "testing"],
+            score=0.8,
+        ),
+        [msg],
+    )
+
+    assert ins is not None
+    assert ins.key == "insight:testing-mock-transport"
+    assert ins.text == "Prefer httpx.MockTransport for offline source tests."
+    assert ins.type == "technique"
+    assert ins.tags == ["testing", "httpx"]
+    assert ins.score == 0.8
+    assert ins.source_session == "s1" and ins.git_branch == "feat/demo"
+
+
 # --- store ----------------------------------------------------------------- #
 def test_store_add_dedups_on_key(tmp_path):
     store = InsightStore(tmp_path / "db.sqlite")
@@ -203,3 +231,78 @@ def test_collect_marked_incremental_and_dedup(tmp_path):
     new, scanned = collect_marked(store, tx, "insight:")
     assert new == 0 and scanned == 1
     assert len(store.all()) == 2
+
+
+@pytest.mark.asyncio
+async def test_collect_insights_runs_marker_and_extractor_lanes(tmp_path):
+    tx = tmp_path / "proj"
+    tx.mkdir()
+    f = tx / "session.jsonl"
+    f.write_text(
+        "\n".join(
+            [
+                _user("insight: the bridge needs yarn not npm"),
+                _assistant("Tests should use httpx.MockTransport for source clients."),
+            ]
+        )
+    )
+    store = InsightStore(tmp_path / "db.sqlite")
+    calls = []
+
+    async def fake_extractor(messages):
+        calls.append(messages)
+        return [
+            InsightCandidate(
+                text="Use httpx.MockTransport to keep source-client tests offline.",
+                canonical_key="testing/mock-transport-source-clients",
+                type="technique",
+                tags=["testing", "httpx"],
+                score=0.82,
+            )
+        ]
+
+    result = await collect_insights(store, tx, "insight:", fake_extractor)
+
+    assert result.new == 2
+    assert result.scanned == 2
+    assert result.marked == 1
+    assert result.extracted == 1
+    assert len(calls) == 1 and [m.role for m in calls[0]] == ["user", "assistant"]
+    assert store.cursor(str(f)) == 2
+
+    extracted = store.get("insight:testing-mock-transport-source-clients")
+    assert extracted is not None
+    assert extracted.type == "technique"
+    assert extracted.tags == ["testing", "httpx"]
+    assert extracted.score == 0.82
+
+    rerun = await collect_insights(store, tx, "insight:", fake_extractor)
+    assert rerun == type(rerun)(new=0, scanned=0, marked=0, extracted=0)
+    assert len(calls) == 1  # cursor skipped the already processed messages
+
+
+@pytest.mark.asyncio
+async def test_collect_insights_dedups_extracted_candidates_by_exact_key(tmp_path):
+    tx = tmp_path / "proj"
+    tx.mkdir()
+    (tx / "a.jsonl").write_text(_assistant("SQLite tables are created lazily."))
+    (tx / "b.jsonl").write_text(_assistant("The same SQLite gotcha came up again."))
+    store = InsightStore(tmp_path / "db.sqlite")
+
+    async def fake_extractor(_messages):
+        return [
+            InsightCandidate(
+                text="SQLite schema is created lazily with create_all.",
+                canonical_key="sqlite-lazy-schema-create-all",
+                type="gotcha",
+                tags=["sqlite"],
+                score=0.7,
+            )
+        ]
+
+    result = await collect_insights(store, tx, "insight:", fake_extractor)
+
+    assert result.scanned == 2
+    assert result.new == 1
+    assert result.extracted == 1
+    assert [i.key for i in store.all()] == ["insight:sqlite-lazy-schema-create-all"]

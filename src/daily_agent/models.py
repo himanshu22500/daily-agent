@@ -104,6 +104,32 @@ class Insight(BaseModel):
     status: str = Field(default="new", description="new | queued | delivered.")
 
 
+class InsightCandidate(BaseModel):
+    """Structured LLM candidate before it is persisted as an Insight."""
+
+    text: str = Field(description="The durable insight, in plain language.")
+    canonical_key: str = Field(
+        description="Stable semantic key for exact-key dedup across sessions."
+    )
+    type: str = Field(
+        default="general",
+        description="Category such as repo, technique, gotcha, or architecture.",
+    )
+    tags: list[str] = Field(default_factory=list)
+    score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Durability/usefulness rank; higher resurfaces first.",
+    )
+
+
+class InsightExtraction(BaseModel):
+    """Top-level structured output for the insight extraction agent."""
+
+    candidates: list[InsightCandidate] = Field(default_factory=list)
+
+
 # --------------------------------------------------------------------------- #
 # LLM outputs
 # --------------------------------------------------------------------------- #

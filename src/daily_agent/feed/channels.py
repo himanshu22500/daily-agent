@@ -11,6 +11,7 @@ Slack credentials exist. Slack lands in Phase 2 as just another ``Channel``.
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -192,6 +193,12 @@ def stream_for(item: OutboxItem) -> tuple[str, str]:
     return _STREAMS.get(item.kind, _DEFAULT_STREAM)
 
 
+_TRANSIENT_TELEGRAM_POST_ERRORS = (
+    "bot is not a member",
+    "chat not found",
+)
+
+
 class MultiStreamTelegramChannel:
     """Routes each bite to the Telegram channel for its stream, creating it on demand.
 
@@ -203,11 +210,36 @@ class MultiStreamTelegramChannel:
 
     name = "telegram-multi"
 
-    def __init__(self, registry, provisioner, *, bot_factory, resolver=stream_for):
+    def __init__(
+        self,
+        registry,
+        provisioner,
+        *,
+        bot_factory,
+        resolver=stream_for,
+        post_retries: int = 2,
+        post_retry_seconds: float = 1.0,
+    ):
         self._registry = registry
         self._provisioner = provisioner
         self._bot_factory = bot_factory
         self._resolver = resolver
+        self._post_retries = post_retries
+        self._post_retry_seconds = post_retry_seconds
+
+    def _send_with_retry(self, bot, item: OutboxItem) -> SendReceipt | None:
+        for attempt in range(self._post_retries + 1):
+            try:
+                return bot.send(item)
+            except TelegramError as exc:
+                transient = any(
+                    marker in str(exc).lower()
+                    for marker in _TRANSIENT_TELEGRAM_POST_ERRORS
+                )
+                if not transient or attempt >= self._post_retries:
+                    raise
+                time.sleep(self._post_retry_seconds)
+        return None
 
     def send(self, item: OutboxItem) -> SendReceipt | None:
         # Imported here to avoid a module import cycle (channel_registry is a peer).
@@ -219,7 +251,7 @@ class MultiStreamTelegramChannel:
         )
         bot = self._bot_factory(channel_id)
         try:
-            return bot.send(item)
+            return self._send_with_retry(bot, item)
         finally:
             if hasattr(bot, "close"):
                 bot.close()

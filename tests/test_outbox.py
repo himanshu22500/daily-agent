@@ -131,6 +131,28 @@ def test_limit_caps_deliveries_per_drain(tmp_path):
     assert ob.stats()["pending"] == 3
 
 
+def test_drain_can_filter_by_kind(tmp_path):
+    ob = Outbox(tmp_path / "f.db")
+    ob.enqueue(_bite(key="pr:api#1@merged", subject="repo:api"))
+    ob.enqueue(
+        Bite(
+            dedup_key="insight:mock-transport",
+            subject="insight:mock-transport",
+            kind="insight",
+            content="Use MockTransport.",
+        )
+    )
+
+    insights = _Collector()
+    assert ob.drain(insights, kind="insight").sent == 1
+    assert [item.kind for item in insights.sent] == ["insight"]
+    assert ob.stats()["pending"] == 1
+
+    activity = _Collector()
+    assert ob.drain(activity, exclude_kind="insight").sent == 1
+    assert [item.kind for item in activity.sent] == ["pr_merged"]
+
+
 def test_send_receipt_is_persisted_and_round_trips(tmp_path):
     ob = Outbox(tmp_path / "f.db")
     ob.enqueue(_bite(key="chapter:comms-v3:abc", subject="initiative:comms-v3"))
