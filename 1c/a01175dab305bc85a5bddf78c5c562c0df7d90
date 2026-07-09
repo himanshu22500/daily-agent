@@ -1,0 +1,49 @@
+src/daily_agent/agents/assistant.py
+  s_08b14a8c7c861b::t_55426926e9e02b 69-71,102
+  s_08b14a8c7c861b::t_111c2c7936fcef 32-41,63-68,72-101,103-105,223,227
+tests/test_followups.py
+  s_08b14a8c7c861b::t_55426926e9e02b 31,52-54,90
+  s_08b14a8c7c861b::t_811c48dd751ad3 28-30
+  s_08b14a8c7c861b::t_eae6e59a36f73f 32-34,49-51
+  s_08b14a8c7c861b::t_6f7578312b2e60 55-57,87-89
+  s_08b14a8c7c861b::t_f644d661c8bd56 91-93
+  s_08b14a8c7c861b::t_db7a2ca221b65f 1-27,35-48,58-86,94-116
+src/daily_agent/cli.py
+  s_2391da4dfaadac::t_948aa585cab345 44,786-787,798-799,802-819,825-833
+src/daily_agent/feed/followups.py
+  s_2391da4dfaadac::t_d90747b238d1a6 1-72
+README.md
+  s_08b14a8c7c861b::t_d8859e587be51e 190-193
+docs/decisions.md
+  s_08b14a8c7c861b::t_205216b9090622 90-93
+src/daily_agent/feed/channels.py
+  s_08b14a8c7c861b::t_eae95804c77450 134,141-147,150,169-173
+tests/test_telegram.py
+  s_08b14a8c7c861b::t_0cf4a7e741cd73 45-58
+tests/test_assistant.py
+  s_08b14a8c7c861b::t_2804731a2cd80a 1-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "1ca01175dab305bc85a5bddf78c5c562c0df7d90",
+  "prompts": {},
+  "sessions": {
+    "s_08b14a8c7c861b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "019f46bd-8004-74b0-b5f0-a2c4ef3d13d3",
+        "model": "unknown"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    },
+    "s_2391da4dfaadac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "019f46be-8e7b-7203-b17a-d0007d73a430",
+        "model": "unknown"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
