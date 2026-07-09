@@ -1,0 +1,20 @@
+scripts/worktree-bootstrap.sh
+  s_5515d92cf64e7a::t_aca7ed311adfd6 1-89,91-133
+  s_5515d92cf64e7a::t_4006d9a54d0f9d 90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "b215b69c01b9750625da35f5aa16c218272f63cf",
+  "prompts": {},
+  "sessions": {
+    "s_5515d92cf64e7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1eaa4151-c9b0-4fb8-b9ef-22657acd7f50",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
