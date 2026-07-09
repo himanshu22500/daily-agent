@@ -131,20 +131,23 @@ class TelegramChannel:
         self.chat_id = chat_id
         self._client = client or httpx.Client(timeout=10.0)
 
-    def _post(self, text: str) -> int | None:
+    def _post(self, text: str, *, reply_to_message_id: int | None = None) -> int | None:
         """Post ``text``; return Telegram's ``message_id`` (None if absent).
 
         The message_id lets a reply be threaded under this message, and is the
         identity the inbound listener stores to tell our own posts apart from
         human follow-ups (issue #49).
         """
+        body: dict[str, object] = {
+            "chat_id": self.chat_id,
+            "text": text,
+            "disable_web_page_preview": True,
+        }
+        if reply_to_message_id is not None:
+            body["reply_to_message_id"] = int(reply_to_message_id)
         resp = self._client.post(
             f"https://api.telegram.org/bot{self.token}/sendMessage",
-            json={
-                "chat_id": self.chat_id,
-                "text": text,
-                "disable_web_page_preview": True,
-            },
+            json=body,
         )
         # Telegram returns a useful `description` even on 4xx, so read the body
         # before treating the status as fatal.
@@ -163,9 +166,11 @@ class TelegramChannel:
             return None
         return SendReceipt(chat_id=str(self.chat_id), message_id=message_id)
 
-    def send_text(self, text: str) -> None:
-        """Post an arbitrary message — used for connectivity checks."""
-        self._post(text)
+    def send_text(
+        self, text: str, *, reply_to_message_id: int | None = None
+    ) -> int | None:
+        """Post an arbitrary message — used for checks and threaded replies."""
+        return self._post(text, reply_to_message_id=reply_to_message_id)
 
     def close(self) -> None:
         self._client.close()

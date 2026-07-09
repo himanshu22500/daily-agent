@@ -29,6 +29,16 @@ class AssistantDeps:
     outline: OutlineClient | None = None
 
 
+@dataclass(frozen=True)
+class AssistantGrounding:
+    """Context that pins a free-form question to a specific feed bite."""
+
+    subject: str
+    bite_text: str
+    initiative_title: str | None = None
+    initiative_story_state: str | None = None
+
+
 _SYSTEM_PROMPT = """\
 You are an engineering assistant for a software org. Answer the user's question
 by investigating with your tools — don't guess. You can:
@@ -48,6 +58,49 @@ Synthesize a clear, concrete answer grounded in what you find. Cite specific
 repos, PR numbers, or doc titles. Be honest about gaps. Don't dump raw file
 contents — explain.
 """
+
+
+def _prompt_for_question(
+    question: str,
+    *,
+    repo_hint: str | None = None,
+    grounding: AssistantGrounding | None = None,
+) -> str:
+    prompt = (
+        question if not repo_hint else f"(Focus on the repo: {repo_hint})\n\n{question}"
+    )
+    if grounding is None:
+        return prompt
+
+    lines = [
+        "This is a follow-up to a Telegram feed bite. Answer the user's question "
+        "about that exact subject. Use the context below as grounding; if it is "
+        "insufficient, investigate with tools before answering. Keep the answer "
+        "concise enough to post back to Telegram.",
+        "",
+        "Grounding context:",
+        f"- Subject: {grounding.subject}",
+    ]
+    if grounding.initiative_title:
+        lines.append(f"- Initiative: {grounding.initiative_title}")
+    if grounding.initiative_story_state:
+        lines.extend(
+            [
+                "- Current story state:",
+                grounding.initiative_story_state,
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "Replied-to feed bite:",
+            grounding.bite_text or "(not available)",
+            "",
+            "User question:",
+            prompt,
+        ]
+    )
+    return "\n".join(lines)
 
 
 def build_assistant(model: str) -> Agent[AssistantDeps, str]:
@@ -167,11 +220,10 @@ async def ask_anything(
     team: dict[str, TeamMember],
     outline: OutlineClient | None = None,
     repo_hint: str | None = None,
+    grounding: AssistantGrounding | None = None,
 ) -> str:
     agent = build_assistant(model)
     deps = AssistantDeps(github=github, settings=settings, team=team, outline=outline)
-    prompt = (
-        question if not repo_hint else f"(Focus on the repo: {repo_hint})\n\n{question}"
-    )
+    prompt = _prompt_for_question(question, repo_hint=repo_hint, grounding=grounding)
     result = await agent.run(prompt, deps=deps)
     return result.output

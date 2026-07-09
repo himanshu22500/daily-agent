@@ -41,6 +41,7 @@ from .feed.channels import (
     TelegramError,
 )
 from .feed.delta import bites_for_activity
+from .feed.followups import answer_followup, post_followup_answer
 from .feed.initiatives_store import InitiativeStore
 from .feed.listener import FollowUp, Listener, ListenerStore, TelegramUpdates
 from .feed.outbox import Channel, Outbox
@@ -782,8 +783,8 @@ def telegram_listen() -> None:
     The one persistent process: it watches every channel the bot posts to and,
     when you reply to a bite, identifies that follow-up against the messages we
     sent. Run it under launchd (`scripts/install-listen-launchd.sh`) so it stays
-    up. Phase 2 identifies + logs the follow-up; grounding an answer and posting
-    it threaded back land in later phases.
+    up. Each follow-up is answered with the replied-to bite and initiative
+    story-state as grounding, then posted threaded under the user's reply.
     """
     s = get_settings()
     if not s.telegram_enabled:
@@ -794,12 +795,41 @@ def telegram_listen() -> None:
         raise typer.Exit(1)
 
     outbox = Outbox(s.db_path)
+    initiative_store = InitiativeStore(s.db_path)
+    team = load_team(s.team_path)
     updates = TelegramUpdates(s.telegram_bot_token)
+
+    async def _answer(f: FollowUp) -> str:
+        async with AsyncExitStack() as stack:
+            gh = await stack.enter_async_context(_github())
+            outline = (
+                await stack.enter_async_context(_outline())
+                if s.outline_enabled
+                else None
+            )
+            return await answer_followup(
+                f,
+                model=s.model,
+                github=gh,
+                settings=s,
+                team=team,
+                outline=outline,
+                initiative_store=initiative_store,
+            )
 
     def handler(f: FollowUp) -> None:
         console.print(
             f"[cyan]Follow-up[/cyan] on [bold]{f.subject}[/bold]: {f.text!r} "
             f"(reply to bite {f.dedup_key})"
+        )
+        answer = asyncio.run(_answer(f))
+        channel = TelegramChannel(s.telegram_bot_token, f.chat_id)
+        try:
+            post_followup_answer(channel, f, answer)
+        finally:
+            channel.close()
+        console.print(
+            f"[green]Answered[/green] follow-up {f.message_id} in chat {f.chat_id}."
         )
 
     listener = Listener(
