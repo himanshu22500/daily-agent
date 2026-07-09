@@ -1,0 +1,21 @@
+src/daily_agent/agents/assistant.py
+  s_c66ec26640df5b::t_42d8cceccb4fea 18,106-136,188-190
+tests/test_assistant.py
+  s_c66ec26640df5b::t_c4e10ff53f9868 6-10,12-13,56-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "99b9bac9b0d55b99f1d7e4ba1394ef0e2267b745",
+  "prompts": {},
+  "sessions": {
+    "s_c66ec26640df5b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f46bd-8004-74b0-b5f0-a2c4ef3d13d3",
+        "model": "unknown"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
