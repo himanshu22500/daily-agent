@@ -42,6 +42,20 @@ def test_send_posts_to_sendmessage():
     assert "Add billing" in seen["body"]["text"]
 
 
+def test_send_text_can_thread_under_a_reply():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 8}})
+
+    message_id = _channel(handler).send_text("grounded answer", reply_to_message_id=29)
+
+    assert message_id == 8
+    assert seen["body"]["text"] == "grounded answer"
+    assert seen["body"]["reply_to_message_id"] == 29
+
+
 def test_send_returns_receipt_with_message_id():
     # The message_id is what a reply threads under and how the inbound listener
     # tells our own posts from human follow-ups (issue #49).

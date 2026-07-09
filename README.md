@@ -187,11 +187,10 @@ launchctl unload ~/Library/LaunchAgents/com.daily-agent.listen.plist   # stop
 ```
 
 It identifies which replies are genuine follow-ups (a reply to a bite we sent,
-not one of the bot's own posts) using the message ids the outbox records, and
-survives restarts via a durable offset. Logs go to `digests/listen.{out,err}.log`.
-
-> Today it identifies and logs each follow-up; grounding an answer and posting it
-> back threaded under your reply land in the next phases of #49.
+not one of the bot's own posts) using the message ids the outbox records, grounds
+the answer in the replied-to bite plus its initiative story-state, and posts the
+answer threaded under your reply. The listener survives restarts via a durable
+offset. Logs go to `digests/listen.{out,err}.log`.
 
 ## Architecture
 
