@@ -421,14 +421,19 @@ observing during real use for further length/format feedback.
       chapters as **voice notes** (not just text). Gated on content quality on
       purpose — a voice note amplifies the writing, so a weak chapter sounds
       worse spoken; do this only after the content has earned it.
-      - Telegram fits well: `sendVoice` (OGG/Opus) / `sendAudio` — another
-        method on the existing `TelegramChannel`.
-      - Needs a TTS engine (e.g. OpenAI TTS / ElevenLabs / Cartesia) to render
-        the chapter text → audio, then send.
-      - Open research questions: which TTS (voice quality / latency / cost);
-        per-chapter voice notes vs one short daily audio digest; you can't *skim*
-        audio, so maybe a spoken headline + text for detail; keep clips short
-        (aligns with the bite-sized principle). Capture findings here before building.
+      - Telegram fits well: `sendVoice` (voice-note UX) or `sendAudio` (longer
+        clips) as another method on the existing `TelegramChannel`. Current Bot
+        API docs say `sendVoice` can accept OGG/Opus, MP3, or M4A up to 50 MB;
+        verify actual client rendering live before building.
+      - xAI TTS is the current candidate from research (#47): simple REST call,
+        MP3 output works with the likely Telegram path, and cost is listed at
+        $15 / 1M characters. Live quality testing is still blocked by xAI account
+        credits / spend limit, so it is not selected yet.
+      - Open research questions: voice quality / latency once credits are
+        available; per-chapter voice notes vs one short daily audio digest; you
+        can't *skim* audio, so prefer testing a spoken headline + text detail
+        hybrid; keep clips short (aligns with the bite-sized principle). Capture
+        final findings here before building.
 
 ## Smaller niceties
 

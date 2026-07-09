@@ -4,6 +4,33 @@ Durable decisions, in the repo so every agent (which starts with only the repo �
 no shared memory) inherits them. Newest first. Keep entries short; link to the
 ROADMAP section or PR for detail.
 
+## 2026-07-09 — Voice-note delivery research: xAI TTS candidate (issue #47)
+xAI's Text-to-Speech API is a plausible candidate for feed chapter voice notes,
+but it is **not chosen yet** because live synthesis could not be evaluated: the
+account returned HTTP 429 for exhausted credits / monthly spending limit during a
+local probe of `rigel`, `sal`, and `carina`.
+
+Research findings so far:
+- **Integration shape.** `POST https://api.x.ai/v1/tts` returns raw audio bytes.
+  Use `voice_id`, `language`, and structured `output_format`; default output is
+  MP3 at 24 kHz / 128 kbps. The per-request text cap is 15,000 characters, far
+  above the current ~45-word feed chapter target.
+- **Formats.** xAI supports MP3/WAV/PCM/telephony codecs, not OGG/Opus directly.
+  Telegram `sendVoice` currently accepts OGG/Opus, MP3, or M4A up to 50 MB, so
+  the first implementation path can try xAI MP3 directly before adding an ffmpeg
+  conversion dependency. Live Telegram rendering still needs to be verified.
+- **Cost.** xAI lists Text to Speech at $15.00 / 1M characters. At the current
+  short-chapter length, cost is not the limiting factor; rate limits / spend
+  limits and voice quality are.
+- **UX hypothesis.** Prefer a hybrid default for any future build: keep text as
+  the source of truth and send a short spoken headline/summary, not necessarily
+  a full narration. Audio is not skimmable, so the clip should stay short and the
+  text chapter should remain available.
+
+No production code should be added until (1) feed chapter quality has earned the
+extra delivery surface, (2) xAI credits are available for voice-quality testing,
+and (3) a live Telegram `sendVoice` MP3 test confirms client rendering.
+
 ## 2026-06-30 — Personal insight feed: design (issue #46)
 A second, **distinct** feed — a personal **learning/recall stream** from Claude Code
 pairing sessions (#46), separate from the org-activity feed (*what shipped?* vs *what
