@@ -1,0 +1,29 @@
+scripts/install-insights-flush-launchd.sh
+  s_2391da4dfaadac::t_87f80f1f9970dc 1-56
+scripts/run-insights-flush.sh
+  s_2391da4dfaadac::t_12d9f9802aa64d 1-10
+README.md
+  s_2391da4dfaadac::t_7ce57cb72523a5 196-212
+src/daily_agent/cli.py
+  s_2391da4dfaadac::t_27345b13ac9f37 53-59,772-903
+src/daily_agent/feed/insights_flush.py
+  s_2391da4dfaadac::t_7ac3304715e717 1-151
+tests/test_insights_flush.py
+  s_2391da4dfaadac::t_d11525de9073dd 1-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "fb1d36b3a13f7f3c4cd83f197383737a7a55cab3",
+  "prompts": {},
+  "sessions": {
+    "s_2391da4dfaadac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "019f46be-8e7b-7203-b17a-d0007d73a430",
+        "model": "unknown"
+      },
+      "human_author": "himanshu.mishra <himanshu.mishra@letstranzact.com>"
+    }
+  }
+}
