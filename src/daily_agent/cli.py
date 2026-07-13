@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import AsyncExitStack
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import typer
 from dotenv import load_dotenv
@@ -25,6 +26,7 @@ from rich.panel import Panel
 
 from .agents.assistant import AssistantDeps, ask_anything, build_assistant
 from .agents.docs_qa import ask_docs
+from .agents.insight_extractor import extract_insights
 from .agents.person_brief import summarize_person
 from .agents.summarizer import summarize
 from .cache import Cache
@@ -41,7 +43,22 @@ from .feed.channels import (
     TelegramError,
 )
 from .feed.delta import bites_for_activity
+from .feed.followups import answer_followup, post_followup_answer
 from .feed.initiatives_store import InitiativeStore
+from .feed.insights_capture import collect_insights, collect_marked
+from .feed.insights_feed import (
+    INSIGHT_KIND,
+    enqueue_new_insights,
+    insight_stream_resolver,
+)
+from .feed.insights_flush import (
+    FlushPaths,
+    RunLock,
+    mark_ran,
+    recently_ran,
+    wait_for_quiet_path,
+)
+from .feed.insights_store import InsightStore
 from .feed.listener import FollowUp, Listener, ListenerStore, TelegramUpdates
 from .feed.outbox import Channel, Outbox
 from .feed.pacer import Pacer
@@ -58,6 +75,11 @@ app = typer.Typer(
     add_completion=False,
     help="AI agents that watch your org's repos and summarize what's being worked on.",
 )
+insights_app = typer.Typer(
+    no_args_is_help=True,
+    help="Personal insight feed — capture + recall from Claude Code sessions.",
+)
+app.add_typer(insights_app, name="insights")
 console = Console()
 
 
@@ -650,7 +672,7 @@ def feed(
         dest = "console"
 
     try:
-        result = outbox.drain(channel, limit=allow)
+        result = outbox.drain(channel, limit=allow, exclude_kind=INSIGHT_KIND)
     finally:
         if hasattr(channel, "close"):
             channel.close()
@@ -664,6 +686,220 @@ def feed(
         + (f"; [dim]{held} still queued (paced)[/dim]" if held else "")
         + "."
     )
+
+
+@insights_app.command("feed")
+def insights_feed(
+    to_telegram: bool = typer.Option(
+        False,
+        "--to-telegram",
+        help="Deliver insight bites to per-type Telegram channels.",
+    ),
+    to_file: str = typer.Option(
+        None,
+        "--to-file",
+        help="Append insight bites to this file instead of the console.",
+    ),
+    limit: int = typer.Option(None, help="Deliver at most N insight bites this run."),
+) -> None:
+    """Queue captured insights and trickle them through the outbox."""
+    s = get_settings()
+    store = InsightStore(s.db_path)
+    outbox = Outbox(s.db_path)
+    queued = enqueue_new_insights(store, outbox)
+
+    pacer = Pacer(s.insights_feed_max_per_run, s.feed_quiet_start, s.feed_quiet_end)
+    allow = limit if limit is not None else pacer.allowance(datetime.now())
+    if allow == 0:
+        held = outbox.stats()["pending"]
+        console.print(
+            f"[yellow]Quiet hours[/yellow] — queued {queued} new insight bite(s); "
+            f"holding {held} pending bite(s) for later."
+        )
+        return
+
+    if to_telegram:
+        if not s.telegram_bot_token:
+            console.print(
+                "[red]Telegram bot not configured.[/red] Set "
+                "DAILY_AGENT_TELEGRAM_BOT_TOKEN."
+            )
+            raise typer.Exit(1)
+        if not s.telegram_mtproto_enabled:
+            console.print(
+                "[red]Telegram MTProto not configured.[/red] Per-type insight "
+                "channels require DAILY_AGENT_TELEGRAM_API_ID / _API_HASH / "
+                "_BOT_USERNAME + `daily-agent telegram-auth`."
+            )
+            raise typer.Exit(1)
+        registry = ChannelRegistry(s.db_path)
+        provisioner = TelethonProvisioner(
+            api_id=s.telegram_api_id,
+            api_hash=s.telegram_api_hash,
+            session=s.telegram_session,
+            bot_username=s.telegram_bot_username,
+        )
+        channel: Channel = MultiStreamTelegramChannel(
+            registry,
+            provisioner,
+            bot_factory=lambda cid: TelegramChannel(s.telegram_bot_token, str(cid)),
+            resolver=insight_stream_resolver(store),
+        )
+        dest = "Telegram (per-type channels)"
+    elif to_file:
+        channel = FileChannel(to_file)
+        dest = to_file
+    else:
+        channel = ConsoleChannel(console)
+        dest = "console"
+
+    try:
+        result = outbox.drain(channel, limit=allow, kind=INSIGHT_KIND)
+    finally:
+        if hasattr(channel, "close"):
+            channel.close()
+
+    held = outbox.stats()["pending"]
+    console.print(
+        f"[green]Insight feed[/green] queued {queued} new bite(s); delivered "
+        f"[bold]{result.sent}[/bold] to {dest}"
+        + (f", {result.failed} deferred" if result.failed else "")
+        + (f", [red]{result.dead} dead[/red]" if result.dead else "")
+        + (f"; [dim]{held} pending bite(s) remain[/dim]" if held else "")
+        + "."
+    )
+
+
+@insights_app.command("flush")
+def insights_flush(
+    extract: bool = typer.Option(
+        True,
+        "--extract/--no-extract",
+        help="Run LLM extraction while collecting new transcript lines.",
+    ),
+    to_telegram: bool = typer.Option(
+        False,
+        "--to-telegram",
+        help="Deliver flushed insight bites to per-type Telegram channels.",
+    ),
+    to_file: str = typer.Option(
+        None,
+        "--to-file",
+        help="Append flushed insight bites to this file instead of the console.",
+    ),
+    limit: int = typer.Option(None, help="Deliver at most N insight bites."),
+    quiet_seconds: int = typer.Option(
+        30,
+        help="Wait until transcript files stop changing for this many seconds.",
+    ),
+    debounce_seconds: int = typer.Option(
+        20,
+        help="Skip if another flush completed within this many seconds.",
+    ),
+    lock_ttl_seconds: int = typer.Option(
+        600,
+        help="Treat an older lock file as stale after this many seconds.",
+    ),
+) -> None:
+    """Collect then deliver insights, safe for transcript-watch automation."""
+    s = get_settings()
+    path = Path(s.transcripts_path)
+    if not path.exists():
+        console.print(
+            f"[yellow]No transcripts found[/yellow] at {path}. "
+            "Set DAILY_AGENT_INSIGHTS_TRANSCRIPTS_DIR if they live elsewhere."
+        )
+        raise typer.Exit(1)
+
+    paths = FlushPaths.for_db(s.db_path)
+    lock = RunLock(paths.lock, ttl_seconds=lock_ttl_seconds)
+    if not lock.acquire():
+        console.print("[yellow]Insight flush already running[/yellow] — skipping.")
+        return
+
+    try:
+        if recently_ran(paths.stamp, debounce_seconds=debounce_seconds):
+            console.print("[yellow]Insight flush debounced[/yellow] — skipping.")
+            return
+        if not wait_for_quiet_path(path, quiet_seconds=quiet_seconds):
+            console.print(
+                f"[yellow]Transcripts still changing[/yellow] at {path}; "
+                "skipping this flush."
+            )
+            return
+
+        store = InsightStore(s.db_path)
+        if extract:
+            captured = asyncio.run(
+                collect_insights(
+                    store,
+                    path,
+                    s.insights_marker,
+                    lambda messages: extract_insights(s.model, messages),
+                )
+            )
+            captured_msg = (
+                f"{captured.new} new ({captured.marked} marker, "
+                f"{captured.extracted} extracted) from {captured.scanned} records"
+            )
+        else:
+            new, scanned = collect_marked(store, path, s.insights_marker)
+            captured_msg = f"{new} new marker insight(s) from {scanned} records"
+
+        outbox = Outbox(s.db_path)
+        queued = enqueue_new_insights(store, outbox)
+        pacer = Pacer(s.insights_feed_max_per_run, s.feed_quiet_start, s.feed_quiet_end)
+        allow = limit if limit is not None else pacer.allowance(datetime.now())
+        if allow == 0:
+            console.print(
+                f"[green]Insight flush[/green] captured {captured_msg}; queued "
+                f"{queued} bite(s); quiet hours hold delivery."
+            )
+            mark_ran(paths.stamp)
+            return
+
+        if to_telegram:
+            if not s.telegram_bot_token or not s.telegram_mtproto_enabled:
+                console.print(
+                    "[red]Telegram not configured.[/red] Insight flush Telegram "
+                    "delivery requires bot token plus MTProto settings."
+                )
+                raise typer.Exit(1)
+            channel: Channel = MultiStreamTelegramChannel(
+                ChannelRegistry(s.db_path),
+                TelethonProvisioner(
+                    api_id=s.telegram_api_id,
+                    api_hash=s.telegram_api_hash,
+                    session=s.telegram_session,
+                    bot_username=s.telegram_bot_username,
+                ),
+                bot_factory=lambda cid: TelegramChannel(s.telegram_bot_token, str(cid)),
+                resolver=insight_stream_resolver(store),
+            )
+            dest = "Telegram (per-type channels)"
+        elif to_file:
+            channel = FileChannel(to_file)
+            dest = to_file
+        else:
+            channel = ConsoleChannel(console)
+            dest = "console"
+
+        try:
+            result = outbox.drain(channel, limit=allow, kind=INSIGHT_KIND)
+        finally:
+            if hasattr(channel, "close"):
+                channel.close()
+
+        mark_ran(paths.stamp)
+        console.print(
+            f"[green]Insight flush[/green] captured {captured_msg}; queued "
+            f"{queued} bite(s); delivered [bold]{result.sent}[/bold] to {dest}"
+            + (f", {result.failed} deferred" if result.failed else "")
+            + (f", [red]{result.dead} dead[/red]" if result.dead else "")
+            + "."
+        )
+    finally:
+        lock.release()
 
 
 @app.command(name="feed-preview")
@@ -715,6 +951,54 @@ def feed_preview(
     )
     for rc in chapters:
         console.print(Panel(rc.content, border_style="cyan"))
+
+
+@insights_app.command("collect")
+def insights_collect(
+    extract: bool = typer.Option(
+        True,
+        "--extract/--no-extract",
+        help="Run the LLM extraction lane in addition to explicit markers.",
+    ),
+) -> None:
+    """Capture insights from local Claude Code transcripts into the store.
+
+    Scans this project's `*.jsonl` transcripts for messages containing the marker
+    (DAILY_AGENT_INSIGHTS_MARKER, default `insight:`) and, by default, also asks
+    the extraction agent for durable unmarked insights. Only records appended
+    since the last run are read (a per-file watermark).
+    """
+    s = get_settings()
+    path = s.transcripts_path
+    if not Path(path).exists():
+        console.print(
+            f"[yellow]No transcripts found[/yellow] at {path}. "
+            "Set DAILY_AGENT_INSIGHTS_TRANSCRIPTS_DIR if they live elsewhere."
+        )
+        raise typer.Exit(1)
+    store = InsightStore(s.db_path)
+    if extract:
+        result = asyncio.run(
+            collect_insights(
+                store,
+                path,
+                s.insights_marker,
+                lambda messages: extract_insights(s.model, messages),
+            )
+        )
+        console.print(
+            f"[green]Insights[/green] captured [bold]{result.new}[/bold] new "
+            f"({result.marked} marker, {result.extracted} extracted) "
+            f"from {result.scanned} new record(s) in {path}"
+        )
+        return
+
+    new, scanned = collect_marked(store, path, s.insights_marker)
+    console.print(
+        f"[green]Insights[/green] captured [bold]{new}[/bold] new "
+        f"(marker '{s.insights_marker}', extraction disabled) "
+        f"from {scanned} new record(s) in {path}"
+    )
 
 
 @app.command(name="slack-check")
@@ -782,8 +1066,8 @@ def telegram_listen() -> None:
     The one persistent process: it watches every channel the bot posts to and,
     when you reply to a bite, identifies that follow-up against the messages we
     sent. Run it under launchd (`scripts/install-listen-launchd.sh`) so it stays
-    up. Phase 2 identifies + logs the follow-up; grounding an answer and posting
-    it threaded back land in later phases.
+    up. Each follow-up is answered with the replied-to bite and initiative
+    story-state as grounding, then posted threaded under the user's reply.
     """
     s = get_settings()
     if not s.telegram_enabled:
@@ -794,12 +1078,41 @@ def telegram_listen() -> None:
         raise typer.Exit(1)
 
     outbox = Outbox(s.db_path)
+    initiative_store = InitiativeStore(s.db_path)
+    team = load_team(s.team_path)
     updates = TelegramUpdates(s.telegram_bot_token)
+
+    async def _answer(f: FollowUp) -> str:
+        async with AsyncExitStack() as stack:
+            gh = await stack.enter_async_context(_github())
+            outline = (
+                await stack.enter_async_context(_outline())
+                if s.outline_enabled
+                else None
+            )
+            return await answer_followup(
+                f,
+                model=s.model,
+                github=gh,
+                settings=s,
+                team=team,
+                outline=outline,
+                initiative_store=initiative_store,
+            )
 
     def handler(f: FollowUp) -> None:
         console.print(
             f"[cyan]Follow-up[/cyan] on [bold]{f.subject}[/bold]: {f.text!r} "
             f"(reply to bite {f.dedup_key})"
+        )
+        answer = asyncio.run(_answer(f))
+        channel = TelegramChannel(s.telegram_bot_token, f.chat_id)
+        try:
+            post_followup_answer(channel, f, answer)
+        finally:
+            channel.close()
+        console.print(
+            f"[green]Answered[/green] follow-up {f.message_id} in chat {f.chat_id}."
         )
 
     listener = Listener(

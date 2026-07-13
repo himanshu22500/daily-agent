@@ -123,9 +123,10 @@ the maintainer's replies are attributed to the channel (`sender_chat`), so an
 inbound post can't be told from our own by sender. Disambiguation: **persist every
 `message_id` the bot sends**, keyed to its bite — an inbound reply whose id is in
 that set is our own post (ignore); one that replies to a stored bite is a human
-follow-up to answer, grounded on that bite's initiative. Phase 1 (this PR) adds
-the `sent_messages(chat_id, message_id → dedup_key, subject)` store; the
-long-poll listener + grounded reply land in later PRs.
+follow-up to answer, grounded on that bite's initiative. Phase 1 added the
+`sent_messages(chat_id, message_id → dedup_key, subject)` store; later phases
+added the long-poll listener and grounded threaded replies using the replied-to
+bite plus initiative story-state.
 
 ## 2026-06-08 — Multi-stream Telegram delivery via MTProto channels
 The feed will carry several notification *types* (org-activity, insights, alerts,

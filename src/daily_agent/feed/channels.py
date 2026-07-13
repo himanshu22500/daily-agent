@@ -11,6 +11,7 @@ Slack credentials exist. Slack lands in Phase 2 as just another ``Channel``.
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -131,20 +132,23 @@ class TelegramChannel:
         self.chat_id = chat_id
         self._client = client or httpx.Client(timeout=10.0)
 
-    def _post(self, text: str) -> int | None:
+    def _post(self, text: str, *, reply_to_message_id: int | None = None) -> int | None:
         """Post ``text``; return Telegram's ``message_id`` (None if absent).
 
         The message_id lets a reply be threaded under this message, and is the
         identity the inbound listener stores to tell our own posts apart from
         human follow-ups (issue #49).
         """
+        body: dict[str, object] = {
+            "chat_id": self.chat_id,
+            "text": text,
+            "disable_web_page_preview": True,
+        }
+        if reply_to_message_id is not None:
+            body["reply_to_message_id"] = int(reply_to_message_id)
         resp = self._client.post(
             f"https://api.telegram.org/bot{self.token}/sendMessage",
-            json={
-                "chat_id": self.chat_id,
-                "text": text,
-                "disable_web_page_preview": True,
-            },
+            json=body,
         )
         # Telegram returns a useful `description` even on 4xx, so read the body
         # before treating the status as fatal.
@@ -163,9 +167,11 @@ class TelegramChannel:
             return None
         return SendReceipt(chat_id=str(self.chat_id), message_id=message_id)
 
-    def send_text(self, text: str) -> None:
-        """Post an arbitrary message — used for connectivity checks."""
-        self._post(text)
+    def send_text(
+        self, text: str, *, reply_to_message_id: int | None = None
+    ) -> int | None:
+        """Post an arbitrary message — used for checks and threaded replies."""
+        return self._post(text, reply_to_message_id=reply_to_message_id)
 
     def close(self) -> None:
         self._client.close()
@@ -187,6 +193,12 @@ def stream_for(item: OutboxItem) -> tuple[str, str]:
     return _STREAMS.get(item.kind, _DEFAULT_STREAM)
 
 
+_TRANSIENT_TELEGRAM_POST_ERRORS = (
+    "bot is not a member",
+    "chat not found",
+)
+
+
 class MultiStreamTelegramChannel:
     """Routes each bite to the Telegram channel for its stream, creating it on demand.
 
@@ -198,11 +210,36 @@ class MultiStreamTelegramChannel:
 
     name = "telegram-multi"
 
-    def __init__(self, registry, provisioner, *, bot_factory, resolver=stream_for):
+    def __init__(
+        self,
+        registry,
+        provisioner,
+        *,
+        bot_factory,
+        resolver=stream_for,
+        post_retries: int = 2,
+        post_retry_seconds: float = 1.0,
+    ):
         self._registry = registry
         self._provisioner = provisioner
         self._bot_factory = bot_factory
         self._resolver = resolver
+        self._post_retries = post_retries
+        self._post_retry_seconds = post_retry_seconds
+
+    def _send_with_retry(self, bot, item: OutboxItem) -> SendReceipt | None:
+        for attempt in range(self._post_retries + 1):
+            try:
+                return bot.send(item)
+            except TelegramError as exc:
+                transient = any(
+                    marker in str(exc).lower()
+                    for marker in _TRANSIENT_TELEGRAM_POST_ERRORS
+                )
+                if not transient or attempt >= self._post_retries:
+                    raise
+                time.sleep(self._post_retry_seconds)
+        return None
 
     def send(self, item: OutboxItem) -> SendReceipt | None:
         # Imported here to avoid a module import cycle (channel_registry is a peer).
@@ -214,7 +251,7 @@ class MultiStreamTelegramChannel:
         )
         bot = self._bot_factory(channel_id)
         try:
-            return bot.send(item)
+            return self._send_with_retry(bot, item)
         finally:
             if hasattr(bot, "close"):
                 bot.close()

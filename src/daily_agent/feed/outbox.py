@@ -216,7 +216,13 @@ class Outbox:
 
     # --- drain ------------------------------------------------------------ #
     def _due(
-        self, session: Session, now: datetime, limit: int | None
+        self,
+        session: Session,
+        now: datetime,
+        limit: int | None,
+        *,
+        kind: str | None = None,
+        exclude_kind: str | None = None,
     ) -> list[OutboxItem]:
         stmt = (
             select(OutboxRow)
@@ -227,6 +233,10 @@ class Outbox:
             )
             .order_by(OutboxRow.created_at, OutboxRow.id)
         )
+        if kind is not None:
+            stmt = stmt.where(OutboxRow.kind == kind)
+        if exclude_kind is not None:
+            stmt = stmt.where(OutboxRow.kind != exclude_kind)
         if limit is not None:
             stmt = stmt.limit(limit)
         return [
@@ -256,6 +266,8 @@ class Outbox:
         *,
         limit: int | None = None,
         now: datetime | None = None,
+        kind: str | None = None,
+        exclude_kind: str | None = None,
     ) -> DrainResult:
         """Send due bites through ``channel``, oldest first.
 
@@ -265,7 +277,13 @@ class Outbox:
         moment = now or _now()
         sent = failed = dead = 0
         with session_scope(self._engine) as session:
-            due = self._due(session, moment, limit)
+            due = self._due(
+                session,
+                moment,
+                limit,
+                kind=kind,
+                exclude_kind=exclude_kind,
+            )
         for item in due:
             try:
                 receipt = channel.send(item)

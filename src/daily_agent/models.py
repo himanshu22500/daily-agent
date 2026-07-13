@@ -81,6 +81,56 @@ class Bite(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
+# Personal insight feed
+# --------------------------------------------------------------------------- #
+class Insight(BaseModel):
+    """A captured learning/recall item from a Claude Code pairing session.
+
+    ``key`` is the canonical identity used for **exact-key dedup** (the same gotcha
+    captured across sessions collapses to one). ``type`` tags the insight and later
+    routes it to its own Telegram channel.
+    """
+
+    key: str = Field(description="Canonical identity for exact-key dedup.")
+    text: str = Field(description="The insight, in plain language.")
+    type: str = Field(
+        default="general", description="Category; drives channel routing."
+    )
+    tags: list[str] = Field(default_factory=list)
+    score: float = Field(default=0.0, description="Rank; higher resurfaces first.")
+    source_session: str = Field(default="", description="Originating session id.")
+    git_branch: str = Field(default="", description="Branch active when captured.")
+    captured_at: datetime
+    status: str = Field(default="new", description="new | queued | delivered.")
+
+
+class InsightCandidate(BaseModel):
+    """Structured LLM candidate before it is persisted as an Insight."""
+
+    text: str = Field(description="The durable insight, in plain language.")
+    canonical_key: str = Field(
+        description="Stable semantic key for exact-key dedup across sessions."
+    )
+    type: str = Field(
+        default="general",
+        description="Category such as repo, technique, gotcha, or architecture.",
+    )
+    tags: list[str] = Field(default_factory=list)
+    score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Durability/usefulness rank; higher resurfaces first.",
+    )
+
+
+class InsightExtraction(BaseModel):
+    """Top-level structured output for the insight extraction agent."""
+
+    candidates: list[InsightCandidate] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------- #
 # LLM outputs
 # --------------------------------------------------------------------------- #
 class ProjectSummary(BaseModel):
