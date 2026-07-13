@@ -4,6 +4,42 @@ Durable decisions, in the repo so every agent (which starts with only the repo �
 no shared memory) inherits them. Newest first. Keep entries short; link to the
 ROADMAP section or PR for detail.
 
+## 2026-07-09 — Voice-note delivery research: xAI TTS candidate (issue #47)
+xAI's Text-to-Speech API is a plausible candidate for feed chapter voice notes,
+but it is **not chosen yet** because subjective voice quality and live Telegram
+rendering still need to be evaluated.
+
+Research findings so far:
+- **Integration shape.** `POST https://api.x.ai/v1/tts` returns raw audio bytes.
+  Use `voice_id`, `language`, and structured `output_format`; default output is
+  MP3 at 24 kHz / 128 kbps. The per-request text cap is 15,000 characters, far
+  above the current ~45-word feed chapter target.
+- **Formats.** xAI supports MP3/WAV/PCM/telephony codecs, not OGG/Opus directly.
+  Telegram `sendVoice` currently accepts OGG/Opus, MP3, or M4A up to 50 MB, so
+  the first implementation path can try xAI MP3 directly before adding an ffmpeg
+  conversion dependency. Live Telegram rendering still needs to be verified.
+- **Live probe.** After adding account credits, a local probe of `rigel`, `sal`,
+  and `carina` succeeded for a 200-character feed-like sample. The API returned
+  `audio/mpeg` MP3 files at 24 kHz / 128 kbps, with generation latency around
+  4.7-5.6 seconds and durations around 11.6-13.5 seconds depending on voice.
+- **Telegram delivery.** Uploading those MP3s via Telegram `sendVoice` succeeded
+  and Telegram returned `voice` payloads (`mime_type=audio/mpeg`, durations
+  11-13s). This validates the no-transcoding MP3 path at the Bot API level;
+  maintainer still needs to confirm the client UX and voice preference.
+- **Cost.** xAI lists Text to Speech at $15.00 / 1M characters. At the current
+  short-chapter length, cost is not the limiting factor: a 200-character sample
+  costs about $0.003 per voice, and a 250-450 character bite should be roughly
+  $0.004-$0.007.
+- **UX hypothesis.** Prefer a hybrid default for any future build: keep text as
+  the source of truth and send a short spoken headline/summary, not necessarily
+  a full narration. Audio is not skimmable, so the clip should stay short and the
+  text chapter should remain available.
+
+No production code should be added until (1) feed chapter quality has earned the
+extra delivery surface, (2) the maintainer has listened to candidate voices and
+chosen a default, and (3) the maintainer confirms the Telegram client rendering
+is acceptable.
+
 ## 2026-06-30 — Personal insight feed: design (issue #46)
 A second, **distinct** feed — a personal **learning/recall stream** from Claude Code
 pairing sessions (#46), separate from the org-activity feed (*what shipped?* vs *what
