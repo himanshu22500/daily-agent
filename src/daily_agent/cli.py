@@ -115,7 +115,11 @@ def _drain(
         f"[bold]{result.sent}[/bold] to {destination}"
         + (f", {result.failed} deferred" if result.failed else "")
         + (f", [red]{result.dead} dead[/red]" if result.dead else "")
-        + (f"; [dim]{stats['pending'] + stats['failed']} remain[/dim]" if stats["pending"] + stats["failed"] else "")
+        + (
+            f"; [dim]{stats['pending'] + stats['failed']} remain[/dim]"
+            if stats["pending"] + stats["failed"]
+            else ""
+        )
         + "."
     )
 
@@ -154,7 +158,9 @@ def insights_collect(
         )
         return
     new, scanned = collect_marked(store, path, settings.insights_marker)
-    console.print(f"Captured [bold]{new}[/bold] marker insight(s) from {scanned} records.")
+    console.print(
+        f"Captured [bold]{new}[/bold] marker insight(s) from {scanned} records."
+    )
 
 
 @insights_app.command("feed")
@@ -223,7 +229,9 @@ def insights_flush(
             )
         else:
             new, scanned = collect_marked(store, path, settings.insights_marker)
-            label = f"Insight flush captured {new} marker insight(s) from {scanned} records"
+            label = (
+                f"Insight flush captured {new} marker insight(s) from {scanned} records"
+            )
         queued = enqueue_new_insights(store, Outbox(settings.db_path))
         _drain(
             store,
@@ -286,7 +294,9 @@ def telegram_auth() -> None:
     client.start()
     me = client.get_me()
     client.disconnect()
-    console.print(f"[green]Authorized[/green] as {me.first_name} (@{me.username or me.id}).")
+    console.print(
+        f"[green]Authorized[/green] as {me.first_name} (@{me.username or me.id})."
+    )
 
 
 @app.command(name="telegram-reap")
@@ -312,6 +322,8 @@ def telegram_reap(
         days,
     )
     if reaped:
-        console.print(f"[green]Reaped[/green] {len(reaped)} channel(s): {', '.join(reaped)}.")
+        console.print(
+            f"[green]Reaped[/green] {len(reaped)} channel(s): {', '.join(reaped)}."
+        )
     else:
         console.print(f"No channels idle for {days}+ days.")
