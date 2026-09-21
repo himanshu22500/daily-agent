@@ -1,13 +1,12 @@
-"""Pacer — the cadence policy that keeps the feed a trickle, not a flood.
+"""Pacer — the cadence policy that keeps the insight feed a trickle.
 
-The feed builds a backlog of chapter bites in the outbox; the pacer decides how
+The feed builds a backlog of insight bites in the outbox; the pacer decides how
 many to release on a given run and stays silent during quiet hours. Combined with
 running `feed` periodically (e.g. hourly via launchd), this trickles the backlog
 out over the day instead of dumping it at once — replacing the manual `--limit`.
 
-Deliberately simple and stateless: richer cadence (morning/EOD checkpoints, event
-nudges, a real "notable enough to interrupt" bar) is left for later, once there's
-real-use feedback on what the right rhythm is.
+It stays deliberately simple and stateless until real use shows that a richer
+cadence would help.
 """
 
 from __future__ import annotations

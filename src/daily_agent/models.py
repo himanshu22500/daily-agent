@@ -1,4 +1,4 @@
-"""Domain models shared across sources, storage, and agents."""
+"""Domain models for personal insight capture and delivery."""
 
 from __future__ import annotations
 
@@ -7,154 +7,38 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-# --------------------------------------------------------------------------- #
-# Raw activity collected from sources
-# --------------------------------------------------------------------------- #
-class Commit(BaseModel):
-    repo: str
-    sha: str
-    author: str
-    message: str
-    date: datetime
-    url: str
-
-
-class PullRequest(BaseModel):
-    repo: str
-    number: int
-    title: str
-    head_ref_name: str = ""
-    author: str
-    state: str  # "open" | "closed"
-    merged: bool
-    created_at: datetime
-    merged_at: datetime | None = None
-    url: str
-    body: str = ""
-    additions: int = 0
-    deletions: int = 0
-    changed_files: int = 0
-
-
-class RepoActivity(BaseModel):
-    """All activity gathered for a single repo within a window."""
-
-    repo: str
-    pull_requests: list[PullRequest] = Field(default_factory=list)
-    commits: list[Commit] = Field(default_factory=list)
-
-    @property
-    def is_empty(self) -> bool:
-        return not self.pull_requests and not self.commits
-
-
-# --------------------------------------------------------------------------- #
-# Delivery feed
-# --------------------------------------------------------------------------- #
-class StoryStateUpdate(BaseModel):
-    """Pending storyline memory to commit after a feed item is delivered."""
-
-    initiative_key: str = Field(
-        description="Initiative key whose story-state advances."
-    )
-    story_state: str = Field(description="Updated running summary for the initiative.")
-
-
 class Bite(BaseModel):
-    """One bite-sized, deliverable update — the atom of the feed.
+    """One durable, deduplicated item ready for delivery."""
 
-    ``dedup_key`` is its stable identity: the same real-world fact always produces
-    the same key, so re-running the delta engine never enqueues or delivers it
-    twice (e.g. ``pr:api#12@merged``). ``subject`` is what the bite is *about*
-    (``repo:api``, ``person:alice``) and is what the rolling-delta watermark
-    tracks. ``content`` is the text to deliver.
-    """
-
-    dedup_key: str = Field(description="Stable identity, e.g. 'pr:api#12@merged'.")
-    subject: str = Field(description="Rolling-delta subject, e.g. 'repo:api'.")
-    kind: str = Field(description="Event kind, e.g. 'pr_merged' | 'pr_opened'.")
-    content: str = Field(description="Human-readable text of the update.")
-    story_state_update: StoryStateUpdate | None = Field(
-        default=None,
-        description="Story-state to commit only after this bite is delivered.",
-    )
+    dedup_key: str
+    subject: str
+    kind: str
+    content: str
 
 
-# --------------------------------------------------------------------------- #
-# Personal insight feed
-# --------------------------------------------------------------------------- #
 class Insight(BaseModel):
-    """A captured learning/recall item from a Claude Code pairing session.
+    """A durable learning captured from a coding-agent transcript."""
 
-    ``key`` is the canonical identity used for **exact-key dedup** (the same gotcha
-    captured across sessions collapses to one). ``type`` tags the insight and later
-    routes it to its own Telegram channel.
-    """
-
-    key: str = Field(description="Canonical identity for exact-key dedup.")
-    text: str = Field(description="The insight, in plain language.")
-    type: str = Field(
-        default="general", description="Category; drives channel routing."
-    )
+    key: str
+    text: str
+    type: str = "general"
     tags: list[str] = Field(default_factory=list)
-    score: float = Field(default=0.0, description="Rank; higher resurfaces first.")
-    source_session: str = Field(default="", description="Originating session id.")
-    git_branch: str = Field(default="", description="Branch active when captured.")
+    score: float = 0.0
+    source_session: str = ""
+    git_branch: str = ""
     captured_at: datetime
-    status: str = Field(default="new", description="new | queued | delivered.")
+    status: str = "new"
 
 
 class InsightCandidate(BaseModel):
-    """Structured LLM candidate before it is persisted as an Insight."""
+    """Structured LLM candidate before persistence."""
 
-    text: str = Field(description="The durable insight, in plain language.")
-    canonical_key: str = Field(
-        description="Stable semantic key for exact-key dedup across sessions."
-    )
-    type: str = Field(
-        default="general",
-        description="Category such as repo, technique, gotcha, or architecture.",
-    )
+    text: str
+    canonical_key: str
+    type: str = "general"
     tags: list[str] = Field(default_factory=list)
-    score: float = Field(
-        default=0.0,
-        ge=0.0,
-        le=1.0,
-        description="Durability/usefulness rank; higher resurfaces first.",
-    )
+    score: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class InsightExtraction(BaseModel):
-    """Top-level structured output for the insight extraction agent."""
-
     candidates: list[InsightCandidate] = Field(default_factory=list)
-
-
-# --------------------------------------------------------------------------- #
-# LLM outputs
-# --------------------------------------------------------------------------- #
-class ProjectSummary(BaseModel):
-    """What's happening in one project/repo, in plain language."""
-
-    project: str = Field(description="Repo or project name.")
-    headline: str = Field(description="One-line summary of the current focus.")
-    whats_happening: str = Field(
-        description="2-4 sentences describing the work in progress and its intent."
-    )
-    notable_changes: list[str] = Field(
-        default_factory=list,
-        description="Bullet points of the most significant merged/ongoing changes.",
-    )
-    contributors: list[str] = Field(
-        default_factory=list, description="People active in this project this period."
-    )
-
-
-class ActivityDigest(BaseModel):
-    """Cross-project digest the user reads to know what's going on."""
-
-    period: str = Field(description="Human-readable window, e.g. 'last 24 hours'.")
-    overview: str = Field(
-        description="A few sentences synthesizing org-wide activity and themes."
-    )
-    projects: list[ProjectSummary] = Field(default_factory=list)

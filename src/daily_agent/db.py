@@ -24,8 +24,7 @@ def make_engine(db_path: str | Path) -> Engine:
     """Build a SQLite engine for ``db_path`` (relative or absolute).
 
     ``check_same_thread=False`` because a store's engine outlives a single call
-    and may be reused across threads (e.g. the listener daemon); SQLite file
-    locking still serializes writers.
+    and may be reused across threads; SQLite file locking still serializes writers.
     """
     return create_engine(
         f"sqlite:///{db_path}",

@@ -1,13 +1,12 @@
-"""Channel registry + provisioning orchestration for the multi-stream feed.
+"""Channel registry and provisioning for personal insight streams.
 
-Different notification types (org-activity, insights, alerts, …) go to separate
-Telegram channels the tool creates and deletes on its own. This module is the
+Insight types go to separate Telegram channels the tool creates and deletes on
+its own. This module is the
 *provisioner-agnostic* core: it remembers which channel backs each stream and
 decides when to create or reap one — independent of how channels are actually
 created (that's a ``Provisioner``, implemented live with Telethon elsewhere).
 
-Built and tested offline first (a fake ``Provisioner`` in tests), the same way
-the outbox was channel-agnostic before any real channel existed.
+It is tested offline with a fake ``Provisioner``.
 """
 
 from __future__ import annotations

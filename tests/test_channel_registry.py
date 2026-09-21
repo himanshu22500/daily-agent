@@ -34,12 +34,12 @@ def _at(day: int) -> datetime:
 
 def test_registry_roundtrip(tmp_path):
     r = ChannelRegistry(tmp_path / "c.db")
-    assert r.get("org-activity") is None
-    r.put("org-activity", 555, "Activity", now=_at(1))
-    rec = r.get("org-activity")
-    assert rec.channel_id == 555 and rec.title == "Activity"
-    r.delete("org-activity")
-    assert r.get("org-activity") is None
+    assert r.get("insight:general") is None
+    r.put("insight:general", 555, "Insights General", now=_at(1))
+    rec = r.get("insight:general")
+    assert rec.channel_id == 555 and rec.title == "Insights General"
+    r.delete("insight:general")
+    assert r.get("insight:general") is None
 
 
 def test_ensure_provisions_once_then_caches(tmp_path):
@@ -58,8 +58,8 @@ def test_ensure_provisions_once_then_caches(tmp_path):
 def test_ensure_separate_streams_get_separate_channels(tmp_path):
     r = ChannelRegistry(tmp_path / "c.db")
     p = _FakeProvisioner()
-    a = ensure_channel("org-activity", "Activity", registry=r, provisioner=p)
-    b = ensure_channel("insights", "Insights", registry=r, provisioner=p)
+    a = ensure_channel("insight:technique", "Techniques", registry=r, provisioner=p)
+    b = ensure_channel("insight:gotcha", "Gotchas", registry=r, provisioner=p)
     assert a != b
     assert len(p.created) == 2
 
