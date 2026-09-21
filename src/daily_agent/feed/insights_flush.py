@@ -110,7 +110,10 @@ def _fingerprint(path: Path) -> tuple[tuple[str, int, int], ...]:
         return ()
     files = [path] if path.is_file() else [p for p in path.rglob("*") if p.is_file()]
     return tuple(
-        sorted((str(p.relative_to(path)), p.stat().st_size, p.stat().st_mtime_ns) for p in files)
+        sorted(
+            (str(p.relative_to(path)), p.stat().st_size, p.stat().st_mtime_ns)
+            for p in files
+        )
     )
 
 

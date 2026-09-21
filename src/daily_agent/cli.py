@@ -291,8 +291,7 @@ def chat(
                 try:
                     with console.status("[dim]thinking…[/dim]"):
                         result = await run_with_backoff(
-                            agent,
-                            user, deps=deps, message_history=history
+                            agent, user, deps=deps, message_history=history
                         )
                     history = result.all_messages()
                     console.print(Panel(Markdown(result.output), border_style="cyan"))

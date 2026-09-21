@@ -132,6 +132,9 @@ def test_multistream_resolver_routes_insights_by_type(tmp_path):
     technique = registry.get("insight:technique").channel_id
     gotcha = registry.get("insight:gotcha").channel_id
     assert technique != gotcha
-    assert (technique, store.get("insight:mock-transport").text + "\n\n"
-            "type: technique | tags: testing, httpx | branch: main") in _FakeBot.posted
+    assert (
+        technique,
+        store.get("insight:mock-transport").text + "\n\n"
+        "type: technique | tags: testing, httpx | branch: main",
+    ) in _FakeBot.posted
     assert any(channel_id == gotcha for channel_id, _ in _FakeBot.posted)
