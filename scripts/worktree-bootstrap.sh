@@ -3,7 +3,7 @@
 # worktree-bootstrap.sh — make a fresh git worktree of daily-agent runnable.
 #
 # A new `git worktree` is a clean checkout: it has the branch's CODE but none of
-# the gitignored local state (.env, .venv, team.json, telegram.session, the local
+# the gitignored local state (.env, .venv, telegram.session, the local
 # SQLite DB, ...). This script fills those gaps, idempotently.
 #
 # USAGE
@@ -101,14 +101,12 @@ ensure_dir() { [ -d "$WT/$1" ] && skip "$1/" || { mkdir -p "$WT/$1" && ok "creat
 # ---------- config + secrets ----------
 step "Config & secrets"
 copy_state ".env" required             # all DAILY_AGENT_* config + provider API keys
-copy_state "team.json"                 # PII name<->github map (brief/daily/--assignee me)
 copy_state ".claude/settings.local.json"  # local Claude Code settings
 
 # ---------- local state ----------
 step "Local state"
-# The SQLite store carries delivery-dedup + feed/listener state. Copying it (vs.
-# starting empty) means a `feed` run in this worktree won't re-deliver the whole
-# backlog to your Telegram. Each worktree gets its own independent copy.
+# The SQLite store carries captured insights, cursors, and delivery deduplication.
+# Copying it prevents a worktree from recapturing and redelivering the backlog.
 copy_state "daily_agent.db"
 copy_state "telegram.session"          # MTProto account login (multi-stream feed)
 copy_state "telegram.session-journal"  # SQLite journal, if the session was mid-write
@@ -120,7 +118,7 @@ if [ -d "$WT/.venv" ]; then
   skip ".venv"
 elif command -v uv >/dev/null 2>&1; then
   run "uv sync"
-  # dev group includes telethon, so MTProto (telegram-listen / multi-stream) works.
+  # dev includes telethon, so per-type Telegram channel provisioning works.
   ( cd "$WT" && uv sync ) && ok "uv sync complete (deps + dev group)" || err "uv sync failed"
 else
   err "uv not on PATH — install it, then run: cd $WT && uv sync"
@@ -128,6 +126,4 @@ fi
 
 printf "\n%s✓ worktree ready%s  " "$C_TEAL" "$C_RESET"
 printf "%scd %q && uv run daily-agent --help%s\n" "$C_DIM" "$WT" "$C_RESET"
-warn "Don't run 'daily-agent telegram-listen' here while the main listener runs —"
-warn "Telegram allows only one getUpdates consumer per bot token."
 printf "\n"

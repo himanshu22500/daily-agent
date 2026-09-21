@@ -6,7 +6,6 @@ from daily_agent.feed.channel_registry import ChannelRegistry
 from daily_agent.feed.channels import (
     MultiStreamTelegramChannel,
     TelegramError,
-    stream_for,
 )
 from daily_agent.feed.outbox import OutboxItem
 
@@ -64,22 +63,22 @@ def _channel(tmp_path):
     _FakeBot.posted = []
     reg = ChannelRegistry(tmp_path / "c.db")
     prov = _FakeProvisioner()
-    ch = MultiStreamTelegramChannel(reg, prov, bot_factory=_FakeBot)
+    ch = MultiStreamTelegramChannel(
+        reg,
+        prov,
+        bot_factory=_FakeBot,
+        resolver=lambda item: (f"insight:{item.subject}", f"Insights {item.subject}"),
+    )
     return ch, reg, prov
-
-
-def test_default_resolver_maps_chapter_to_org_activity():
-    assert stream_for(_item("chapter"))[0] == "org-activity"
-    assert stream_for(_item("something-else"))[0] == "org-activity"  # default
 
 
 def test_same_stream_provisions_once_and_posts_to_one_channel(tmp_path):
     ch, reg, prov = _channel(tmp_path)
-    ch.send(_item("chapter", "a", 1))
-    ch.send(_item("chapter", "b", 2))
+    ch.send(_item("insight", "a", 1))
+    ch.send(_item("insight", "b", 2))
     # One channel provisioned, both posts to it.
     assert len(prov.created) == 1
-    chan = reg.get("org-activity").channel_id
+    chan = reg.get("insight:s").channel_id
     assert _FakeBot.posted == [(chan, "a"), (chan, "b")]
 
 
@@ -88,18 +87,16 @@ def test_distinct_streams_route_to_distinct_channels(tmp_path):
     reg = ChannelRegistry(tmp_path / "c.db")
     prov = _FakeProvisioner()
     # Custom resolver: route by kind to two streams.
-    resolver = lambda item: (  # noqa: E731
-        ("insights", "Insights") if item.kind == "insight" else ("org-activity", "Org")
-    )
+    resolver = lambda item: (f"insight:{item.subject}", f"Insights {item.subject}")  # noqa: E731
     ch = MultiStreamTelegramChannel(reg, prov, bot_factory=_FakeBot, resolver=resolver)
-    ch.send(_item("chapter", "activity", 1))
-    ch.send(_item("insight", "learned", 2))
+    ch.send(OutboxItem(1, "k1", "technique", "insight", "learned", 0))
+    ch.send(OutboxItem(2, "k2", "gotcha", "insight", "watch out", 0))
     assert len(prov.created) == 2
-    act = reg.get("org-activity").channel_id
-    ins = reg.get("insights").channel_id
-    assert act != ins
-    assert (act, "activity") in _FakeBot.posted
-    assert (ins, "learned") in _FakeBot.posted
+    technique = reg.get("insight:technique").channel_id
+    gotcha = reg.get("insight:gotcha").channel_id
+    assert technique != gotcha
+    assert (technique, "learned") in _FakeBot.posted
+    assert (gotcha, "watch out") in _FakeBot.posted
 
 
 def test_transient_bot_membership_error_is_retried(tmp_path):
@@ -111,11 +108,12 @@ def test_transient_bot_membership_error_is_retried(tmp_path):
         reg,
         prov,
         bot_factory=_TransientFakeBot,
+        resolver=lambda item: ("insight:general", "Insights General"),
         post_retry_seconds=0,
     )
 
-    ch.send(_item("chapter", "after retry", 1))
+    ch.send(_item("insight", "after retry", 1))
 
     assert _TransientFakeBot.calls == 2
-    chan = reg.get("org-activity").channel_id
+    chan = reg.get("insight:general").channel_id
     assert _TransientFakeBot.posted == [(chan, "after retry")]

@@ -1,7 +1,7 @@
 [project]
 name = "daily-agent"
 version = "0.1.0"
-description = "AI agents that watch your org's repos and summarize what's being worked on."
+description = "Capture durable lessons from coding transcripts and resurface them later."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# MTProto channel provisioning (multi-stream Telegram). Optional — the default
+# MTProto channel provisioning for per-type insight streams. Optional — the default
 # install stays light; enable with `uv sync --extra telegram`.
 telegram = ["telethon>=1.36"]
 

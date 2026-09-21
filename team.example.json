@@ -1,5 +1,0 @@
-{
-  "_comment": "Copy to team.json (gitignored — it holds names/handles, i.e. PII). Maps a canonical display name to the person's GitHub login. Used by `brief` and `brief --assignee me`.",
-  "Jane Doe": { "github": "janedoe" },
-  "John Smith": { "github": "jsmith-corp" }
-}
