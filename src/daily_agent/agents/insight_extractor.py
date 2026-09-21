@@ -11,7 +11,7 @@ from pydantic_ai import Agent
 
 from ..feed.transcripts import TranscriptMessage
 from ..models import InsightCandidate, InsightExtraction
-from .model import build_model, cache_settings
+from .model import build_model, cache_settings, run_with_backoff
 
 _SYSTEM_PROMPT = """\
 You extract durable engineering insights from Claude Code pairing transcripts.
@@ -72,5 +72,5 @@ async def extract_insights(
     if not messages:
         return []
     agent = build_insight_extractor(model)
-    result = await agent.run(_render(messages))
+    result = await run_with_backoff(agent, _render(messages))
     return result.output.candidates

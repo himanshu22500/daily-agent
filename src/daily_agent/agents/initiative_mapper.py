@@ -15,7 +15,7 @@ from pydantic_ai import Agent
 
 from ..feed.initiative import UNTRACKED_KEY, Initiative
 from ..models import PullRequest
-from .model import build_model, cache_settings
+from .model import build_model, cache_settings, run_with_backoff
 
 
 class _Assignment(BaseModel):
@@ -86,5 +86,5 @@ async def map_orphans(
     if not prs or not catalog:
         return {pr_key(pr): UNTRACKED_KEY for pr in prs}
     agent = _build(model)
-    result = await agent.run(_render(prs, catalog))
+    result = await run_with_backoff(agent, _render(prs, catalog))
     return {a.pr: a.initiative for a in result.output.assignments}

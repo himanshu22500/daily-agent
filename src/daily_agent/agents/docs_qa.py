@@ -11,7 +11,7 @@ from __future__ import annotations
 from pydantic_ai import Agent, RunContext
 
 from ..sources.outline import OutlineClient, OutlineError
-from .model import build_model, cache_settings
+from .model import build_model, cache_settings, run_with_backoff
 
 _SYSTEM_PROMPT = """\
 You help engineers by answering their questions from the company's Outline
@@ -72,5 +72,5 @@ def build_docs_agent(model) -> Agent[OutlineClient, str]:
 
 async def ask_docs(model, outline: OutlineClient, question: str) -> str:
     agent = build_docs_agent(build_model(model))
-    result = await agent.run(question, deps=outline)
+    result = await run_with_backoff(agent, question, deps=outline)
     return result.output

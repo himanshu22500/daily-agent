@@ -18,7 +18,7 @@ from ..config import Settings
 from ..sources.github import GitHubClient, GitHubError
 from ..sources.outline import OutlineClient, OutlineError
 from ..team import TeamMember, resolve_member
-from .model import build_model, cache_settings
+from .model import build_model, cache_settings, run_with_backoff
 
 
 @dataclass
@@ -243,5 +243,5 @@ async def ask_anything(
     agent = build_assistant(model)
     deps = AssistantDeps(github=github, settings=settings, team=team, outline=outline)
     prompt = _prompt_for_question(question, repo_hint=repo_hint, grounding=grounding)
-    result = await agent.run(prompt, deps=deps)
+    result = await run_with_backoff(agent, prompt, deps=deps)
     return result.output
