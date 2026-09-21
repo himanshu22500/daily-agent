@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
 from ..models import PullRequest
-from .model import build_model, cache_settings
+from .model import build_model, cache_settings, run_with_backoff
 
 
 class PersonBrief(BaseModel):
@@ -66,5 +66,5 @@ async def summarize_person(
     model: str, name: str, prs: list[PullRequest], tasks: list[dict]
 ) -> PersonBrief:
     agent = build_person_brief_agent(model)
-    result = await agent.run(_render(name, prs, tasks))
+    result = await run_with_backoff(agent, _render(name, prs, tasks))
     return result.output

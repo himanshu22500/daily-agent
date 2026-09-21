@@ -9,7 +9,7 @@ from __future__ import annotations
 from pydantic_ai import Agent
 
 from ..models import ActivityDigest, RepoActivity
-from .model import build_model, cache_settings
+from .model import build_model, cache_settings, run_with_backoff
 
 _SYSTEM_PROMPT = """\
 You are an engineering-activity analyst for a software organization. You are
@@ -75,5 +75,5 @@ async def summarize(
         "Summarize the following engineering activity into a digest.\n\n"
         + _render_activity(non_empty, period)
     )
-    result = await agent.run(prompt)
+    result = await run_with_backoff(agent, prompt)
     return result.output

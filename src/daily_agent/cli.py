@@ -27,6 +27,7 @@ from rich.panel import Panel
 from .agents.assistant import AssistantDeps, ask_anything, build_assistant
 from .agents.docs_qa import ask_docs
 from .agents.insight_extractor import extract_insights
+from .agents.model import run_with_backoff
 from .agents.person_brief import summarize_person
 from .agents.summarizer import summarize
 from .cache import Cache
@@ -289,8 +290,8 @@ def chat(
                 first = False
                 try:
                     with console.status("[dim]thinking…[/dim]"):
-                        result = await agent.run(
-                            user, deps=deps, message_history=history
+                        result = await run_with_backoff(
+                            agent, user, deps=deps, message_history=history
                         )
                     history = result.all_messages()
                     console.print(Panel(Markdown(result.output), border_style="cyan"))

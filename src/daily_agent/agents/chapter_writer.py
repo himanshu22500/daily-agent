@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
 from ..models import PullRequest
-from .model import build_model, cache_settings
+from .model import build_model, cache_settings, run_with_backoff
 
 
 class Chapter(BaseModel):
@@ -98,7 +98,7 @@ async def write_chapter(
     model: str, *, title: str, prior_state: str | None, prs: list[PullRequest]
 ) -> Chapter:
     agent = _build(model)
-    result = await agent.run(_render(title, prior_state, prs))
+    result = await run_with_backoff(agent, _render(title, prior_state, prs))
     return result.output
 
 
@@ -151,5 +151,5 @@ def _render_items(prs: list[PullRequest]) -> str:
 
 async def write_untracked_items(model: str, prs: list[PullRequest]) -> list[str]:
     agent = _build_items(model)
-    result = await agent.run(_render_items(prs))
+    result = await run_with_backoff(agent, _render_items(prs))
     return result.output.items
