@@ -36,6 +36,7 @@ from starlette.templating import Jinja2Templates
 from ..feed.web_feed import FOR_YOU, VIEWS, WebFeed
 from .render import (
     ago,
+    ago_long,
     cover_style,
     inline_markdown,
     label,
@@ -115,6 +116,7 @@ def create_app(
         label=label,
         type_class=type_class,
         longdate=longdate,
+        ago_long=ago_long,
     )
     templates.env.globals.update(
         quote=lambda s: quote(s, safe=""),
@@ -273,7 +275,8 @@ def create_app(
         entry = feed.entry(key)
         # Answer with the fragment the page swaps in: the reader, or the card
         # (a hidden card collapses to an undo note).
-        if request.query_params.get("as") == "reader":
+        reading = request.query_params.get("as") == "reader"
+        if reading:
             fragment = "_reader.html"
         elif request.path_params["action"] == "hide":
             fragment = "_hidden.html"
@@ -287,6 +290,7 @@ def create_app(
                 "next_url": next_url,
                 "close_url": next_url,
                 "show_revisit": request.query_params.get("v") == FOR_YOU,
+                "related": feed.related(key) if reading else [],
             },
         )
 
@@ -314,6 +318,7 @@ def create_app(
             "entry": entry,
             "close_url": _safe_next(request.query_params.get("from")),
             "session_id": "r-" + secrets.token_urlsafe(6),
+            "related": feed.related(entry.key),
         }
         if request.query_params.get("partial") == "1":
             return templates.TemplateResponse(request, "_reader.html", context)

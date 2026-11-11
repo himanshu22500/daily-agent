@@ -431,15 +431,72 @@ html.reading, html.reading body { overflow: hidden; }
 [data-reader-size="lg"] .reader-text { font-size: 1.28rem; }
 [data-reader-size="xl"] .reader-text { font-size: 1.45rem; }
 
-.reader-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+/* Suggested topics + Read next (end of the reader) */
 
-.reader-tags .tag {
-  padding: 6px 12px;
+.topics { margin-top: 32px; }
+.topics-label { margin: 0 0 10px; color: var(--muted); }
+.topic-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.topic {
+  padding: 5px 14px;
+  border: 1px solid var(--muted);
   border-radius: 999px;
-  background: var(--chip);
   color: var(--text);
-  font-size: 0.85rem;
+  font-size: 0.9rem;
+  font-weight: 600;
   text-decoration: none;
+}
+
+.read-next { margin-top: 36px; }
+
+.read-next h2 {
+  margin: 0;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.next-item {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+  color: inherit;
+  text-decoration: none;
+}
+
+.next-text { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; }
+.next-kind { color: var(--muted); font-size: 0.85rem; }
+
+.next-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.next-item time { color: var(--muted); font-size: 0.8rem; }
+
+.cover.thumb {
+  flex: none;
+  width: 38%;
+  max-width: 180px;
+  aspect-ratio: 3 / 2;
+  border-radius: 6px;
+}
+
+.thumb-topic {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  left: 8px;
+  overflow: hidden;
+  font-size: 0.85rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* --- Misc ------------------------------------------------------------------ */

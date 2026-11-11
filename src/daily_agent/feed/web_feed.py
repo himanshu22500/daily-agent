@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import random
 import secrets
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -334,6 +335,54 @@ class WebFeed:
         with session_scope(self._engine) as session:
             row = session.exec(self._base().where(InsightRow.key == key)).first()
         return _entry(*row, self._sources()) if row else None
+
+    def related(
+        self, key: str, *, limit: int = 4, now: datetime | None = None
+    ) -> list[FeedEntry]:
+        """What to read after ``key`` (the reader's "Read next").
+
+        Scored by shared tags (3 each), same project (1.5), and same type (1);
+        unseen insights get +1 and ones viewed in the last day -2, so the list
+        leans toward something new. Ties go to the newest. At most two per
+        coding session, so near-duplicates don't crowd it. Hidden insights never
+        appear. With nothing related, unseen recent insights fill the slots.
+        """
+        current = self.entry(key)
+        if current is None:
+            return []
+        moment = now or _now()
+        sources = self._sources()
+        with session_scope(self._engine) as session:
+            rows = session.exec(
+                self._base()
+                .where(WebFeedStateRow.dismissed_at.is_(None))
+                .where(InsightRow.key != key)
+            ).all()
+        tags = set(current.tags)
+        scored = []
+        for insight, state, published in rows:
+            other = _entry(insight, state, published, sources)
+            score = 3.0 * len(tags & set(other.tags))
+            if current.source and other.source == current.source:
+                score += 1.5
+            if other.type == current.type:
+                score += 1.0
+            if other.new:
+                score += 1.0
+            elif other.last_seen_at and moment - other.last_seen_at < timedelta(days=1):
+                score -= 2.0
+            scored.append((score, other.published_at, insight.source_session, other))
+        scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        picked: list[FeedEntry] = []
+        per_session: Counter[str] = Counter()
+        for _, _, session_id, other in scored:
+            if session_id and per_session[session_id] >= 2:
+                continue
+            per_session[session_id] += 1
+            picked.append(other)
+            if len(picked) == limit:
+                break
+        return picked
 
     def types(self) -> list[tuple[str, int]]:
         """Insight types present in the visible feed, most common first."""

@@ -120,3 +120,15 @@ def longdate(moment: datetime) -> str:
     hour = local.hour % 12 or 12
     meridiem = "AM" if local.hour < 12 else "PM"
     return f"{local:%B} {local.day}, {local.year}, {hour}:{local:%M} {meridiem}"
+
+
+def ago_long(moment: datetime, now: datetime | None = None) -> str:
+    """Spelled-out relative time: ``38 mins ago``, ``3 hours ago``, ``Oct 30``."""
+    short = ago(moment, now)
+    if short.endswith("m") and short[:-1].isdigit():
+        n = int(short[:-1])
+        return f"{n} min{'s' if n != 1 else ''} ago"
+    if short.endswith("h") and short[:-1].isdigit():
+        n = int(short[:-1])
+        return f"{n} hour{'s' if n != 1 else ''} ago"
+    return short
