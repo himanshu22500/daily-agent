@@ -41,8 +41,6 @@ class Settings(BaseSettings):
     # Extra Host names the feed answers to (comma-separated), e.g. a Tailscale
     # MagicDNS name. Loopback names and web_host are always allowed.
     web_allowed_hosts: str = ""
-    # Illustrated cover SVGs for the web feed, one per insight (gitignored).
-    covers_dir: str = "covers"
 
     @property
     def telegram_enabled(self) -> bool:

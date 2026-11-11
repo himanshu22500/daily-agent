@@ -24,7 +24,6 @@ from starlette.middleware import Middleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import Request
 from starlette.responses import (
-    FileResponse,
     JSONResponse,
     PlainTextResponse,
     RedirectResponse,
@@ -34,7 +33,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from ..feed.covers import cover_path, cover_slug
+from ..feed.covers import CoverStore, cover_slug
 from ..feed.web_feed import FOR_YOU, VIEWS, WebFeed
 from .render import (
     ago,
@@ -101,7 +100,6 @@ def create_app(
     *,
     page_size: int = 20,
     allowed_hosts: Sequence[str] | None = None,
-    covers_dir: str | Path | None = None,
 ) -> Starlette:
     """Build the feed app.
 
@@ -111,15 +109,15 @@ def create_app(
     feed. ``None`` disables the check (tests).
     """
     feed = WebFeed(db_path)
+    covers = CoverStore(db_path)
 
     def cover_url(key: str) -> str:
         """URL of the insight's illustrated cover, or "" if it has none."""
-        path = cover_path(covers_dir, key) if covers_dir else None
-        try:
-            version = int(path.stat().st_mtime) if path else 0
-        except OSError:
+        slug = cover_slug(key)
+        version = covers.version(key) if slug else None
+        if not version:
             return ""
-        return f"/covers/{path.name}?v={version}" if path else ""
+        return f"/covers/{slug}.svg?v={quote(version, safe='')}"
 
     templates = Jinja2Templates(directory=str(HERE / "templates"))
     templates.env.filters.update(
@@ -341,11 +339,11 @@ def create_app(
     def cover(request: Request) -> Response:
         """An illustrated cover. Model-drawn SVG, so served fully locked down."""
         name = request.path_params["name"]
-        path = Path(covers_dir) / f"{name}.svg" if covers_dir else None
-        if path is None or cover_slug(name) != name or not path.is_file():
+        svg = covers.get(f"insight:{name}") if cover_slug(name) == name else None
+        if svg is None:
             return PlainTextResponse("No such cover.", status_code=404)
-        return FileResponse(
-            path,
+        return Response(
+            svg,
             media_type="image/svg+xml",
             headers={
                 "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",

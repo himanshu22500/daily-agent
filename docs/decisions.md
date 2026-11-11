@@ -8,9 +8,15 @@ idea (issue #87). The first 301 were drawn by 12 parallel Fable 5.2 subagents
 from a shared art brief; how new insights get covers (the generation pipeline)
 is deliberately left for later.
 
-- **Files, not database rows.** One `<slug>.svg` per insight in a gitignored
-  `covers/` directory. They are derived from private insight text, so they stay
-  off GitHub. Missing covers fall back to the gradient.
+- **Stored in the main database** (`insight_covers`: key, svg, source,
+  updated_at), so backups include them and nothing derived from private insight
+  text sits in the repo. They first lived in a gitignored folder and were moved
+  in at the maintainer's request. Missing covers fall back to the gradient.
+- **Model-drawn covers use the same brief.** `covers-generate` sends the
+  subagents' art brief to the configured model (Gemini) for insights without a
+  cover, validates each SVG, and retries once with the validator's reasons.
+  It's manual and not wired into the flush; the generation pipeline is still
+  undecided.
 - **Model-drawn files are untrusted.** `insights covers-import` accepts only a
   static SVG subset (allow-listed elements, fixed viewBox, no scripts, external
   references, images, foreignObject, event handlers, DTDs; 0.6-12 KB). They are

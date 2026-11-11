@@ -1,12 +1,13 @@
 """Illustrated covers for the web feed (issue #87).
 
-A cover is one SVG file per insight, named after the insight key
-(``insight:foo-bar`` -> ``foo-bar.svg``), kept in a local, gitignored
-directory. The files are written outside the pipeline (by illustrator
-subagents), so nothing is trusted: ``validate_cover`` only accepts a small,
-static, self-contained subset of SVG, and ``import_covers`` copies in only
-files that pass. The web app additionally serves them with a locked-down CSP
-and shows them through ``<img>``, where SVG scripts never run.
+A cover is one SVG illustration per insight, stored in the ``insight_covers``
+table of the main database (so database backups include them). Covers are
+drawn outside capture: by illustrator subagents (imported from a directory of
+``<slug>.svg`` files) or by ``covers-generate`` with the model. Either way the
+SVG is untrusted: ``validate_cover`` only accepts a small, static,
+self-contained subset of SVG, and nothing reaches the table without passing.
+The web app additionally serves covers with a locked-down CSP and shows them
+through ``<img>``, where SVG scripts never run.
 """
 
 from __future__ import annotations
@@ -16,8 +17,13 @@ import re
 import xml.etree.ElementTree as ET
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlmodel import Field, SQLModel, select
+
+from ..db import create_tables, make_engine, session_scope
 from ..models import Insight
 from .insights_store import InsightStore
 
@@ -35,14 +41,9 @@ _EXTERNAL_URL = re.compile(r"url\(\s*['\"]?\s*(?!#)", re.IGNORECASE)
 
 
 def cover_slug(key: str) -> str | None:
-    """File stem for an insight key, or ``None`` if it isn't path-safe."""
+    """URL/file stem for an insight key, or ``None`` if it isn't path-safe."""
     slug = key.removeprefix("insight:")
     return slug if _SLUG.fullmatch(slug) else None
-
-
-def cover_path(covers_dir: str | Path, key: str) -> Path | None:
-    slug = cover_slug(key)
-    return Path(covers_dir) / f"{slug}.svg" if slug else None
 
 
 def validate_cover(data: bytes) -> list[str]:
@@ -81,6 +82,68 @@ def validate_cover(data: bytes) -> list[str]:
     return list(dict.fromkeys(problems))
 
 
+# --- storage --------------------------------------------------------------- #
+
+
+class CoverRow(SQLModel, table=True):
+    __tablename__ = "insight_covers"
+
+    key: str = Field(primary_key=True)
+    svg: str
+    # Who drew it, e.g. "subagent:fable" or "model:google:gemini-3.8-flash".
+    source: str = ""
+    updated_at: str
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
+class CoverStore:
+    """Validated cover SVGs, keyed by insight key, in the main database."""
+
+    def __init__(self, db_path: str | Path) -> None:
+        self._engine = make_engine(str(db_path))
+        create_tables(self._engine, CoverRow)
+
+    def put(self, key: str, svg: str, *, source: str = "") -> list[str]:
+        """Store ``svg`` for ``key`` if it validates; return the problems if not."""
+        problems = validate_cover(svg.encode())
+        if problems:
+            return problems
+        stamp = _now_iso()
+        stmt = sqlite_insert(CoverRow).values(
+            key=key, svg=svg, source=source, updated_at=stamp
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["key"],
+            set_={"svg": svg, "source": source, "updated_at": stamp},
+        )
+        with session_scope(self._engine) as session:
+            session.execute(stmt)
+        return []
+
+    def get(self, key: str) -> str | None:
+        with session_scope(self._engine) as session:
+            row = session.get(CoverRow, key)
+            return row.svg if row else None
+
+    def version(self, key: str) -> str | None:
+        """Changes whenever the cover does (for cache-busting URLs)."""
+        with session_scope(self._engine) as session:
+            stamp = session.exec(
+                select(CoverRow.updated_at).where(CoverRow.key == key)
+            ).first()
+        return stamp
+
+    def keys(self) -> set[str]:
+        with session_scope(self._engine) as session:
+            return set(session.exec(select(CoverRow.key)).all())
+
+
+# --- bringing covers in ------------------------------------------------------ #
+
+
 @dataclass
 class CoverImport:
     imported: int = 0
@@ -89,28 +152,35 @@ class CoverImport:
 
 
 def import_covers(
-    source_dir: str | Path, covers_dir: str | Path, known_keys: set[str]
+    source_dir: str | Path,
+    covers: CoverStore,
+    known_keys: set[str],
+    *,
+    source: str = "import",
 ) -> CoverImport:
-    """Copy valid ``<slug>.svg`` files for known insights into ``covers_dir``.
+    """Store valid ``<slug>.svg`` files for known insights.
 
     Files for unknown insights are skipped; invalid ones are reported with
-    their reasons. Existing covers are overwritten by a valid replacement.
+    their reasons. An existing cover is replaced by a valid file.
     """
-    slugs = {cover_slug(key) for key in known_keys} - {None}
-    destination = Path(covers_dir)
-    destination.mkdir(parents=True, exist_ok=True)
+    by_slug = {cover_slug(key): key for key in known_keys}
+    by_slug.pop(None, None)
     result = CoverImport()
     for path in sorted(Path(source_dir).glob("*.svg")):
-        if path.stem not in slugs:
+        key = by_slug.get(path.stem)
+        if key is None:
             result.unknown.append(path.name)
             continue
-        data = path.read_bytes()
-        problems = validate_cover(data)
+        try:
+            svg = path.read_bytes().decode()
+        except UnicodeDecodeError:
+            result.rejected[path.name] = ["not UTF-8 text"]
+            continue
+        problems = covers.put(key, svg, source=source)
         if problems:
             result.rejected[path.name] = problems
-            continue
-        (destination / path.name).write_bytes(data)
-        result.imported += 1
+        else:
+            result.imported += 1
     return result
 
 
@@ -126,9 +196,10 @@ class CoverGeneration:
 
 async def generate_covers(
     store: InsightStore,
-    covers_dir: str | Path,
+    covers: CoverStore,
     draw: CoverDrawer,
     *,
+    source: str = "",
     limit: int | None = None,
     concurrency: int = 4,
     tries: int = 2,
@@ -136,16 +207,15 @@ async def generate_covers(
 ) -> CoverGeneration:
     """Draw covers for insights without one; store only those that validate.
 
-    A rejected drawing is retried with the validator's reasons as feedback, up
-    to ``tries`` drawings per insight. A failing insight never stops the rest.
+    Only insights with no cover are drawn unless ``overwrite``. A rejected
+    drawing is retried with the validator's reasons as feedback, up to
+    ``tries`` drawings per insight. A failing insight never stops the rest.
     """
-    destination = Path(covers_dir)
-    destination.mkdir(parents=True, exist_ok=True)
+    have = set() if overwrite else covers.keys()
     todo = [
         insight
         for insight in sorted(store.all(), key=lambda i: i.key)
-        if (path := cover_path(destination, insight.key)) is not None
-        and (overwrite or not path.exists())
+        if cover_slug(insight.key) and insight.key not in have
     ]
     if limit is not None:
         todo = todo[:limit]
@@ -170,14 +240,15 @@ async def generate_covers(
                         (str(exc).splitlines() or [type(exc).__name__])[0][:200]
                     ]
                     return
-                data = svg.encode()
-                feedback = validate_cover(data) if svg else ["reply contained no <svg>"]
+                if not svg:
+                    feedback = ["reply contained no <svg>"]
+                    continue
+                feedback = covers.put(insight.key, svg, source=source)
                 if not feedback:
-                    cover_path(destination, insight.key).write_bytes(data)
                     result.written += 1
                     result.failed.pop(insight.key, None)
                     return
-            result.failed[insight.key] = feedback
+            result.failed[insight.key] = feedback or ["no valid drawing"]
 
     await asyncio.gather(*(one(insight) for insight in todo))
     return result

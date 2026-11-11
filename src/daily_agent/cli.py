@@ -25,7 +25,7 @@ from .feed.channels import (
     TelegramError,
 )
 from .agents.cover_illustrator import draw_cover
-from .feed.covers import generate_covers, import_covers
+from .feed.covers import CoverStore, generate_covers, import_covers
 from .feed.headlines import apply_titles, export_for_titling
 from .feed.insights_capture import collect_insights, collect_marked
 from .feed.insights_feed import (
@@ -304,13 +304,14 @@ def insights_titles_import(
 @insights_app.command("covers-import")
 def insights_covers_import(
     source: Path = typer.Argument(..., help="Directory of <insight-slug>.svg files."),
+    label: str = typer.Option("import", help="Who drew them (stored per cover)."),
 ) -> None:
-    """Validate and store illustrated covers for the web feed."""
+    """Validate illustrated covers and store them in the database."""
     settings = get_settings()
     known = {i.key for i in InsightStore(settings.db_path).all()}
-    result = import_covers(source, settings.covers_dir, known)
+    result = import_covers(source, CoverStore(settings.db_path), known, source=label)
     console.print(
-        f"Imported [bold]{result.imported}[/bold] cover(s) into {settings.covers_dir}"
+        f"Imported [bold]{result.imported}[/bold] cover(s) into the database"
         + (
             f"; [yellow]{len(result.rejected)} rejected[/yellow]"
             if result.rejected
@@ -340,8 +341,9 @@ def insights_covers_generate(
     result = asyncio.run(
         generate_covers(
             InsightStore(settings.db_path),
-            settings.covers_dir,
+            CoverStore(settings.db_path),
             draw,
+            source=f"model:{chosen}",
             limit=limit,
             concurrency=concurrency,
             overwrite=overwrite,
@@ -395,7 +397,6 @@ def web(
             settings.db_path,
             page_size=settings.web_page_size,
             allowed_hosts=allowed,
-            covers_dir=settings.covers_dir,
         ),
         host=bind,
         port=listen,
