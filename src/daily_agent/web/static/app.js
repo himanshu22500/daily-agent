@@ -189,11 +189,20 @@
   }
 
   // --- Reader overlay: tap a card, read, ✕ or Back returns to the same spot ----------
+  // Each article opened in the overlay is one history entry with a depth, so
+  // Back steps to the previous article (Read next) while ✕ closes to the feed.
+  let feedUrl = null;
+
+  function readerDepth() {
+    return history.state && history.state.reader ? history.state.depth || 1 : 0;
+  }
+
   async function openReader(href, push = true) {
     const url = new URL(href, location.href);
+    if (overlay.hidden) feedUrl = location.pathname + location.search;
     const fragment = new URL(url);
     fragment.searchParams.set("partial", "1");
-    fragment.searchParams.set("from", location.pathname + location.search);
+    fragment.searchParams.set("from", feedUrl || "/");
     try {
       const res = await fetch(fragment);
       if (!res.ok) throw new Error(String(res.status));
@@ -205,7 +214,9 @@
     overlay.hidden = false;
     overlay.scrollTop = 0;
     root.classList.add("reading");
-    if (push) history.pushState({ reader: url.pathname }, "", url.pathname);
+    if (push) {
+      history.pushState({ reader: url.pathname, depth: readerDepth() + 1 }, "", url.pathname);
+    }
     const reader = overlay.querySelector("[data-reader]");
     markSeen(reader && reader.dataset.key, { now: true });
   }
@@ -218,7 +229,8 @@
   }
 
   function closeReader() {
-    if (history.state && history.state.reader) history.back();
+    const depth = readerDepth();
+    if (depth) history.go(-depth);
     else hideReader();
   }
 

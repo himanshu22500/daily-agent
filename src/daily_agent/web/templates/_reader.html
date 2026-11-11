@@ -41,7 +41,29 @@
     </figure>
     <div class="reader-text">{{ entry.text|md }}</div>
     {% if entry.tags %}
-    <p class="reader-tags">{% for tag in entry.tags %}<a class="tag" href="{{ feed_url(view='latest', q=tag) }}">#{{ tag }}</a>{% endfor %}</p>
+    <section class="topics">
+      <p class="topics-label">Suggested topics:</p>
+      <div class="topic-pills">
+        {% for tag in entry.tags %}<a class="topic" href="{{ feed_url(view='latest', q=tag) }}">{{ tag }}</a>{% endfor %}
+      </div>
+    </section>
+    {% endif %}
+    {% if related %}
+    <section class="read-next" aria-label="Read next">
+      <h2>Read next</h2>
+      {% for item in related %}
+      <a class="next-item" href="/i/{{ quote(item.key) }}" data-open>
+        <span class="next-text">
+          <span class="next-kind">{{ item.type|label }}{% if item.source %} · {{ item.source }}{% endif %}</span>
+          <span class="next-title">{{ item.headline }}</span>
+          <time datetime="{{ item.published_at.isoformat() }}">{{ item.published_at|ago_long }}</time>
+        </span>
+        <span class="cover thumb" style="{{ cover_style(item.key, item.type) }}" aria-hidden="true">
+          <span class="thumb-topic">{{ "#" ~ item.tags[0] if item.tags else item.type|label }}</span>
+        </span>
+      </a>
+      {% endfor %}
+    </section>
     {% endif %}
   </article>
 </div>

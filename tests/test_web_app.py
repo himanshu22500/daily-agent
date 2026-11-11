@@ -382,3 +382,39 @@ def test_static_assets_are_versioned_for_cache_busting(client):
     version = re.search(r"/static/app\.js\?v=(\w+)", body).group(1)
     assert f"/static/app.css?v={version}" in body
     assert client.get(f"/static/app.js?v={version}").status_code == 200
+
+
+def test_reader_ends_with_suggested_topics_and_read_next(client, db):
+    _titled(db)  # adds insight:p tagged #pinia (plus a, b, c tagged tag-<key>)
+    store = InsightStore(db)
+    store.add(
+        Insight(
+            key="insight:q",
+            text="Another Pinia lesson.",
+            type="repo",
+            tags=["pinia"],
+            captured_at=T0,
+            title="Pinia stores need explicit resets",
+        )
+    )
+    page = client.get("/i/insight%3Ap").text
+    assert "Suggested topics:" in page
+    assert '<a class="topic" href="/?view=latest&amp;q=pinia">pinia</a>' in page
+    assert "<h2>Read next</h2>" in page
+    first = re.search(r'<a class="next-item" href="([^"]+)" data-open>', page)
+    assert first.group(1) == "/i/insight%3Aq"  # shares the #pinia tag
+    assert "Pinia stores need explicit resets" in page
+    assert page.count('class="next-item"') == 4
+    # Acting inside the reader re-renders it with Read next intact.
+    saved = client.post("/items/insight%3Ap/save?as=reader", headers=FETCH)
+    assert "<h2>Read next</h2>" in saved.text
+
+
+def test_ago_long_spells_out_recent_times():
+    from daily_agent.web.render import ago_long
+
+    now = T0
+    assert ago_long(now - timedelta(minutes=1), now) == "1 min ago"
+    assert ago_long(now - timedelta(minutes=38), now) == "38 mins ago"
+    assert ago_long(now - timedelta(hours=3), now) == "3 hours ago"
+    assert ago_long(now - timedelta(hours=30), now) == "yesterday"

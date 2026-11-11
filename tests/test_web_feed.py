@@ -284,3 +284,60 @@ def test_edition_type_filter_and_old_editions_are_pruned(db):
     feed.new_edition(now=T0 + timedelta(days=4))
     with pytest.raises(KeyError):
         feed.edition_page(edition)
+
+
+def _rel(key, tags, *, type="repo", session="", stored=0):
+    return Insight(
+        key=f"insight:{key}",
+        text=f"Lesson {key}.",
+        type=type,
+        tags=tags,
+        source_session=session or f"sess-{key}",
+        captured_at=T0,
+        stored_at=T0 + timedelta(minutes=stored),
+    )
+
+
+def test_related_ranks_by_shared_tags_then_project_then_type(db):
+    store = InsightStore(db)
+    for insight in (
+        _rel("cur", ["postgres", "sql"], type="gotcha", session="s-cur"),
+        _rel("both", ["postgres", "sql"]),  # 2 tags: 6 +1 unseen
+        _rel("one", ["postgres"], type="gotcha"),  # 3 +1 type +1 unseen
+        _rel("proj", ["zzz"], session="s-proj"),  # 1.5 project +1 unseen
+        _rel("type", ["other"], type="gotcha"),  # 1 type +1 unseen
+        _rel("none", ["zzz"], type="technique"),  # 1 unseen
+        _rel("gone", ["postgres", "sql"]),  # hidden: never shown
+    ):
+        store.add(insight)
+    # s-cur and s-proj are transcripts from the same project directory.
+    for session in ("s-cur", "s-proj"):
+        store.set_cursor(f"/x/projects/-nowhere-zz-repo-x/{session}.jsonl", 1)
+    feed = WebFeed(db)
+    feed.set_hidden("insight:gone", True)
+    related = [e.key.removeprefix("insight:") for e in feed.related("insight:cur")]
+    assert related == ["both", "one", "proj", "type"]
+    assert "cur" not in related and "gone" not in related
+    assert feed.related("insight:missing") == []
+
+
+def test_related_prefers_unread_and_caps_one_session(db):
+    store = InsightStore(db)
+    store.add(_rel("cur", ["a", "b"], type="gotcha"))
+    for i in range(3):  # near-duplicates from one session: only two may show
+        store.add(_rel(f"dup{i}", ["a", "b"], session="same", stored=i))
+    store.add(_rel("fresh", ["a"]))
+    store.add(_rel("read-today", ["a"]))
+    store.add(_rel("read-long-ago", ["a"]))
+    feed = WebFeed(db)
+    now = datetime.now(timezone.utc)
+    feed.record_views(["insight:read-today"], session_id="v1", now=now)
+    feed.record_views(
+        ["insight:read-long-ago"], session_id="v2", now=now - timedelta(days=3)
+    )
+    keys = [
+        e.key.removeprefix("insight:")
+        for e in feed.related("insight:cur", limit=10, now=now)
+    ]
+    assert keys[:2] == ["dup2", "dup1"] and "dup0" not in keys
+    assert keys.index("fresh") < keys.index("read-long-ago") < keys.index("read-today")
