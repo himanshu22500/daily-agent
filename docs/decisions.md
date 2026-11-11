@@ -1,5 +1,27 @@
 # Decisions
 
+## 2026-11-12 — Gemini runs on Vertex AI, not the Gemini API key
+
+The Gemini API key's project ran out of quota (`429 ... check your plan and
+billing details`), which stopped both insight extraction and cover drawing.
+Gemini now runs on Vertex AI in a billed Google Cloud project
+(`google-cloud:gemini-3.8-flash`, location `global`). It is the same model
+for every use case (maintainer's call: only `gemini-3.8-flash`). No code
+changed; Pydantic AI's `google-cloud:` provider and environment settings
+cover it.
+
+- **Dedicated credentials.** daily-agent uses its own Application Default
+  Credentials in a separate gcloud config, pointed to by
+  `GOOGLE_APPLICATION_CREDENTIALS`, signed in as the account with Vertex
+  access. The machine's default ADC belonged to a different account with no
+  Vertex access, so reusing it failed with 403. It is left untouched for
+  other tools.
+- **Why Vertex over just adding billing to the API key:** IAM-scoped
+  credentials instead of a long-lived key in `.env`, and paid-tier data terms
+  for content that includes internal company code. The project and account
+  are temporary; the maintainer plans to move to a personal project later,
+  which is the same steps with a different project.
+
 ## 2026-11-12 — Illustrated covers drawn by subagents replace the gradient covers
 
 The generated gradient covers read as generic (maintainer: "awful"). Each

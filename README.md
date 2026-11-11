@@ -23,6 +23,31 @@ The default model is `google:gemini-3.8-flash`. Transient provider failures use
 bounded exponential backoff; authentication and other permanent failures stop
 immediately.
 
+### Gemini on Vertex AI
+
+Instead of an API key, Gemini can run on a Google Cloud project you have
+Vertex AI access to (billing on, Vertex AI API enabled). daily-agent runs
+unattended after each session, so give it its own saved credentials in a
+separate gcloud config, leaving your default credentials untouched:
+
+```bash
+CLOUDSDK_CONFIG="$HOME/.config/gcloud-daily-agent" gcloud auth application-default login
+CLOUDSDK_CONFIG="$HOME/.config/gcloud-daily-agent" \
+  gcloud auth application-default set-quota-project YOUR_PROJECT
+```
+
+Then in `.env` (and comment out `GEMINI_API_KEY`):
+
+```bash
+DAILY_AGENT_MODEL=google-cloud:gemini-3.8-flash
+GOOGLE_CLOUD_PROJECT=YOUR_PROJECT
+GOOGLE_CLOUD_LOCATION=global
+GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gcloud-daily-agent/application_default_credentials.json
+```
+
+`gemini-3.8-flash` is served from the `global` location; regional endpoints
+(e.g. `us-central1`) answered 404 when this was set up.
+
 By default, transcripts are read from the Claude Code project directory matching
 this checkout. Set `DAILY_AGENT_INSIGHTS_TRANSCRIPTS_DIR` when the transcripts live
 elsewhere.
