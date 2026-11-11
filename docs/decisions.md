@@ -15,9 +15,13 @@ existing pace, and its cadence will be revisited separately.
 - **Reader state is separate.** Seen, saved and hidden live in `web_feed_state`,
   not `insights.status`, which belongs to the delivery pipeline.
 - **Local and private by default.** Server-rendered Starlette pages with a little
-  vanilla JS and no frontend build. Binds to `127.0.0.1` with no login. Reading on
-  a phone means binding to a trusted private network such as Tailscale. Hosting
-  off this machine was deferred because insights include internal code details.
+  vanilla JS and no frontend build. Binds to `127.0.0.1` with no login. Hosting off
+  this machine was deferred because insights include internal code details.
+- **Phone access goes through `tailscale serve` (tailnet-only), not a wider bind.**
+  The server stays on loopback and Tailscale relays it to the signed-in devices.
+  The tailnet is the access boundary. Binding to the Tailscale IP breaks loopback
+  access and fails while Tailscale is down; binding to `0.0.0.0` would expose the
+  feed to the LAN.
 - **Starlette, not FastAPI.** Current FastAPI pulls an OpenTelemetry upgrade that
   forces major bumps to logfire and mistralai. Starlette was already installed
   and covers everything this page needs.
