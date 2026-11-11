@@ -77,11 +77,36 @@ older sessions still lands its insights at the top, marked "from <date>". A blue
 dot marks insights you haven't scrolled past yet. If the page is left open, a
 pill appears when new insights arrive.
 
-It binds to `127.0.0.1` and has **no login**. To read it on your phone, set
-`DAILY_AGENT_WEB_HOST` to a private interface you trust, such as your Mac's
-Tailscale IP, and open it from the phone over Tailscale. Don't bind it to a
-public network. The server only answers to loopback names and the bind host; to
-use a Tailscale MagicDNS name, add it to `DAILY_AGENT_WEB_ALLOWED_HOSTS`. In the phone's browser, "Add to Home Screen" opens it like an
+It binds to `127.0.0.1` and has **no login**, so don't expose it on a LAN or the
+internet.
+
+### On your phone (Tailscale)
+
+Keep the server on loopback and let `tailscale serve` relay it to devices signed
+into your tailnet only. This is not Funnel, so nothing is public:
+
+```bash
+tailscale serve --bg --http=80 http://127.0.0.1:8765   # persists across restarts
+```
+
+Then allow the Mac's tailnet names in `.env` and restart the job:
+
+```bash
+DAILY_AGENT_WEB_ALLOWED_HOSTS=<mac>.<tailnet>.ts.net,<mac>,<tailscale-ip>
+launchctl kickstart -k gui/$(id -u)/com.daily-agent.web
+```
+
+On the phone (Tailscale app signed in to the same account), open
+`http://<mac>/` and use "Add to Home Screen". WireGuard encrypts the traffic
+end to end, so HTTP is fine inside the tailnet. If you enable HTTPS certificates
+for the tailnet, use `tailscale serve --bg 8765` for an `https://` URL instead.
+Remove the relay with `tailscale serve --http=80 off`. The Mac must be awake and
+connected to Tailscale.
+
+Avoid binding `DAILY_AGENT_WEB_HOST` to the Tailscale IP or `0.0.0.0`. The Tailscale
+IP breaks `127.0.0.1` access and fails while Tailscale is down. `0.0.0.0` exposes
+the feed to your LAN. The Host allowlist only guards against DNS rebinding; it is
+not access control. In the phone's browser, "Add to Home Screen" opens it like an
 app.
 
 ## Telegram
