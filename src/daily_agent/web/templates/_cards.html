@@ -1,13 +1,20 @@
-{% for entry in page.entries %}{% include "_card.html" %}{% endfor %}
+{% for entry in entries %}{% include "_card.html" %}{% endfor %}
 {% if more_url %}
 <a class="more" href="{{ more_url }}" data-more>Load more</a>
-{% elif first_page and not page.entries %}
+{% elif filters.view == "for-you" %}
+<div class="end">
+  <p><strong>You're all caught up.</strong></p>
+  <p>{% if next_revisit %}The next insight comes back {{ next_revisit|until }}.{% else %}New insights land here as soon as a session is flushed.{% endif %}
+    Open again later for a fresh mix.</p>
+  <p><a href="{{ feed_url(view='latest') }}">Browse everything in Latest →</a></p>
+</div>
+{% elif first_page and not entries %}
 <p class="empty">
   {%- if filters.view == "saved" %}Nothing saved yet.
   {%- elif filters.view == "hidden" %}Nothing hidden.
   {%- elif filters.q %}No insights match “{{ filters.q }}”.
   {%- else %}No insights yet. They appear here as soon as a session is flushed.
   {%- endif %}</p>
-{% elif page.entries %}
-<p class="end">You're all caught up.</p>
+{% elif entries %}
+<p class="end">That's everything.</p>
 {% endif %}

@@ -36,7 +36,8 @@ resurface a few at useful intervals.
 - Add a lightweight review command to edit, merge, or discard captured insights.
 - Use resurfacing feedback to adjust ranking and cadence.
 - Revisit Telegram pacing now that the web feed carries the full stream.
-- Let saved/hidden signals from the web feed inform ranking and resurfacing.
+- Let more reader signals shape For you ranking. Saved already shortens revisit
+  gaps; next could be per-type affinity, or "less like this".
 - Add retention and export controls for transcript-derived data.
 
 Work is tracked in GitHub Issues. This file records product direction rather than

@@ -64,3 +64,20 @@ def ago(moment: datetime, now: datetime | None = None) -> str:
     if local.year == current.astimezone().year:
         return f"{local:%b} {local.day}"
     return f"{local:%b} {local.day}, {local.year}"
+
+
+def until(moment: datetime, now: datetime | None = None) -> str:
+    """Compact time-until: ``in 40m``, ``in 5h``, ``tomorrow``, ``in 3 days``."""
+    current = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    seconds = (moment - current).total_seconds()
+    if seconds < 60:
+        return "any moment"
+    if seconds < 3600:
+        return f"in {int(seconds // 60)}m"
+    if seconds < 86400:
+        return f"in {int(seconds // 3600)}h"
+    if seconds < 2 * 86400:
+        return "tomorrow"
+    return f"in {int(seconds // 86400)} days"
