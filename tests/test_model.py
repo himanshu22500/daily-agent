@@ -1,4 +1,4 @@
-"""Model resolution + prompt-cache settings + fast-model fallback (offline)."""
+"""Model settings and retry behavior (offline)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import pytest
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 
 from daily_agent.agents.model import cache_settings, run_with_backoff
-from daily_agent.config import Settings
 
 
 class _FlakyAgent:
@@ -32,18 +31,6 @@ def test_cache_settings_for_anthropic():
 def test_cache_settings_none_for_other_providers():
     assert cache_settings("openai:gpt-4o") is None
     assert cache_settings("") is None
-
-
-def test_bulk_model_falls_back_to_model():
-    s = Settings(model="anthropic:claude-sonnet-4-6", fast_model="")
-    assert s.bulk_model == "anthropic:claude-sonnet-4-6"
-
-
-def test_bulk_model_prefers_fast_model():
-    s = Settings(
-        model="anthropic:claude-sonnet-4-6", fast_model="anthropic:claude-haiku-4-5"
-    )
-    assert s.bulk_model == "anthropic:claude-haiku-4-5"
 
 
 async def test_run_with_backoff_recovers_from_transient_http_errors():

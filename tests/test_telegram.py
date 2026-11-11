@@ -12,12 +12,12 @@ from daily_agent.feed.outbox import Outbox, OutboxItem
 from daily_agent.models import Bite
 
 
-def _item(content: str = "PR merged in api: #1 Add billing") -> OutboxItem:
+def _item(content: str = "Use a database-enforced deduplication key") -> OutboxItem:
     return OutboxItem(
         id=1,
-        dedup_key="pr:api#1@merged",
-        subject="repo:api",
-        kind="pr_merged",
+        dedup_key="insight:deduplication",
+        subject="insight:deduplication",
+        kind="insight",
         content=content,
         attempts=0,
     )
@@ -39,37 +39,30 @@ def test_send_posts_to_sendmessage():
     _channel(handler).send(_item())
     assert seen["url"] == "https://api.telegram.org/bot123:ABC/sendMessage"
     assert seen["body"]["chat_id"] == "42"
-    assert "Add billing" in seen["body"]["text"]
+    assert "deduplication" in seen["body"]["text"]
 
 
-def test_send_text_can_thread_under_a_reply():
+def test_send_text_posts_plain_text():
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen["body"] = json.loads(request.content)
         return httpx.Response(200, json={"ok": True, "result": {"message_id": 8}})
 
-    message_id = _channel(handler).send_text("grounded answer", reply_to_message_id=29)
+    message_id = _channel(handler).send_text("connected")
 
     assert message_id == 8
-    assert seen["body"]["text"] == "grounded answer"
-    assert seen["body"]["reply_to_message_id"] == 29
+    assert seen["body"]["text"] == "connected"
 
 
-def test_send_returns_receipt_with_message_id():
-    # The message_id is what a reply threads under and how the inbound listener
-    # tells our own posts from human follow-ups (issue #49).
+def test_send_ignores_message_id():
     handler = lambda req: httpx.Response(  # noqa: E731
         200, json={"ok": True, "result": {"message_id": 7}}
     )
-    receipt = _channel(handler).send(_item())
-    assert receipt is not None
-    assert receipt.message_id == 7
-    assert receipt.chat_id == "42"
+    assert _channel(handler).send(_item()) is None
 
 
 def test_send_returns_none_when_no_message_id():
-    # A success without a result payload yields no receipt — nothing to persist.
     handler = lambda req: httpx.Response(200, json={"ok": True})  # noqa: E731
     assert _channel(handler).send(_item()) is None
 
@@ -106,9 +99,9 @@ def test_outbox_retries_a_failed_telegram_send(tmp_path):
     ob = Outbox(tmp_path / "f.db")
     ob.enqueue(
         Bite(
-            dedup_key="pr:api#1@merged",
-            subject="repo:api",
-            kind="pr_merged",
+            dedup_key="insight:retry",
+            subject="insight:retry",
+            kind="insight",
             content="hi",
         )
     )

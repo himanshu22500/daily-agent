@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 
 from ..models import Bite, Insight
-from .channels import stream_for
 from .insights_store import InsightStore
 from .outbox import Outbox, OutboxItem
 
@@ -62,8 +61,6 @@ def insight_stream_resolver(store: InsightStore):
     """Build a MultiStreamTelegramChannel resolver keyed by insight type."""
 
     def _resolve(item: OutboxItem) -> tuple[str, str]:
-        if item.kind != INSIGHT_KIND:
-            return stream_for(item)
         insight = store.get(item.subject)
         insight_type = _slug(insight.type if insight else "") or "general"
         label = _label(insight_type) or "General"

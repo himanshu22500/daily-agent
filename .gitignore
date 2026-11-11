@@ -25,15 +25,13 @@ build/
 
 # Local agent data store
 *.db
+*.insights-flush.lock
+*.insights-flush.stamp
 
 # Keep the example env committed (overrides .env.* above)
 !.env.example
 
-# Team mapping contains names/handles (PII) — keep local
-team.json
-!team.example.json
-
-# Generated daily digests (contain names/work summaries — PII)
+# Generated insight output and logs
 digests/
 
 # Telegram MTProto session (account login — never commit)

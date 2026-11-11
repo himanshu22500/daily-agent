@@ -19,8 +19,8 @@ the test suite (everything is mocked, so it runs anywhere):
 |---|---|---|
 | Write code + offline tests | ✅ | ✅ |
 | Run `uv run pytest` (all mocked) | ✅ | ✅ |
-| Verify against **live GitHub Projects / Telegram / real data** | ❌ no secrets | ✅ |
-| Merge to `main`; run the scheduled feed | ❌ | ✅ |
+| Verify against **Telegram / real transcripts / Gemini** | ❌ no secrets | ✅ |
+| Merge to `main`; run the scheduled insight flush | ❌ | ✅ |
 
 A cloud agent's whole job is: **pick a `ready` issue → do it → open a PR → stop.**
 It never merges. The maintainer merges after any needed live verification.
@@ -44,7 +44,7 @@ It never merges. The maintainer merges after any needed live verification.
    patterns: `httpx.MockTransport`, monkeypatched agent calls, `tmp_path` SQLite).
 3. **PR description** links the issue (`Closes #N`), says what you did, and
    **separates what you verified offline from what still needs live verification**.
-4. If the change touches **GitHub Projects, Telegram, the live DB, or real LLM
+4. If the change touches **Telegram, the live DB, transcripts, or real LLM
    output**, add the **`needs-local-verification`** label so the maintainer knows
    to test it live before merging.
 5. **Durable decisions go into the repo** — `ROADMAP.md` for strategy, `docs/
@@ -57,20 +57,16 @@ It never merges. The maintainer merges after any needed live verification.
 ## Guardrails
 
 - `main` is protected: PRs only, CI must be green, no direct pushes.
-- CI runs the **offline** suite only (no secrets in CI, ever — especially not the
-  company GitHub/project token).
+- CI runs the **offline** suite only (no secrets or private transcripts in CI).
 - Keep PRs small; small blast radius, fewer conflicts, easier live-verification.
 
 ## Project map (where things live)
 
-- `src/daily_agent/feed/` — the delivery feed pipeline (outbox, delta, initiative
-  resolver/catalog/mapping, story-state, storyteller, pacer, channels).
-- `src/daily_agent/agents/` — the LLM agents (summarizer, person brief, chapter
-  writer, initiative mapper, assistant, docs Q&A) + model wiring.
-- `src/daily_agent/sources/` — GitHub, GitHub Projects (v2 board via GraphQL),
-  Outline clients.
-- `src/daily_agent/{cli,config,storage,cache,models,team,deliver}.py` — CLI and
-  core plumbing.
+- `src/daily_agent/feed/` — transcript capture, insight storage, durable outbox,
+  pacing, and delivery channels.
+- `src/daily_agent/agents/` — structured insight extraction and model wiring.
+- `src/daily_agent/sources/` — optional Telegram channel provisioning.
+- `src/daily_agent/{cli,config,db,models}.py` — CLI and core plumbing.
 - `tests/` — all offline. `ROADMAP.md` — strategy. `docs/decisions.md` — decision log.
 
 See `CONTRIBUTING.md` for the short version and local setup.

@@ -47,7 +47,7 @@ def test_create_channel_creates_invites_promotes_and_marks_id():
     prov = TelethonProvisioner(
         api_id="1", api_hash="h", session="s", bot_username="mybot", client=fake
     )
-    cid = prov.create_channel("Org Activity", "about")
+    cid = prov.create_channel("Insights General", "about")
     assert cid == -10042  # marked id from the fake channel id 42
     # A bot can't be invited as a member — EditAdminRequest both adds + promotes it.
     assert fake.calls == ["CreateChannelRequest", "EditAdminRequest"]

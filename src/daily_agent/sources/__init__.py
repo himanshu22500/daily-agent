@@ -1,1 +1,1 @@
-"""Data sources the agent gathers from (GitHub, GitHub Projects, Outline, ...)."""
+"""External adapters used to provision personal insight delivery channels."""
