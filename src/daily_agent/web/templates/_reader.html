@@ -58,9 +58,14 @@
           <span class="next-title">{{ item.headline }}</span>
           <time datetime="{{ item.published_at.isoformat() }}">{{ item.published_at|ago_long }}</time>
         </span>
+        {% set thumb = cover_url(item.key) %}
+        {% if thumb %}
+        <span class="cover thumb has-art" aria-hidden="true"><img src="{{ thumb }}" alt="" loading="lazy" decoding="async"></span>
+        {% else %}
         <span class="cover thumb" style="{{ cover_style(item.key, item.type) }}" aria-hidden="true">
           <span class="thumb-topic">{{ "#" ~ item.tags[0] if item.tags else item.type|label }}</span>
         </span>
+        {% endif %}
       </a>
       {% endfor %}
     </section>

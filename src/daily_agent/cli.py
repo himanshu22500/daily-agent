@@ -24,6 +24,8 @@ from .feed.channels import (
     TelegramChannel,
     TelegramError,
 )
+from .agents.cover_illustrator import draw_cover
+from .feed.covers import CoverStore, generate_covers, import_covers
 from .feed.headlines import apply_titles, export_for_titling
 from .feed.insights_capture import collect_insights, collect_marked
 from .feed.insights_feed import (
@@ -297,6 +299,63 @@ def insights_titles_import(
     )
     for key in result.unknown[:10] + result.empty[:10]:
         console.print(f"  [dim]skipped {key}[/dim]")
+
+
+@insights_app.command("covers-import")
+def insights_covers_import(
+    source: Path = typer.Argument(..., help="Directory of <insight-slug>.svg files."),
+    label: str = typer.Option("import", help="Who drew them (stored per cover)."),
+) -> None:
+    """Validate illustrated covers and store them in the database."""
+    settings = get_settings()
+    known = {i.key for i in InsightStore(settings.db_path).all()}
+    result = import_covers(source, CoverStore(settings.db_path), known, source=label)
+    console.print(
+        f"Imported [bold]{result.imported}[/bold] cover(s) into the database"
+        + (
+            f"; [yellow]{len(result.rejected)} rejected[/yellow]"
+            if result.rejected
+            else ""
+        )
+        + (f"; {len(result.unknown)} for unknown insights" if result.unknown else "")
+        + "."
+    )
+    for name, problems in list(result.rejected.items())[:20]:
+        console.print(f"  [dim]{name}: {'; '.join(problems)}[/dim]")
+
+
+@insights_app.command("covers-generate")
+def insights_covers_generate(
+    limit: int = typer.Option(None, help="Draw at most N covers."),
+    concurrency: int = typer.Option(4, help="Drawings in flight at once."),
+    model: str = typer.Option(None, help="Model to draw with (default: model)."),
+    overwrite: bool = typer.Option(False, help="Redraw insights that have a cover."),
+) -> None:
+    """Draw illustrated covers with the model for insights that lack one."""
+    settings = get_settings()
+    chosen = model or settings.model
+
+    async def draw(record: dict, feedback: list[str] | None) -> str:
+        return await draw_cover(chosen, record, feedback)
+
+    result = asyncio.run(
+        generate_covers(
+            InsightStore(settings.db_path),
+            CoverStore(settings.db_path),
+            draw,
+            source=f"model:{chosen}",
+            limit=limit,
+            concurrency=concurrency,
+            overwrite=overwrite,
+        )
+    )
+    console.print(
+        f"Drew [bold]{result.written}[/bold] cover(s) with {chosen}"
+        + (f"; [yellow]{len(result.failed)} failed[/yellow]" if result.failed else "")
+        + "."
+    )
+    for key, problems in list(result.failed.items())[:20]:
+        console.print(f"  [dim]{key}: {'; '.join(problems)}[/dim]")
 
 
 @insights_app.command("status")

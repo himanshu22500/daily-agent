@@ -33,6 +33,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
+from ..feed.covers import CoverStore, cover_slug
 from ..feed.web_feed import FOR_YOU, VIEWS, WebFeed
 from .render import (
     ago,
@@ -108,6 +109,16 @@ def create_app(
     feed. ``None`` disables the check (tests).
     """
     feed = WebFeed(db_path)
+    covers = CoverStore(db_path)
+
+    def cover_url(key: str) -> str:
+        """URL of the insight's illustrated cover, or "" if it has none."""
+        slug = cover_slug(key)
+        version = covers.version(key) if slug else None
+        if not version:
+            return ""
+        return f"/covers/{slug}.svg?v={quote(version, safe='')}"
+
     templates = Jinja2Templates(directory=str(HERE / "templates"))
     templates.env.filters.update(
         md=inline_markdown,
@@ -122,6 +133,7 @@ def create_app(
         quote=lambda s: quote(s, safe=""),
         feed_url=_feed_url,
         cover_style=cover_style,
+        cover_url=cover_url,
         source_hue=source_hue,
         asset_version=_asset_version(),
     )
@@ -324,6 +336,22 @@ def create_app(
             return templates.TemplateResponse(request, "_reader.html", context)
         return templates.TemplateResponse(request, "reader_page.html", context)
 
+    def cover(request: Request) -> Response:
+        """An illustrated cover. Model-drawn SVG, so served fully locked down."""
+        name = request.path_params["name"]
+        svg = covers.get(f"insight:{name}") if cover_slug(name) == name else None
+        if svg is None:
+            return PlainTextResponse("No such cover.", status_code=404)
+        return Response(
+            svg,
+            media_type="image/svg+xml",
+            headers={
+                "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+                "X-Content-Type-Options": "nosniff",
+                "Cache-Control": "private, max-age=31536000, immutable",
+            },
+        )
+
     middleware = (
         [Middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))]
         if allowed_hosts
@@ -337,6 +365,7 @@ def create_app(
             Route("/seen", seen, methods=["POST"]),
             Route("/items/{key:path}/{action}", act, methods=["POST"]),
             Route("/card/{key:path}", card),
+            Route("/covers/{name}.svg", cover),
             Route("/i/{key:path}", reader),
             Mount(
                 "/static", StaticFiles(directory=str(HERE / "static")), name="static"
