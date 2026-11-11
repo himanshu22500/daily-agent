@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from .feed.channels import (
     TelegramChannel,
     TelegramError,
 )
+from .feed.headlines import apply_titles, export_for_titling
 from .feed.insights_capture import collect_insights, collect_marked
 from .feed.insights_feed import (
     INSIGHT_KIND,
@@ -244,6 +246,57 @@ def insights_flush(
         mark_ran(paths.stamp)
     finally:
         lock.release()
+
+
+@insights_app.command("titles-export")
+def insights_titles_export(
+    out: Path = typer.Option(None, "--out", help="Write JSON here (default: stdout)."),
+    include_titled: bool = typer.Option(
+        False, "--all", help="Include insights that already have a headline."
+    ),
+) -> None:
+    """Export insights needing a web-feed headline as JSON ({key, text, type, tags})."""
+    records = export_for_titling(
+        InsightStore(get_settings().db_path), include_titled=include_titled
+    )
+    payload = json.dumps(records, indent=1, ensure_ascii=False)
+    if out is None:
+        typer.echo(payload)
+        return
+    out.write_text(payload + "\n")
+    console.print(f"Exported [bold]{len(records)}[/bold] insight(s) to {out}.")
+
+
+@insights_app.command("titles-import")
+def insights_titles_import(
+    path: Path = typer.Argument(..., help='JSON object: {"insight:key": "Headline"}.'),
+    overwrite: bool = typer.Option(False, help="Replace existing headlines."),
+) -> None:
+    """Store headlines written for the web feed (e.g. by a batch of subagents)."""
+    try:
+        titles = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        console.print(f"[red]Can't read {path}:[/red] {exc}")
+        raise typer.Exit(1)
+    if not isinstance(titles, dict):
+        console.print('[red]Expected a JSON object: {"insight:key": "Headline"}.[/red]')
+        raise typer.Exit(1)
+    result = apply_titles(
+        InsightStore(get_settings().db_path), titles, overwrite=overwrite
+    )
+    console.print(
+        f"Stored [bold]{result.applied}[/bold] headline(s)"
+        + (f"; kept {result.kept_existing} existing" if result.kept_existing else "")
+        + (
+            f"; [yellow]{len(result.unknown)} unknown key(s)[/yellow]"
+            if result.unknown
+            else ""
+        )
+        + (f"; [yellow]{len(result.empty)} empty[/yellow]" if result.empty else "")
+        + "."
+    )
+    for key in result.unknown[:10] + result.empty[:10]:
+        console.print(f"  [dim]skipped {key}[/dim]")
 
 
 @insights_app.command("status")

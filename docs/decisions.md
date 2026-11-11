@@ -1,5 +1,31 @@
 # Decisions
 
+## 2026-11-12 — Discover-style cards and an article reader; model-written headlines
+
+The web feed now looks and reads like Google Discover (issue #82, maintainer's
+screenshots): a cover, headline, teaser, and source row per card, and tapping a
+card opens an article-style reader.
+
+- **Headlines are written in batches by Claude subagents, not by Gemini**
+  (maintainer's call). `insights titles-export` lists insights without a
+  headline. Subagents write one per insight from its text, and
+  `insights titles-import` validates and stores them, keeping existing headlines
+  unless told to overwrite. No model call is made for titles at capture time, so
+  new insights show their first sentence until the next batch. Gemini headlines
+  were tried first and dropped: the model was returning 503s, and a slow request
+  could stall a flush. The first 301 were titled by 6 parallel subagents.
+- **Generated covers, not images** (maintainer's call). A deterministic gradient
+  per insight, with the hue family by type, the topic (first tag) in large type,
+  and the project as a badge. Nothing is fetched and nothing leaves the Mac.
+- **Source = project**, recovered from Claude Code's transcript directory name.
+  That name is lossy (`/` and `-` both become `-`), so it is resolved by walking
+  the filesystem, falling back to the last two name parts.
+- **The reader is an overlay with history**, so ✕ or Back returns to the exact
+  feed position. A full navigation would rebuild a new For you edition. `/i/<key>`
+  also works as a standalone page. Opening an insight counts as a view.
+- Static assets carry a content-hash query (`?v=`) so phones never mix a new page
+  with a stale cached script.
+
 ## 2026-11-12 — "For you": a fresh, non-repeating feed every open, with spaced revisits
 
 A strictly newest-first feed shows the same top posts on every open, which

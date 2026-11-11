@@ -1,0 +1,17 @@
+{% macro icon(name, filled=false) -%}
+<svg class="ic" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="{{ 'currentColor' if filled else 'none' }}" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+{%- if name == "heart" -%}
+<path d="M12 20.5s-7.5-4.6-9.2-9.3C1.6 7.8 3.9 4.5 7.3 4.5c2 0 3.4 1.1 4.7 2.8 1.3-1.7 2.7-2.8 4.7-2.8 3.4 0 5.7 3.3 4.5 6.7-1.7 4.7-9.2 9.3-9.2 9.3z"/>
+{%- elif name == "share" -%}
+<circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.8l7.4-4.3M8.3 13.2l7.4 4.3"/>
+{%- elif name == "bookmark" -%}
+<path d="M6.5 3.5h11v17l-5.5-3.9-5.5 3.9z"/>
+{%- elif name == "more" -%}
+<circle cx="12" cy="5" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="19" r="1.4" fill="currentColor"/>
+{%- elif name == "close" -%}
+<path d="M5.5 5.5l13 13M18.5 5.5l-13 13"/>
+{%- elif name == "text" -%}
+<path d="M3 18l4.5-12 4.5 12M4.6 14h5.8M14 18l3-8 3 8M15 15.5h4"/>
+{%- endif -%}
+</svg>
+{%- endmacro %}

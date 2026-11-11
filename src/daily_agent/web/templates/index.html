@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Insights">
   <link rel="manifest" href="/static/manifest.webmanifest">
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/app.css?v={{ asset_version }}">
   <title>{% if unseen %}({{ unseen }}) {% endif %}Insights</title>
 </head>
 <body>
@@ -40,9 +40,11 @@
     {% endif %}
   </nav>
   <a class="fresh" id="fresh" href="{{ next_url }}" hidden></a>
-  <main class="feed" id="feed" data-session="{{ session_id }}" data-opened="{{ opened_at }}">
+  <main class="feed" id="feed" data-session="{{ session_id }}" data-opened="{{ opened_at }}" data-view="{{ filters.view }}" data-next="{{ next_url }}">
     {% include "_cards.html" %}
   </main>
-  <script src="/static/app.js" defer></script>
+  <div class="overlay" id="reader-overlay" hidden></div>
+  <div class="toast" id="toast" hidden></div>
+  <script src="/static/app.js?v={{ asset_version }}" defer></script>
 </body>
 </html>

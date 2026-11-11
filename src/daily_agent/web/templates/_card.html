@@ -1,31 +1,32 @@
+{% from "_icons.html" import icon %}
 {% set base = "/items/" ~ quote(entry.key) %}
-{% set back = "?next=" ~ quote(next_url) ~ ("&v=for-you" if show_revisit else "") %}
-{% set branch = entry.git_branch if entry.git_branch != "HEAD" else "" %}
-<article class="card t-{{ entry.type|type_class }}{% if entry.new %} is-new{% endif %}" data-card data-key="{{ entry.key }}">
-  <div class="meta">
-    <span class="badge">{{ entry.type|label }}</span>
+{% set back = "&next=" ~ quote(next_url) ~ ("&v=for-you" if show_revisit else "") %}
+<article class="story t-{{ entry.type|type_class }}{% if entry.new %} is-new{% endif %}" data-card data-swap data-key="{{ entry.key }}">
+  <a class="story-open" href="/i/{{ quote(entry.key) }}" data-open>
+    {% include "_cover.html" %}
+    <h2 class="headline">{{ entry.headline }}</h2>
+    {% if entry.snippet %}<p class="snippet">{{ entry.snippet }}</p>{% endif %}
+  </a>
+  <div class="story-meta">
+    <span class="src-icon" style="--sh:{{ source_hue(entry.source) }}" aria-hidden="true">{{ (entry.source or entry.type)[:1]|upper }}</span>
+    <span class="src">{{ entry.source or entry.type|label }}</span>
+    <span class="sep">·</span>
     <time datetime="{{ entry.published_at.isoformat() }}">{{ entry.published_at|ago }}</time>
-    {% if (entry.published_at - entry.captured_at).days >= 1 %}
-    <span class="learned" title="When this came up in a session">· from {{ entry.captured_at|ago }}</span>
-    {% endif %}
-    {% if show_revisit and entry.revisit %}
-    <span class="revisit" title="Seen {{ entry.view_count }}×, last {{ entry.last_seen_at|ago }}">↻ Revisit</span>
-    {% endif %}
+    {% if show_revisit and entry.revisit %}<span class="revisit" title="Seen {{ entry.view_count }}×">↻ Revisit</span>{% endif %}
     {% if entry.new %}<span class="dot" role="img" aria-label="Unseen"></span>{% endif %}
-  </div>
-  <div class="body">{{ entry.text|md }}</div>
-  {% if entry.tags or branch %}
-  <div class="tags">
-    {% for tag in entry.tags %}<a class="tag" href="{{ feed_url(view='latest', q=tag) }}">#{{ tag }}</a>{% endfor %}
-    {% if branch %}<span class="branch">⎇ {{ branch }}</span>{% endif %}
-  </div>
-  {% endif %}
-  <div class="actions">
-    <form method="post" action="{{ base }}/{{ 'unsave' if entry.saved else 'save' }}{{ back }}" data-action>
-      <button type="submit" class="act{% if entry.saved %} on{% endif %}" aria-pressed="{{ 'true' if entry.saved else 'false' }}">{{ "★ Saved" if entry.saved else "☆ Save" }}</button>
+    <span class="grow"></span>
+    <form method="post" action="{{ base }}/{{ 'unsave' if entry.saved else 'save' }}?as=card{{ back }}" data-action>
+      <button type="submit" class="icon-btn{% if entry.saved %} on{% endif %}" aria-pressed="{{ 'true' if entry.saved else 'false' }}" aria-label="{{ 'Unsave' if entry.saved else 'Save' }}">{{ icon("heart", entry.saved) }}</button>
     </form>
-    <form method="post" action="{{ base }}/{{ 'unhide' if entry.hidden else 'hide' }}{{ back }}" data-action>
-      <button type="submit" class="act">{{ "Unhide" if entry.hidden else "Hide" }}</button>
-    </form>
+    <button type="button" class="icon-btn" data-share data-title="{{ entry.headline }}" data-text="{{ entry.text }}" aria-label="Share">{{ icon("share") }}</button>
+    <details class="menu">
+      <summary class="icon-btn" aria-label="More">{{ icon("more") }}</summary>
+      <div class="menu-pop">
+        <form method="post" action="{{ base }}/{{ 'unhide' if entry.hidden else 'hide' }}?as=card{{ back }}" data-action>
+          <button type="submit">{{ "Unhide" if entry.hidden else "Hide this" }}</button>
+        </form>
+        <button type="button" data-copy="{{ entry.headline }}&#10;&#10;{{ entry.text }}">Copy text</button>
+      </div>
+    </details>
   </div>
 </article>

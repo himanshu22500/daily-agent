@@ -33,6 +33,8 @@ class Insight(BaseModel):
     # when a flush catches up on sessions. ``None`` for rows stored before this
     # was tracked; ``InsightStore.add`` stamps it when unset.
     stored_at: datetime | None = None
+    # Short newspaper-style headline for the web feed; "" until one is written.
+    title: str = ""
 
 
 class InsightCandidate(BaseModel):

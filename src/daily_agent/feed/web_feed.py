@@ -35,7 +35,9 @@ from sqlmodel import Field, SQLModel, func, select
 
 from ..db import create_tables, make_engine, session_scope
 from .for_you import Candidate, build_edition, revisit_interval
-from .insights_store import InsightRow, InsightStore
+from .headlines import fallback_headline, plain, split_first_sentence
+from .insights_store import InsightCursorRow, InsightRow, InsightStore
+from .projects import session_projects
 
 FOR_YOU = "for-you"
 VIEWS = (FOR_YOU, "latest", "saved", "hidden")
@@ -83,10 +85,24 @@ class FeedEntry:
     hidden: bool
     view_count: int = 0
     last_seen_at: datetime | None = None
+    title: str = ""
+    # Project the insight was learned in (the feed's "publisher").
+    source: str = ""
 
     @property
     def revisit(self) -> bool:
         return self.view_count > 0
+
+    @property
+    def headline(self) -> str:
+        return self.title or fallback_headline(self.text)
+
+    @property
+    def snippet(self) -> str:
+        """Plain-text teaser under the headline (never repeats it)."""
+        if self.title:
+            return plain(self.text)
+        return split_first_sentence(self.text)[1]
 
 
 @dataclass(frozen=True)
@@ -163,6 +179,12 @@ class WebFeed:
                 )
             session.execute(text("UPDATE web_feed_state SET seen_at = NULL"))
 
+    def _sources(self) -> dict[str, str]:
+        """``{session id: project label}`` from the transcripts captured so far."""
+        with session_scope(self._engine) as session:
+            paths = session.exec(select(InsightCursorRow.file_path)).all()
+        return session_projects(paths)
+
     # --- reading: chronological views -------------------------------------- #
     def _base(self):
         return select(InsightRow, WebFeedStateRow, _PUBLISHED).outerjoin(
@@ -222,7 +244,8 @@ class WebFeed:
         stmt = stmt.order_by(_PUBLISHED.desc(), InsightRow.key).limit(limit + 1)
         with session_scope(self._engine) as session:
             rows = session.exec(stmt).all()
-        entries = [_entry(*row) for row in rows[:limit]]
+        sources = self._sources()
+        entries = [_entry(*row, sources) for row in rows[:limit]]
         next_cursor = entries[-1].cursor if len(rows) > limit and entries else None
         return FeedPage(entries=entries, next_cursor=next_cursor)
 
@@ -272,6 +295,7 @@ class WebFeed:
                 raise KeyError(edition_id)
             keys: list[str] = json.loads(row.keys)
         entries: list[FeedEntry] = []
+        sources = self._sources()
         position = max(offset, 0)
         while position < len(keys) and len(entries) < limit:
             chunk = keys[position : position + limit]
@@ -286,7 +310,7 @@ class WebFeed:
                 position += 1
                 hit = found.get(key)
                 if hit and not (hit[1] and hit[1].dismissed_at):
-                    entries.append(_entry(*hit))
+                    entries.append(_entry(*hit, sources))
                     if len(entries) == limit:
                         break
         return EditionPage(
@@ -309,7 +333,7 @@ class WebFeed:
     def entry(self, key: str) -> FeedEntry | None:
         with session_scope(self._engine) as session:
             row = session.exec(self._base().where(InsightRow.key == key)).first()
-        return _entry(*row) if row else None
+        return _entry(*row, self._sources()) if row else None
 
     def types(self) -> list[tuple[str, int]]:
         """Insight types present in the visible feed, most common first."""
@@ -425,7 +449,10 @@ def _candidate(
 
 
 def _entry(
-    insight: InsightRow, state: WebFeedStateRow | None, published: str
+    insight: InsightRow,
+    state: WebFeedStateRow | None,
+    published: str,
+    sources: dict[str, str] | None = None,
 ) -> FeedEntry:
     return FeedEntry(
         key=insight.key,
@@ -443,4 +470,6 @@ def _entry(
         last_seen_at=_aware(state.last_seen_at)
         if state and state.last_seen_at
         else None,
+        title=insight.title or "",
+        source=(sources or {}).get(insight.source_session, ""),
     )

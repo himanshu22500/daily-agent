@@ -10,6 +10,7 @@ It only reads the insight store and writes reader state (``web_feed_state``,
 
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 from datetime import datetime, timezone
@@ -33,16 +34,25 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 from ..feed.web_feed import FOR_YOU, VIEWS, WebFeed
-from .render import ago, inline_markdown, label, type_class, until
+from .render import (
+    ago,
+    cover_style,
+    inline_markdown,
+    label,
+    longdate,
+    source_hue,
+    type_class,
+    until,
+)
 
 HERE = Path(__file__).parent
 
-# action -> (WebFeed method name, value, fragment template to answer with)
+# action -> (WebFeed method name, value)
 _ACTIONS = {
-    "save": ("set_saved", True, "_card.html"),
-    "unsave": ("set_saved", False, "_card.html"),
-    "hide": ("set_hidden", True, "_hidden.html"),
-    "unhide": ("set_hidden", False, "_card.html"),
+    "save": ("set_saved", True),
+    "unsave": ("set_saved", False),
+    "hide": ("set_hidden", True),
+    "unhide": ("set_hidden", False),
 }
 # Old bookmarks: the chronological view used to be called "all".
 _VIEW_ALIASES = {"all": "latest"}
@@ -75,6 +85,14 @@ def _same_origin(request: Request) -> bool:
     return site in (None, "same-origin", "none")
 
 
+def _asset_version() -> str:
+    """Short hash of the static files, appended to their URLs (cache-busting)."""
+    digest = hashlib.sha1()
+    for name in ("app.css", "app.js"):
+        digest.update((HERE / "static" / name).read_bytes())
+    return digest.hexdigest()[:10]
+
+
 def create_app(
     db_path: str | Path,
     *,
@@ -91,9 +109,20 @@ def create_app(
     feed = WebFeed(db_path)
     templates = Jinja2Templates(directory=str(HERE / "templates"))
     templates.env.filters.update(
-        md=inline_markdown, ago=ago, until=until, label=label, type_class=type_class
+        md=inline_markdown,
+        ago=ago,
+        until=until,
+        label=label,
+        type_class=type_class,
+        longdate=longdate,
     )
-    templates.env.globals.update(quote=lambda s: quote(s, safe=""), feed_url=_feed_url)
+    templates.env.globals.update(
+        quote=lambda s: quote(s, safe=""),
+        feed_url=_feed_url,
+        cover_style=cover_style,
+        source_hue=source_hue,
+        asset_version=_asset_version(),
+    )
 
     def _for_you(request: Request, type_: str, partial: bool) -> Response | dict:
         params = request.query_params
@@ -235,21 +264,60 @@ def create_app(
         action = _ACTIONS.get(request.path_params["action"])
         if action is None:
             return PlainTextResponse("Unknown action.", status_code=404)
-        method, value, fragment = action
+        method, value = action
         if not getattr(feed, method)(key, value):
             return PlainTextResponse("No such insight.", status_code=404)
         next_url = _safe_next(request.query_params.get("next"))
         if request.headers.get("x-requested-with") != "fetch":
             return RedirectResponse(next_url, status_code=303)
+        entry = feed.entry(key)
+        # Answer with the fragment the page swaps in: the reader, or the card
+        # (a hidden card collapses to an undo note).
+        if request.query_params.get("as") == "reader":
+            fragment = "_reader.html"
+        elif request.path_params["action"] == "hide":
+            fragment = "_hidden.html"
+        else:
+            fragment = "_card.html"
         return templates.TemplateResponse(
             request,
             fragment,
             {
-                "entry": feed.entry(key),
+                "entry": entry,
                 "next_url": next_url,
+                "close_url": next_url,
                 "show_revisit": request.query_params.get("v") == FOR_YOU,
             },
         )
+
+    def card(request: Request) -> Response:
+        """One feed card, to refresh it after acting on it in the reader."""
+        entry = feed.entry(request.path_params["key"])
+        if entry is None:
+            return PlainTextResponse("No such insight.", status_code=404)
+        return templates.TemplateResponse(
+            request,
+            "_card.html",
+            {
+                "entry": entry,
+                "next_url": _safe_next(request.query_params.get("next")),
+                "show_revisit": request.query_params.get("v") == FOR_YOU,
+            },
+        )
+
+    def reader(request: Request) -> Response:
+        """An insight opened like an article: overlay fragment or standalone page."""
+        entry = feed.entry(request.path_params["key"])
+        if entry is None:
+            return PlainTextResponse("No such insight.", status_code=404)
+        context = {
+            "entry": entry,
+            "close_url": _safe_next(request.query_params.get("from")),
+            "session_id": "r-" + secrets.token_urlsafe(6),
+        }
+        if request.query_params.get("partial") == "1":
+            return templates.TemplateResponse(request, "_reader.html", context)
+        return templates.TemplateResponse(request, "reader_page.html", context)
 
     middleware = (
         [Middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))]
@@ -263,6 +331,8 @@ def create_app(
             Route("/new-count", new_count),
             Route("/seen", seen, methods=["POST"]),
             Route("/items/{key:path}/{action}", act, methods=["POST"]),
+            Route("/card/{key:path}", card),
+            Route("/i/{key:path}", reader),
             Mount(
                 "/static", StaticFiles(directory=str(HERE / "static")), name="static"
             ),
