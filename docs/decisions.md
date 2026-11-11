@@ -1,5 +1,24 @@
 # Decisions
 
+## 2026-11-12 — Illustrated covers drawn by subagents replace the gradient covers
+
+The generated gradient covers read as generic (maintainer: "awful"). Each
+insight can now have an SVG illustration, a visual metaphor for its specific
+idea (issue #87). The first 301 were drawn by 12 parallel Fable 5.2 subagents
+from a shared art brief; how new insights get covers (the generation pipeline)
+is deliberately left for later.
+
+- **Files, not database rows.** One `<slug>.svg` per insight in a gitignored
+  `covers/` directory. They are derived from private insight text, so they stay
+  off GitHub. Missing covers fall back to the gradient.
+- **Model-drawn files are untrusted.** `insights covers-import` accepts only a
+  static SVG subset (allow-listed elements, fixed viewBox, no scripts, external
+  references, images, foreignObject, event handlers, DTDs; 0.6-12 KB). They are
+  served with `default-src 'none'` and shown via `<img>`, where SVG scripts
+  never run.
+- **No text in the art.** The headline is real text below the cover, and an
+  illustrated cover keeps only the project badge overlay.
+
 ## 2026-11-12 — Discover-style cards and an article reader; model-written headlines
 
 The web feed now looks and reads like Google Discover (issue #82, maintainer's

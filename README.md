@@ -75,6 +75,14 @@ with bookmark, text size (Aa), and share. ✕ or Back returns to the same spot i
 the feed. An insight appears the moment it is stored. It doesn't wait for the
 Telegram pacer, and reading it doesn't change Telegram delivery.
 
+Covers are illustrations when an insight has one: a small SVG per insight in
+`DAILY_AGENT_COVERS_DIR` (default `covers/`, gitignored), drawn outside the
+pipeline (e.g. by illustrator subagents) and brought in with
+`uv run daily-agent insights covers-import <dir>`. The import accepts only
+static, self-contained SVGs (fixed 800×400 viewBox, no scripts, external
+references, embedded images, or event handlers) and reports the rest. Insights
+without an illustration keep the generated gradient cover.
+
 Headlines aren't written at capture time, and no model call is made for them.
 `insights titles-export` lists the insights without one. Once a batch of
 headlines has been written for them (e.g. by Claude subagents),

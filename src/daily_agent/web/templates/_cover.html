@@ -1,6 +1,15 @@
-{# Generated cover: the "photo" slot of a Discover card. Expects `entry`. #}
+{# The "photo" slot of a Discover card. Expects `entry`. An illustrated cover
+   is used when one exists; otherwise a generated gradient with the topic. #}
+{% set art = cover_url(entry.key) %}
+{% if art %}
+<div class="cover has-art" aria-hidden="true">
+  <img src="{{ art }}" alt="" loading="lazy" decoding="async">
+  {% if entry.source %}<span class="cover-badge">⌂ {{ entry.source }}</span>{% endif %}
+</div>
+{% else %}
 <div class="cover t-{{ entry.type|type_class }}" style="{{ cover_style(entry.key, entry.type) }}" aria-hidden="true">
   <span class="cover-kind">{{ entry.type|label }}</span>
   {% if entry.source %}<span class="cover-badge">⌂ {{ entry.source }}</span>{% endif %}
   <span class="cover-topic">{{ "#" ~ entry.tags[0] if entry.tags else entry.type|label }}</span>
 </div>
+{% endif %}

@@ -288,6 +288,15 @@ details.menu summary::-webkit-details-marker { display: none; }
   color: #ffffff;
 }
 
+.cover.has-art { background: var(--chip); }
+
+.cover.has-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .cover-kind {
   position: absolute;
   top: 14px;
