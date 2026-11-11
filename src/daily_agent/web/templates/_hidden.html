@@ -1,0 +1,6 @@
+<div class="card hidden-note" data-card>
+  <span>Hidden from your feed.</span>
+  <form method="post" action="/items/{{ quote(entry.key) }}/unhide?next={{ quote(next_url) }}" data-action>
+    <button type="submit" class="act">Undo</button>
+  </form>
+</div>

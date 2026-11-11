@@ -1,0 +1,28 @@
+{% set base = "/items/" ~ quote(entry.key) %}
+{% set back = "?next=" ~ quote(next_url) %}
+{% set branch = entry.git_branch if entry.git_branch != "HEAD" else "" %}
+<article class="card t-{{ entry.type|type_class }}{% if entry.new %} is-new{% endif %}" data-card>
+  <div class="meta">
+    <span class="badge">{{ entry.type|label }}</span>
+    <time datetime="{{ entry.published_at.isoformat() }}">{{ entry.published_at|ago }}</time>
+    {% if (entry.published_at - entry.captured_at).days >= 1 %}
+    <span class="learned" title="When this came up in a session">· from {{ entry.captured_at|ago }}</span>
+    {% endif %}
+    {% if entry.new %}<span class="dot" role="img" aria-label="New"></span>{% endif %}
+  </div>
+  <div class="body">{{ entry.text|md }}</div>
+  {% if entry.tags or branch %}
+  <div class="tags">
+    {% for tag in entry.tags %}<a class="tag" href="{{ feed_url(q=tag) }}">#{{ tag }}</a>{% endfor %}
+    {% if branch %}<span class="branch">⎇ {{ branch }}</span>{% endif %}
+  </div>
+  {% endif %}
+  <div class="actions">
+    <form method="post" action="{{ base }}/{{ 'unsave' if entry.saved else 'save' }}{{ back }}" data-action>
+      <button type="submit" class="act{% if entry.saved %} on{% endif %}" aria-pressed="{{ 'true' if entry.saved else 'false' }}">{{ "★ Saved" if entry.saved else "☆ Save" }}</button>
+    </form>
+    <form method="post" action="{{ base }}/{{ 'unhide' if entry.hidden else 'hide' }}{{ back }}" data-action>
+      <button type="submit" class="act">{{ "Unhide" if entry.hidden else "Hide" }}</button>
+    </form>
+  </div>
+</article>

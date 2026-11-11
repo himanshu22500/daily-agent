@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy import text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Field, SQLModel, select
 
@@ -35,6 +36,7 @@ class InsightRow(SQLModel, table=True):
     git_branch: str = ""
     captured_at: str
     status: str = "new"
+    stored_at: str | None = None
 
 
 class InsightCursorRow(SQLModel, table=True):
@@ -49,11 +51,32 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _iso(value: datetime) -> str:
+    """Fixed-width UTC ISO string, so stored timestamps sort lexicographically."""
+    return value.astimezone(timezone.utc).isoformat(timespec="microseconds")
+
+
 class InsightStore:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = str(db_path)
         self._engine = make_engine(self.db_path)
         create_tables(self._engine, InsightRow, InsightCursorRow)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Add ``stored_at`` to an ``insights`` table created before it existed.
+
+        ``create_all`` never adds columns and there is no migration system, so a
+        live DB keeps its old schema until brought forward here. Existing rows
+        stay ``NULL``; readers fall back to ``captured_at`` for them.
+        """
+        with session_scope(self._engine) as session:
+            cols = {
+                row[1]
+                for row in session.execute(text("PRAGMA table_info(insights)")).all()
+            }
+            if "stored_at" not in cols:
+                session.execute(text("ALTER TABLE insights ADD COLUMN stored_at TEXT"))
 
     # --- insights --------------------------------------------------------- #
     def add(self, insight: Insight) -> bool:
@@ -74,6 +97,7 @@ class InsightStore:
                     git_branch=insight.git_branch,
                     captured_at=insight.captured_at.isoformat(),
                     status=insight.status,
+                    stored_at=_iso(insight.stored_at or datetime.now(timezone.utc)),
                 )
                 .on_conflict_do_nothing(index_elements=["key"])
             )
@@ -148,4 +172,5 @@ def _to_insight(row: InsightRow) -> Insight:
         git_branch=row.git_branch,
         captured_at=datetime.fromisoformat(row.captured_at),
         status=row.status,
+        stored_at=datetime.fromisoformat(row.stored_at) if row.stored_at else None,
     )

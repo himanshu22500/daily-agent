@@ -259,6 +259,39 @@ def insights_status() -> None:
     console.print(f"Outbox: {outbox.stats()}")
 
 
+@app.command(name="web")
+def web(
+    host: str = typer.Option(None, help="Interface to bind (default: web_host)."),
+    port: int = typer.Option(None, help="Port to listen on (default: web_port)."),
+) -> None:
+    """Serve the insight feed as a scrollable web page."""
+    import uvicorn
+
+    from .web.app import create_app
+
+    settings = get_settings()
+    bind = host or settings.web_host
+    listen = port or settings.web_port
+    if bind not in ("127.0.0.1", "localhost", "::1"):
+        console.print(
+            f"[yellow]Listening on {bind}[/yellow] — the feed has no login; only "
+            "bind to a private network you trust (e.g. Tailscale)."
+        )
+    extra = [h.strip() for h in settings.web_allowed_hosts.split(",") if h.strip()]
+    allowed = list(dict.fromkeys(["127.0.0.1", "localhost", bind, *extra]))
+    console.print(f"Insight feed at [bold]http://{bind}:{listen}/[/bold]")
+    uvicorn.run(
+        create_app(
+            settings.db_path,
+            page_size=settings.web_page_size,
+            allowed_hosts=allowed,
+        ),
+        host=bind,
+        port=listen,
+        log_level="warning",
+    )
+
+
 @app.command(name="telegram-check")
 def telegram_check() -> None:
     """Send a test message to the configured Telegram chat."""

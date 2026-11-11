@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f4f1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111110" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Insights">
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <title>{% if unseen %}({{ unseen }}) {% endif %}Insights</title>
+</head>
+<body>
+  <header class="top">
+    <div class="bar">
+      <a class="brand" href="/">Insights</a>
+      {% if unseen %}<span class="unseen">{{ unseen }} new</span>{% endif %}
+    </div>
+    <form class="search" action="/" method="get" role="search">
+      {% if filters.view != "all" %}<input type="hidden" name="view" value="{{ filters.view }}">{% endif %}
+      {% if filters.type %}<input type="hidden" name="type" value="{{ filters.type }}">{% endif %}
+      <input type="search" name="q" value="{{ filters.q }}" placeholder="Search insights" aria-label="Search insights">
+    </form>
+    <nav class="chips" aria-label="Filters">
+      <a class="chip{% if filters.view == 'all' and not filters.type %} on{% endif %}" href="{{ feed_url(q=filters.q) }}">All</a>
+      {% for type, count in types %}
+      <a class="chip t-{{ type|type_class }}{% if filters.view == 'all' and filters.type == type %} on{% endif %}" href="{{ feed_url(type=type, q=filters.q) }}">{{ type|label }} <span class="n">{{ count }}</span></a>
+      {% endfor %}
+      <a class="chip{% if filters.view == 'saved' %} on{% endif %}" href="{{ feed_url(view='saved', q=filters.q) }}">Saved</a>
+      <a class="chip{% if filters.view == 'hidden' %} on{% endif %}" href="{{ feed_url(view='hidden', q=filters.q) }}">Hidden</a>
+    </nav>
+  </header>
+  <a class="fresh" id="fresh" href="{{ next_url }}" hidden></a>
+  <main class="feed" id="feed"{% if top_cursor %} data-top="{{ top_cursor }}"{% endif %}>
+    {% include "_cards.html" %}
+  </main>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

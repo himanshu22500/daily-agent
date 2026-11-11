@@ -1,0 +1,17 @@
+{
+  "name": "daily-agent insights",
+  "short_name": "Insights",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f4f1",
+  "theme_color": "#f4f4f1",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

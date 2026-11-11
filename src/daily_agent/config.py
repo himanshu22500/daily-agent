@@ -33,6 +33,15 @@ class Settings(BaseSettings):
     telegram_bot_username: str = ""
     channel_reap_idle_days: int = 30
 
+    # Web feed (`daily-agent web`). Loopback-only by default; set the host to a
+    # private interface (e.g. a Tailscale IP) to read it from another device.
+    web_host: str = "127.0.0.1"
+    web_port: int = 8765
+    web_page_size: int = 20
+    # Extra Host names the feed answers to (comma-separated), e.g. a Tailscale
+    # MagicDNS name. Loopback names and web_host are always allowed.
+    web_allowed_hosts: str = ""
+
     @property
     def telegram_enabled(self) -> bool:
         return bool(self.telegram_bot_token and self.telegram_chat_id)

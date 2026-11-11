@@ -28,6 +28,11 @@ class Insight(BaseModel):
     git_branch: str = ""
     captured_at: datetime
     status: str = "new"
+    # When the insight entered the store (≈ when it was published to the web
+    # feed). ``captured_at`` is the transcript time, which can be weeks older
+    # when a flush catches up on sessions. ``None`` for rows stored before this
+    # was tracked; ``InsightStore.add`` stamps it when unset.
+    stored_at: datetime | None = None
 
 
 class InsightCandidate(BaseModel):
