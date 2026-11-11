@@ -2,8 +2,9 @@
 
 `daily-agent` is a private memory loop for lessons found while coding. It reads
 local Claude Code JSONL transcripts, captures explicit `insight:` notes, uses
-Gemini to extract other durable lessons, stores them in SQLite, and resurfaces a
-small paced batch later.
+Gemini to extract other durable lessons, and stores them in SQLite. Every stored
+insight shows up immediately on a local, scrollable **web feed**. Telegram
+separately gets a small paced batch.
 
 The useful output is a concise fact, gotcha, architecture constraint, or reusable
 technique. Transcript chatter, progress updates, and temporary debugging steps are
@@ -59,6 +60,30 @@ The extractor can also identify durable lessons without a marker. It assigns one
 of `repo`, `technique`, `gotcha`, `architecture`, or `general`, plus a stable
 key and tags. Telegram delivery creates one private channel per type on demand.
 
+## Web feed
+
+Read every insight like a news feed: newest first, infinite scroll, filters by
+type, search, save, and hide. An insight appears the moment it is stored. It
+doesn't wait for the Telegram pacer, and reading it doesn't change Telegram
+delivery.
+
+```bash
+uv run daily-agent web            # http://127.0.0.1:8765/
+scripts/install-web-launchd.sh    # keep it running in the background (macOS)
+```
+
+The feed is ordered by when an insight was stored. A flush that catches up on
+older sessions still lands its insights at the top, marked "from <date>". A blue
+dot marks insights you haven't scrolled past yet. If the page is left open, a
+pill appears when new insights arrive.
+
+It binds to `127.0.0.1` and has **no login**. To read it on your phone, set
+`DAILY_AGENT_WEB_HOST` to a private interface you trust, such as your Mac's
+Tailscale IP, and open it from the phone over Tailscale. Don't bind it to a
+public network. The server only answers to loopback names and the bind host; to
+use a Tailscale MagicDNS name, add it to `DAILY_AGENT_WEB_ALLOWED_HOSTS`. In the phone's browser, "Add to Home Screen" opens it like an
+app.
+
 ## Telegram
 
 Telegram is optional. Configure the bot token, API ID, API hash, and bot username
@@ -88,13 +113,18 @@ It watches the configured transcript directory, waits for file activity to becom
 quiet, then runs `insights flush --to-telegram`. The flush lock and debounce stamp
 prevent overlapping or duplicate runs.
 
+Keep the web feed running with `scripts/install-web-launchd.sh`. Logs go to
+`digests/web.{out,err}.log`; uninstall with
+`launchctl unload ~/Library/LaunchAgents/com.daily-agent.web.plist`.
+
 ## Design
 
 The pipeline is intentionally small:
 
 ```text
 local transcripts -> marker/LLM extraction -> SQLite insight store
-                  -> durable outbox -> pacer -> console/file/Telegram
+                  |-> web feed (reads the store directly; immediate)
+                  `-> durable outbox -> pacer -> console/file/Telegram
 ```
 
 All tests are offline. They use temporary SQLite databases, mocked HTTP, and fake

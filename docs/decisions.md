@@ -1,5 +1,27 @@
 # Decisions
 
+## 2026-11-11 — A local web feed shows every insight immediately; Telegram stays paced
+
+Insights are read on a scrollable web page (`daily-agent web`, issue #77) as well
+as in Telegram. The page reads the `insights` table directly, so an insight is
+visible as soon as it is stored. Telegram keeps draining the outbox at its
+existing pace, and its cadence will be revisited separately.
+
+- **Ordered by publish time, not transcript time.** New `insights.stored_at`
+  records when an insight entered the store; older rows fall back to
+  `captured_at`. Catch-up flushes often store lessons from weeks-old sessions.
+  Sorting by transcript time buried those; sorting by publish time puts them at
+  the top.
+- **Reader state is separate.** Seen, saved and hidden live in `web_feed_state`,
+  not `insights.status`, which belongs to the delivery pipeline.
+- **Local and private by default.** Server-rendered Starlette pages with a little
+  vanilla JS and no frontend build. Binds to `127.0.0.1` with no login. Reading on
+  a phone means binding to a trusted private network such as Tailscale. Hosting
+  off this machine was deferred because insights include internal code details.
+- **Starlette, not FastAPI.** Current FastAPI pulls an OpenTelemetry upgrade that
+  forces major bumps to logfire and mistralai. Starlette was already installed
+  and covers everything this page needs.
+
 ## 2026-09-21 — Focus exclusively on personal coding insights
 
 The repository now has one product purpose: capture durable lessons from local

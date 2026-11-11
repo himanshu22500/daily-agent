@@ -1,0 +1,13 @@
+{% for entry in page.entries %}{% include "_card.html" %}{% endfor %}
+{% if more_url %}
+<a class="more" href="{{ more_url }}" data-more>Load more</a>
+{% elif first_page and not page.entries %}
+<p class="empty">
+  {%- if filters.view == "saved" %}Nothing saved yet.
+  {%- elif filters.view == "hidden" %}Nothing hidden.
+  {%- elif filters.q %}No insights match “{{ filters.q }}”.
+  {%- else %}No insights yet. They appear here as soon as a session is flushed.
+  {%- endif %}</p>
+{% elif page.entries %}
+<p class="end">You're all caught up.</p>
+{% endif %}
