@@ -47,6 +47,17 @@ def test_clean_headline_strips_markup_quotes_and_period():
     assert clean_headline("   ") == ""
 
 
+def test_plain_text_keeps_identifiers_intact():
+    from daily_agent.feed.headlines import plain
+
+    assert plain("`payments_v3` reads **QA_PASSWORD**, QA_* and `__init__`") == (
+        "payments_v3 reads QA_PASSWORD, QA_* and __init__"
+    )
+    assert clean_headline("QA runner reads QA_* vars from tranzact-v2/.env") == (
+        "QA runner reads QA_* vars from tranzact-v2/.env"
+    )
+
+
 def test_first_sentence_fallback_and_rest():
     text = (
         "Pinia `persist` stores don't hot-swap. Reload the tab after edits. Then retry."
