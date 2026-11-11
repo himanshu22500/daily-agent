@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime, timezone
 
@@ -81,3 +82,41 @@ def until(moment: datetime, now: datetime | None = None) -> str:
     if seconds < 2 * 86400:
         return "tomorrow"
     return f"in {int(seconds // 86400)} days"
+
+
+# Base hue per insight type for generated covers; other types hash to a hue.
+_TYPE_HUES = {"gotcha": 18, "repo": 215, "architecture": 265, "technique": 158}
+
+
+def _hash(value: str) -> int:
+    return int(hashlib.sha1(value.encode()).hexdigest()[:12], 16)
+
+
+def cover_style(key: str, type: str) -> str:
+    """CSS custom properties for a deterministic, per-insight generated cover.
+
+    Hue family comes from the type; the exact hues, angle, and highlight
+    position vary by key, so neighbouring cards of one type still differ.
+    """
+    h = _hash(key)
+    base = _TYPE_HUES.get(type_class(type), _hash(type or "general") % 360)
+    hue1 = (base + h % 36 - 18) % 360
+    hue2 = (hue1 + 20 + (h >> 6) % 45) % 360
+    angle = (h >> 12) % 180
+    x, y = 12 + (h >> 20) % 76, 10 + (h >> 28) % 60
+    return f"--h1:{hue1};--h2:{hue2};--angle:{angle}deg;--x:{x}%;--y:{y}%"
+
+
+def source_hue(source: str) -> int:
+    """Stable hue for a project's little 'publisher' badge."""
+    return _hash(source or "?") % 360
+
+
+def longdate(moment: datetime) -> str:
+    """``November 11, 2026, 5:38 PM`` in local time."""
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    local = moment.astimezone()
+    hour = local.hour % 12 or 12
+    meridiem = "AM" if local.hour < 12 else "PM"
+    return f"{local:%B} {local.day}, {local.year}, {hour}:{local:%M} {meridiem}"

@@ -50,7 +50,8 @@ def client(db) -> TestClient:
 
 
 def _order(body: str) -> list[str]:
-    return re.findall(r"Lesson (\w)\.", body)
+    """Keys of the feed cards in ``body``, in order (``insight:x`` -> ``x``)."""
+    return re.findall(r'data-card data-swap data-key="insight:(\w)"', body)
 
 
 def _more(body: str) -> str:
@@ -133,7 +134,7 @@ def test_due_revisits_are_labelled(client, db):
     )
     for_you = _whole_body(client, client.get("/").text)
     latest = _whole_body(client, client.get("/?view=latest").text)
-    assert for_you.count("↻ Revisit") == 1 and "Lesson b." in for_you
+    assert for_you.count("↻ Revisit") == 1 and "insight:b" in for_you
     assert "↻ Revisit" not in latest  # labelled in For you only
     saved = client.post("/items/insight%3Ab/save?v=for-you", headers=FETCH)
     assert "↻ Revisit" in saved.text
@@ -174,7 +175,7 @@ def test_expired_edition_asks_for_refresh(client):
 def test_save_in_place_returns_card_fragment(client):
     res = client.post("/items/insight%3Ab/save", headers=FETCH)
     assert res.status_code == 200
-    assert "★ Saved" in res.text and "<html" not in res.text
+    assert 'aria-pressed="true"' in res.text and "<html" not in res.text
     assert _order(client.get("/?view=saved").text) == ["b"]
 
     client.post("/items/insight%3Ab/unsave", headers=FETCH)
@@ -246,9 +247,10 @@ def test_new_count_reports_insights_published_after_open(client, db):
 def test_insight_text_cannot_inject_markup(tmp_path):
     path = str(tmp_path / "xss.db")
     _add(path, "x", stored=1, text="Use `<b>` not <img src=x onerror=alert(1)>")
-    body = TestClient(create_app(path)).get("/").text
-    assert "<img" not in body
-    assert "<code>&lt;b&gt;</code>" in body
+    client = TestClient(create_app(path))
+    for body in (client.get("/").text, client.get("/i/insight%3Ax").text):
+        assert "<img" not in body
+    assert "<code>&lt;b&gt;</code>" in client.get("/i/insight%3Ax").text
 
 
 def test_static_assets_are_served(client):
@@ -303,3 +305,80 @@ def test_web_command_serves_the_configured_db(monkeypatch, tmp_path):
     assert (
         TestClient(served, base_url="http://evil.example").get("/").status_code == 400
     )
+
+
+def _titled(db: str) -> None:
+    """Give b an AI headline and a session that maps to a project."""
+    store = InsightStore(db)
+    store.set_title("insight:b", "Gotchas hide in plain sight")
+    store.add(
+        Insight(
+            key="insight:p",
+            text="First sentence here. Then the details follow.",
+            type="repo",
+            tags=["pinia"],
+            source_session="sess-1",
+            captured_at=T0,
+            stored_at=T0 + timedelta(minutes=9),
+        )
+    )
+    store.set_cursor("/x/projects/-nonexistent-root-zz-repo-x/sess-1.jsonl", 1)
+
+
+def test_cards_show_headline_snippet_cover_and_source(client, db):
+    _titled(db)
+    body = _whole_body(client, client.get("/?view=latest").text)
+    assert '<h2 class="headline">Gotchas hide in plain sight</h2>' in body
+    assert '<p class="snippet">Lesson b.</p>' in body  # AI title: full text below
+    # Without a title: the first sentence leads, the rest is the snippet.
+    assert '<h2 class="headline">First sentence here</h2>' in body
+    assert '<p class="snippet">Then the details follow.</p>' in body
+    assert "⌂ repo-x" in body and '<span class="src">repo-x</span>' in body
+    assert '<span class="cover-topic">#pinia</span>' in body
+    assert 'href="/i/insight%3Ap" data-open' in body
+
+
+def test_covers_are_deterministic_per_insight():
+    from daily_agent.web.render import cover_style
+
+    assert cover_style("insight:a", "repo") == cover_style("insight:a", "repo")
+    assert cover_style("insight:a", "repo") != cover_style("insight:b", "repo")
+
+
+def test_reader_page_fragment_and_errors(client, db):
+    _titled(db)
+    page = client.get("/i/insight%3Ap")
+    assert page.status_code == 200 and page.text.startswith("<!doctype html>")
+    assert '<h1 class="reader-h1">First sentence here</h1>' in page.text
+    assert "Learned in <strong>repo-x</strong>" in page.text
+    assert 'data-session="r-' in page.text  # standalone visits get a view id
+    fragment = client.get("/i/insight%3Ap?partial=1&from=%2F%3Fview%3Dlatest")
+    assert "<!doctype" not in fragment.text and "data-reader" in fragment.text
+    assert 'href="/?view=latest" data-close' in fragment.text
+    evil = client.get("/i/insight%3Ap?partial=1&from=//evil.example")
+    assert 'href="/" data-close' in evil.text
+    assert client.get("/i/insight%3Anope").status_code == 404
+    assert client.get("/card/insight%3Anope").status_code == 404
+
+
+def test_reader_actions_answer_with_the_reader_and_cards_refresh(client, db):
+    res = client.post("/items/insight%3Ab/save?as=reader", headers=FETCH)
+    assert "data-reader" in res.text and 'aria-pressed="true"' in res.text
+    card = client.get("/card/insight%3Ab?v=for-you")
+    assert card.text.count("data-card data-swap") == 1
+    assert 'aria-pressed="true"' in card.text
+
+
+def test_saving_a_hidden_insight_returns_its_card_not_the_undo_note(client):
+    client.post("/items/insight%3Ac/hide", headers=FETCH)
+    res = client.post("/items/insight%3Ac/save?as=card", headers=FETCH)
+    assert (
+        'data-key="insight:c"' in res.text and "Hidden from your feed" not in res.text
+    )
+
+
+def test_static_assets_are_versioned_for_cache_busting(client):
+    body = client.get("/").text
+    version = re.search(r"/static/app\.js\?v=(\w+)", body).group(1)
+    assert f"/static/app.css?v={version}" in body
+    assert client.get(f"/static/app.js?v={version}").status_code == 200

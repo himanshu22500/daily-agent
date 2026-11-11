@@ -1,0 +1,47 @@
+{% from "_icons.html" import icon %}
+{% set base = "/items/" ~ quote(entry.key) %}
+{% set back = "&next=" ~ quote(close_url) %}
+{% set branch = entry.git_branch if entry.git_branch != "HEAD" else "" %}
+{% set save_action = base ~ "/" ~ ("unsave" if entry.saved else "save") ~ "?as=reader" ~ back %}
+<div class="reader t-{{ entry.type|type_class }}" data-swap data-reader data-key="{{ entry.key }}">
+  <header class="reader-bar">
+    <a class="icon-btn" href="{{ close_url }}" data-close aria-label="Close">{{ icon("close") }}</a>
+    <div class="reader-id">
+      <span class="reader-id-title">{{ entry.headline }}</span>
+      <span class="reader-id-src">{{ entry.source or entry.type|label }}</span>
+    </div>
+    <button type="button" class="icon-btn" data-share data-title="{{ entry.headline }}" data-text="{{ entry.text }}" aria-label="Share">{{ icon("share") }}</button>
+    <form method="post" action="{{ save_action }}" data-action>
+      <button type="submit" class="icon-btn{% if entry.saved %} on{% endif %}" aria-pressed="{{ 'true' if entry.saved else 'false' }}" aria-label="{{ 'Unsave' if entry.saved else 'Save' }}">{{ icon("bookmark", entry.saved) }}</button>
+    </form>
+    <details class="menu">
+      <summary class="icon-btn" aria-label="More">{{ icon("more") }}</summary>
+      <div class="menu-pop">
+        <form method="post" action="{{ base }}/{{ 'unhide' if entry.hidden else 'hide' }}?as=card{{ back }}" data-action data-swap-card data-close-reader>
+          <button type="submit">{{ "Unhide" if entry.hidden else "Hide this" }}</button>
+        </form>
+        <button type="button" data-copy="{{ entry.headline }}&#10;&#10;{{ entry.text }}">Copy text</button>
+      </div>
+    </details>
+  </header>
+  <article class="reader-body">
+    <h1 class="reader-h1">{{ entry.headline }}</h1>
+    <p class="byline">Learned in <strong>{{ entry.source or "a coding session" }}</strong>{% if branch %} on <code>{{ branch }}</code>{% endif %}</p>
+    <p class="dateline">{{ entry.captured_at|longdate }} · Published {{ entry.published_at|ago }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
+    <div class="reader-actions">
+      <form method="post" action="{{ save_action }}" data-action>
+        <button type="submit" class="pill-btn{% if entry.saved %} on{% endif %}" aria-label="{{ 'Unsave' if entry.saved else 'Save' }}">{{ icon("bookmark", entry.saved) }}</button>
+      </form>
+      <button type="button" class="pill-btn" data-textsize aria-label="Text size">{{ icon("text") }}</button>
+      <button type="button" class="pill-btn" data-share data-title="{{ entry.headline }}" data-text="{{ entry.text }}" aria-label="Share">{{ icon("share") }}</button>
+    </div>
+    <figure class="reader-figure">
+      {% include "_cover.html" %}
+      <figcaption>{{ entry.type|label }}{% for tag in entry.tags %} · #{{ tag }}{% endfor %}</figcaption>
+    </figure>
+    <div class="reader-text">{{ entry.text|md }}</div>
+    {% if entry.tags %}
+    <p class="reader-tags">{% for tag in entry.tags %}<a class="tag" href="{{ feed_url(view='latest', q=tag) }}">#{{ tag }}</a>{% endfor %}</p>
+    {% endif %}
+  </article>
+</div>

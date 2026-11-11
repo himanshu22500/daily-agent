@@ -48,6 +48,10 @@ uv run daily-agent insights flush --to-telegram
 
 # Inspect captured and queued counts.
 uv run daily-agent insights status
+
+# Hand off insights that need a web-feed headline, then store what was written.
+uv run daily-agent insights titles-export --out untitled.json
+uv run daily-agent insights titles-import titles.json   # {"insight:key": "Headline"}
 ```
 
 Add an explicit note during a coding session like this:
@@ -62,9 +66,23 @@ key and tags. Telegram delivery creates one private channel per type on demand.
 
 ## Web feed
 
-Read every insight like a news feed, with infinite scroll, filters by type,
-search, save, and hide. An insight appears the moment it is stored. It doesn't
-wait for the Telegram pacer, and reading it doesn't change Telegram delivery.
+Read every insight like a news feed, laid out like Google Discover. Each card
+has a generated cover (colored by type, showing the main topic and the project
+it came from), a headline, a two-line teaser, and a source row: project, time,
+♡ save, share, and ⋮ (hide, copy). Tap a card to open it like an article. It
+shows the full text, the project and branch it was learned on, and the date,
+with bookmark, text size (Aa), and share. ✕ or Back returns to the same spot in
+the feed. An insight appears the moment it is stored. It doesn't wait for the
+Telegram pacer, and reading it doesn't change Telegram delivery.
+
+Headlines aren't written at capture time, and no model call is made for them.
+`insights titles-export` lists the insights without one. Once a batch of
+headlines has been written for them (e.g. by Claude subagents),
+`insights titles-import` cleans and stores them: unknown keys are reported, and
+existing headlines are kept unless you pass `--overwrite`. Until an insight has
+a headline, its first sentence is shown.
+Sharing uses the phone's share sheet over HTTPS; on the plain-`http` tailnet URL
+it copies the text to the clipboard instead.
 
 ```bash
 uv run daily-agent web            # http://127.0.0.1:8765/

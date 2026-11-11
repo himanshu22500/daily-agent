@@ -37,6 +37,7 @@ class InsightRow(SQLModel, table=True):
     captured_at: str
     status: str = "new"
     stored_at: str | None = None
+    title: str | None = None
 
 
 class InsightCursorRow(SQLModel, table=True):
@@ -75,8 +76,9 @@ class InsightStore:
                 row[1]
                 for row in session.execute(text("PRAGMA table_info(insights)")).all()
             }
-            if "stored_at" not in cols:
-                session.execute(text("ALTER TABLE insights ADD COLUMN stored_at TEXT"))
+            for col in ("stored_at", "title"):
+                if col not in cols:
+                    session.execute(text(f"ALTER TABLE insights ADD COLUMN {col} TEXT"))
 
     # --- insights --------------------------------------------------------- #
     def add(self, insight: Insight) -> bool:
@@ -98,6 +100,7 @@ class InsightStore:
                     captured_at=insight.captured_at.isoformat(),
                     status=insight.status,
                     stored_at=_iso(insight.stored_at or datetime.now(timezone.utc)),
+                    title=insight.title or None,
                 )
                 .on_conflict_do_nothing(index_elements=["key"])
             )
@@ -132,6 +135,27 @@ class InsightStore:
             if row is None:
                 return False
             row.status = status
+            session.add(row)
+            return True
+
+    def missing_titles(self, limit: int | None = None) -> list[Insight]:
+        """Insights without a headline yet, most recently stored first."""
+        stmt = (
+            select(InsightRow)
+            .where((InsightRow.title.is_(None)) | (InsightRow.title == ""))
+            .order_by(InsightRow.stored_at.desc(), InsightRow.captured_at.desc())
+        )
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        with session_scope(self._engine) as session:
+            return [_to_insight(r) for r in session.exec(stmt).all()]
+
+    def set_title(self, key: str, title: str) -> bool:
+        with session_scope(self._engine) as session:
+            row = session.get(InsightRow, key)
+            if row is None:
+                return False
+            row.title = title
             session.add(row)
             return True
 
@@ -173,4 +197,5 @@ def _to_insight(row: InsightRow) -> Insight:
         captured_at=datetime.fromisoformat(row.captured_at),
         status=row.status,
         stored_at=datetime.fromisoformat(row.stored_at) if row.stored_at else None,
+        title=row.title or "",
     )
