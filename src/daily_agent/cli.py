@@ -24,7 +24,8 @@ from .feed.channels import (
     TelegramChannel,
     TelegramError,
 )
-from .feed.covers import import_covers
+from .agents.cover_illustrator import draw_cover
+from .feed.covers import generate_covers, import_covers
 from .feed.headlines import apply_titles, export_for_titling
 from .feed.insights_capture import collect_insights, collect_marked
 from .feed.insights_feed import (
@@ -320,6 +321,39 @@ def insights_covers_import(
     )
     for name, problems in list(result.rejected.items())[:20]:
         console.print(f"  [dim]{name}: {'; '.join(problems)}[/dim]")
+
+
+@insights_app.command("covers-generate")
+def insights_covers_generate(
+    limit: int = typer.Option(None, help="Draw at most N covers."),
+    concurrency: int = typer.Option(4, help="Drawings in flight at once."),
+    model: str = typer.Option(None, help="Model to draw with (default: model)."),
+    overwrite: bool = typer.Option(False, help="Redraw insights that have a cover."),
+) -> None:
+    """Draw illustrated covers with the model for insights that lack one."""
+    settings = get_settings()
+    chosen = model or settings.model
+
+    async def draw(record: dict, feedback: list[str] | None) -> str:
+        return await draw_cover(chosen, record, feedback)
+
+    result = asyncio.run(
+        generate_covers(
+            InsightStore(settings.db_path),
+            settings.covers_dir,
+            draw,
+            limit=limit,
+            concurrency=concurrency,
+            overwrite=overwrite,
+        )
+    )
+    console.print(
+        f"Drew [bold]{result.written}[/bold] cover(s) with {chosen}"
+        + (f"; [yellow]{len(result.failed)} failed[/yellow]" if result.failed else "")
+        + "."
+    )
+    for key, problems in list(result.failed.items())[:20]:
+        console.print(f"  [dim]{key}: {'; '.join(problems)}[/dim]")
 
 
 @insights_app.command("status")

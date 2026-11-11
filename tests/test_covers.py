@@ -149,3 +149,94 @@ def test_covers_import_command(monkeypatch, tmp_path):
     assert result.exit_code == 0, result.output
     assert "Imported 1 cover(s)" in result.output and "1 for unknown" in result.output
     assert (tmp_path / "out" / "good.svg").exists()
+
+
+async def test_generate_retries_with_feedback_and_isolates_failures(tmp_path):
+    from daily_agent.feed.covers import generate_covers
+
+    store = InsightStore(str(tmp_path / "g.db"))
+    for key in ("first-try", "second-try", "never", "boom", "has-cover"):
+        store.add(
+            Insight(key=f"insight:{key}", text=key, title=key.upper(), captured_at=T0)
+        )
+    covers = tmp_path / "covers"
+    covers.mkdir()
+    (covers / "has-cover.svg").write_bytes(_svg())
+    calls: list[tuple[str, list[str] | None]] = []
+
+    async def draw(record, feedback):
+        key = record["key"].removeprefix("insight:")
+        calls.append((key, feedback))
+        assert record["title"] == key.upper()
+        if key == "boom":
+            raise RuntimeError("status_code: 503, overloaded\ntrace")
+        if key == "first-try" or (key == "second-try" and feedback):
+            return _svg().decode()
+        return _svg("<script/>").decode()
+
+    result = await generate_covers(store, covers, draw, concurrency=2)
+    assert result.written == 2
+    assert set(result.failed) == {"insight:never", "insight:boom"}
+    assert result.failed["insight:boom"] == ["status_code: 503, overloaded"]
+    assert any("<script>" in p for p in result.failed["insight:never"])
+    retry = [fb for key, fb in calls if key == "second-try"]
+    assert retry[0] is None and any("<script>" in p for p in retry[1])
+    assert "has-cover" not in {key for key, _ in calls}
+    assert sorted(p.name for p in covers.iterdir()) == [
+        "first-try.svg",
+        "has-cover.svg",
+        "second-try.svg",
+    ]
+
+
+async def test_generate_respects_limit_and_overwrite(tmp_path):
+    from daily_agent.feed.covers import generate_covers
+
+    store = InsightStore(str(tmp_path / "l.db"))
+    for key in "abc":
+        store.add(Insight(key=f"insight:{key}", text=key, captured_at=T0))
+    covers = tmp_path / "covers"
+    covers.mkdir()
+    (covers / "a.svg").write_bytes(b"old")
+
+    async def draw(record, feedback):
+        return _svg().decode()
+
+    assert (await generate_covers(store, covers, draw, limit=1)).written == 1
+    assert (covers / "b.svg").exists() and not (covers / "c.svg").exists()
+    await generate_covers(store, covers, draw, overwrite=True)
+    assert (covers / "a.svg").read_bytes() != b"old"
+
+
+def test_extract_svg_from_chatty_replies():
+    from daily_agent.agents.cover_illustrator import extract_svg
+
+    svg = _svg().decode()
+    assert extract_svg(f"Here you go:\n```svg\n{svg}\n```\nEnjoy!") == svg
+    assert extract_svg("Sorry, I can't draw that.") == ""
+
+
+def test_covers_generate_command(monkeypatch, tmp_path):
+    db = str(tmp_path / "gen.db")
+    InsightStore(db).add(Insight(key="insight:a", text="A.", captured_at=T0))
+    seen_models = []
+
+    async def fake_draw(model, record, feedback=None):
+        seen_models.append(model)
+        return _svg().decode()
+
+    monkeypatch.setattr(cli, "draw_cover", fake_draw)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DAILY_AGENT_DB_PATH", db)
+    monkeypatch.setenv("DAILY_AGENT_COVERS_DIR", str(tmp_path / "out"))
+    monkeypatch.setenv("DAILY_AGENT_MODEL", "test:default")
+    cli.get_settings.cache_clear()
+    try:
+        result = CliRunner().invoke(
+            cli.app, ["insights", "covers-generate", "--model", "test:artist"]
+        )
+    finally:
+        cli.get_settings.cache_clear()
+    assert result.exit_code == 0, result.output
+    assert "Drew 1 cover(s) with test:artist" in result.output
+    assert seen_models == ["test:artist"] and (tmp_path / "out" / "a.svg").exists()

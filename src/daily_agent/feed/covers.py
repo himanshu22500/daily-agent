@@ -11,10 +11,15 @@ and shows them through ``<img>``, where SVG scripts never run.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import xml.etree.ElementTree as ET
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from ..models import Insight
+from .insights_store import InsightStore
 
 SVG_NS = "http://www.w3.org/2000/svg"
 VIEWBOX = "0 0 800 400"
@@ -106,4 +111,73 @@ def import_covers(
             continue
         (destination / path.name).write_bytes(data)
         result.imported += 1
+    return result
+
+
+# (insight record, validator feedback from a rejected try or None) -> SVG text
+CoverDrawer = Callable[[dict, "list[str] | None"], Awaitable[str]]
+
+
+@dataclass
+class CoverGeneration:
+    written: int = 0
+    failed: dict[str, list[str]] = field(default_factory=dict)
+
+
+async def generate_covers(
+    store: InsightStore,
+    covers_dir: str | Path,
+    draw: CoverDrawer,
+    *,
+    limit: int | None = None,
+    concurrency: int = 4,
+    tries: int = 2,
+    overwrite: bool = False,
+) -> CoverGeneration:
+    """Draw covers for insights without one; store only those that validate.
+
+    A rejected drawing is retried with the validator's reasons as feedback, up
+    to ``tries`` drawings per insight. A failing insight never stops the rest.
+    """
+    destination = Path(covers_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    todo = [
+        insight
+        for insight in sorted(store.all(), key=lambda i: i.key)
+        if (path := cover_path(destination, insight.key)) is not None
+        and (overwrite or not path.exists())
+    ]
+    if limit is not None:
+        todo = todo[:limit]
+    result = CoverGeneration()
+    gate = asyncio.Semaphore(max(1, concurrency))
+
+    async def one(insight: Insight) -> None:
+        record = {
+            "key": insight.key,
+            "title": insight.title,
+            "text": insight.text,
+            "type": insight.type,
+            "tags": insight.tags,
+        }
+        feedback: list[str] | None = None
+        async with gate:
+            for _ in range(max(1, tries)):
+                try:
+                    svg = await draw(record, feedback)
+                except Exception as exc:  # noqa: BLE001 - one failure never stops the batch
+                    result.failed[insight.key] = [
+                        (str(exc).splitlines() or [type(exc).__name__])[0][:200]
+                    ]
+                    return
+                data = svg.encode()
+                feedback = validate_cover(data) if svg else ["reply contained no <svg>"]
+                if not feedback:
+                    cover_path(destination, insight.key).write_bytes(data)
+                    result.written += 1
+                    result.failed.pop(insight.key, None)
+                    return
+            result.failed[insight.key] = feedback
+
+    await asyncio.gather(*(one(insight) for insight in todo))
     return result
