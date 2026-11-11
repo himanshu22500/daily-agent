@@ -17,7 +17,9 @@ from .insights_store import InsightStore
 MAX_HEADLINE = 90
 FALLBACK_HEADLINE = 80
 
-_MARKUP = re.compile(r"[`*_]{1,3}")
+# Only unambiguous markdown: backticks and **bold**. Single `_`/`*` are left
+# alone, since they are part of identifiers (snake_case, QA_*, __init__).
+_MARKUP = re.compile(r"`+|\*\*")
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9`\"'(])")
 
 
