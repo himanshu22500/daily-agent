@@ -1,5 +1,30 @@
 # Decisions
 
+## 2026-11-12 — "For you": a fresh, non-repeating feed every open, with spaced revisits
+
+A strictly newest-first feed shows the same top posts on every open, which
+quickly makes it boring (issue #80). The web feed's default tab is now **For
+you**. Each open builds a new *edition*: unseen insights from the last 3 days
+first, then the unseen backlog weighted-randomly by score. Seen insights are
+mixed in about every 4th slot once their spaced-repetition gap has elapsed: 1d,
+3d, 1w, 3w, then 2mo; saved insights use 1d, 2d, 4d, 10d, 1mo; hidden never.
+The chronological view remains as **Latest**.
+
+- **No short-term repeats.** Seen insights that aren't due are excluded
+  outright, so an edition ends with "caught up" instead of padding with repeats.
+- **Seen means on screen.** The page reports cards that were about 60% visible
+  (or filled half the screen) for about 1s. A view counts once per edition. The
+  #77 rule (rendered = seen) also counted cards that were only prefetched; those
+  marks were reset once when the view-tracking columns were added (maintainer's
+  call).
+- **Editions are frozen.** The order is stored (`web_feed_sessions`, pruned after
+  3 days), so infinite scroll stays stable while views and saves change state.
+- **Diversity is a hard constraint where feasible.** There are never three of
+  one type in a row, and same-session insights are not adjacent. Each slot takes
+  the earliest fitting item from the whole queue; a short look-ahead let skipped
+  gotchas (about half the corpus) pile up and force runs.
+- This is the web-feed half of #64. Telegram's pacing is unchanged.
+
 ## 2026-11-11 — A local web feed shows every insight immediately; Telegram stays paced
 
 Insights are read on a scrollable web page (`daily-agent web`, issue #77) as well

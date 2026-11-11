@@ -1,20 +1,24 @@
-"""The web feed: a scrollable page over every stored insight (issue #77).
+"""The web feed: a scrollable page over every stored insight (issues #77, #80).
 
 Server-rendered HTML plus a little vanilla JS (infinite scroll, in-place
-save/hide, a "new insights" pill). No frontend build. Every action also works
-without JS through plain form posts and redirects.
+save/hide, on-screen view tracking, a "new insights" pill). No frontend build.
+Every action also works without JS through plain form posts and redirects.
 
-It only reads the insight store and writes reader state (``web_feed_state``);
-the outbox and Telegram delivery are untouched.
+It only reads the insight store and writes reader state (``web_feed_state``,
+``web_feed_sessions``); the outbox and Telegram delivery are untouched.
 """
 
 from __future__ import annotations
 
+import json
+import secrets
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 from urllib.parse import quote, urlencode
 
 from starlette.applications import Starlette
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware import Middleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import Request
@@ -28,8 +32,8 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from ..feed.web_feed import VIEWS, WebFeed
-from .render import ago, inline_markdown, label, type_class
+from ..feed.web_feed import FOR_YOU, VIEWS, WebFeed
+from .render import ago, inline_markdown, label, type_class, until
 
 HERE = Path(__file__).parent
 
@@ -40,10 +44,14 @@ _ACTIONS = {
     "hide": ("set_hidden", True, "_hidden.html"),
     "unhide": ("set_hidden", False, "_card.html"),
 }
+# Old bookmarks: the chronological view used to be called "all".
+_VIEW_ALIASES = {"all": "latest"}
+MAX_SEEN_BATCH = 500
+MAX_SEEN_BODY = 64 * 1024
 
 
-def _feed_url(view: str = "all", type: str = "", q: str = "", **extra: str) -> str:
-    params = {"view": view if view != "all" else "", "type": type, "q": q, **extra}
+def _feed_url(view: str = FOR_YOU, type: str = "", q: str = "", **extra: str) -> str:
+    params = {"view": "" if view == FOR_YOU else view, "type": type, "q": q, **extra}
     query = urlencode({k: v for k, v in params.items() if v})
     return "/?" + query if query else "/"
 
@@ -83,62 +91,142 @@ def create_app(
     feed = WebFeed(db_path)
     templates = Jinja2Templates(directory=str(HERE / "templates"))
     templates.env.filters.update(
-        md=inline_markdown, ago=ago, label=label, type_class=type_class
+        md=inline_markdown, ago=ago, until=until, label=label, type_class=type_class
     )
     templates.env.globals.update(quote=lambda s: quote(s, safe=""), feed_url=_feed_url)
 
-    def index(request: Request) -> Response:
+    def _for_you(request: Request, type_: str, partial: bool) -> Response | dict:
         params = request.query_params
-        view = params.get("view") or "all"
-        type_ = params.get("type") or ""
-        q = params.get("q") or ""
-        cursor = params.get("cursor") or None
-        if view not in VIEWS:
-            return PlainTextResponse(f"Unknown view: {view}", status_code=400)
+        edition = params.get("session") or ""
+        try:
+            offset = int(params.get("offset") or 0)
+        except ValueError:
+            return PlainTextResponse("Invalid offset.", status_code=400)
+        if not edition:
+            if partial:
+                return PlainTextResponse("Missing session.", status_code=400)
+            edition, offset = feed.new_edition(type=type_ or None), 0
+        try:
+            page = feed.edition_page(edition, offset=offset, limit=page_size)
+        except KeyError:
+            if partial:
+                return templates.TemplateResponse(
+                    request, "_expired.html", {}, status_code=410
+                )
+            edition = feed.new_edition(type=type_ or None)
+            page = feed.edition_page(edition, offset=0, limit=page_size)
+            offset = 0
+        return {
+            "entries": page.entries,
+            "session_id": edition,
+            "first_page": offset == 0,
+            "more_url": (
+                _feed_url(session=edition, offset=str(page.next_offset))
+                if page.next_offset is not None
+                else None
+            ),
+            "next_revisit": None
+            if page.next_offset is not None
+            else (feed.next_revisit_at()),
+        }
+
+    def _chronological(
+        request: Request, view: str, type_: str, q: str
+    ) -> Response | dict:
+        cursor = request.query_params.get("cursor") or None
         try:
             page = feed.page(
                 view=view, type=type_ or None, query=q, cursor=cursor, limit=page_size
             )
         except ValueError as exc:
             return PlainTextResponse(str(exc), status_code=400)
-
-        partial = params.get("partial") == "1"
-        # Count before marking this page seen, so the header includes it.
-        unseen = 0 if partial else feed.unseen_count()
-        # Rendering an entry is what "seeing" it means: the New dot shows once.
-        feed.mark_seen(e.key for e in page.entries if e.new)
-
         filters = {"view": view, "type": type_, "q": q}
-        context = {
-            "page": page,
+        return {
+            "entries": page.entries,
+            # Views in a chronological list count once per page load.
+            "session_id": request.query_params.get("pv")
+            or "p-" + secrets.token_urlsafe(6),
             "first_page": cursor is None,
-            "filters": filters,
-            "next_url": _feed_url(**filters),
             "more_url": (
                 _feed_url(**filters, cursor=page.next_cursor)
                 if page.next_cursor
                 else None
             ),
         }
+
+    def index(request: Request) -> Response:
+        params = request.query_params
+        view = params.get("view") or FOR_YOU
+        view = _VIEW_ALIASES.get(view, view)
+        if view not in VIEWS:
+            return PlainTextResponse(f"Unknown view: {view}", status_code=400)
+        type_ = params.get("type") or ""
+        q = params.get("q") or ""
+        partial = params.get("partial") == "1"
+
+        result = (
+            _for_you(request, type_, partial)
+            if view == FOR_YOU
+            else _chronological(request, view, type_, q)
+        )
+        if isinstance(result, Response):
+            return result
+        filters = {"view": view, "type": type_, "q": q}
+        context = {
+            **result,
+            "filters": filters,
+            "show_revisit": view == FOR_YOU,
+            "next_url": _feed_url(**filters),
+        }
+        if view != FOR_YOU and context["more_url"]:
+            # Keep one page-load id across this list's infinite scroll.
+            context["more_url"] += "&pv=" + quote(context["session_id"], safe="")
         if partial:
             return templates.TemplateResponse(request, "_cards.html", context)
         context.update(
             views=VIEWS,
             types=feed.types(),
-            unseen=unseen,
-            top_cursor=(
-                page.entries[0].cursor if page.entries and not cursor else None
-            ),
+            unseen=feed.unseen_count(),
+            opened_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         )
         return templates.TemplateResponse(request, "index.html", context)
 
     def new_count(request: Request) -> Response:
-        since = request.query_params.get("since") or ""
         try:
-            count = feed.count_newer_than(since)
-        except ValueError as exc:
-            return PlainTextResponse(str(exc), status_code=400)
-        return JSONResponse({"count": count})
+            since = datetime.fromisoformat(request.query_params.get("since") or "")
+        except ValueError:
+            return PlainTextResponse("Invalid 'since' timestamp.", status_code=400)
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=timezone.utc)
+        return JSONResponse({"count": feed.count_published_after(since)})
+
+    async def seen(request: Request) -> Response:
+        """Record cards that were on screen (posted by the page, often as a beacon)."""
+        if not _same_origin(request):
+            return PlainTextResponse("Cross-site request refused.", status_code=403)
+        body = await request.body()
+        if len(body) > MAX_SEEN_BODY:
+            return PlainTextResponse("Too large.", status_code=413)
+        try:
+            payload = json.loads(body or b"{}")
+        except ValueError:
+            return PlainTextResponse("Invalid JSON.", status_code=400)
+        keys = payload.get("keys") if isinstance(payload, dict) else None
+        session_id = payload.get("session") if isinstance(payload, dict) else None
+        if (
+            not isinstance(keys, list)
+            or len(keys) > MAX_SEEN_BATCH
+            or not all(isinstance(k, str) for k in keys)
+            or not isinstance(session_id, str)
+            or not 0 < len(session_id) <= 64
+        ):
+            return PlainTextResponse(
+                "Expected {keys: [...], session}.", status_code=400
+            )
+        counted = await run_in_threadpool(
+            feed.record_views, keys, session_id=session_id
+        )
+        return JSONResponse({"counted": counted})
 
     def act(request: Request) -> Response:
         if not _same_origin(request):
@@ -154,7 +242,13 @@ def create_app(
         if request.headers.get("x-requested-with") != "fetch":
             return RedirectResponse(next_url, status_code=303)
         return templates.TemplateResponse(
-            request, fragment, {"entry": feed.entry(key), "next_url": next_url}
+            request,
+            fragment,
+            {
+                "entry": feed.entry(key),
+                "next_url": next_url,
+                "show_revisit": request.query_params.get("v") == FOR_YOU,
+            },
         )
 
     middleware = (
@@ -167,6 +261,7 @@ def create_app(
         routes=[
             Route("/", index),
             Route("/new-count", new_count),
+            Route("/seen", seen, methods=["POST"]),
             Route("/items/{key:path}/{action}", act, methods=["POST"]),
             Mount(
                 "/static", StaticFiles(directory=str(HERE / "static")), name="static"

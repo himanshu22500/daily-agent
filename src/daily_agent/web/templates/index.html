@@ -16,24 +16,31 @@
   <header class="top">
     <div class="bar">
       <a class="brand" href="/">Insights</a>
-      {% if unseen %}<span class="unseen">{{ unseen }} new</span>{% endif %}
+      {% if unseen %}<span class="unseen">{{ unseen }} unseen</span>{% endif %}
     </div>
     <form class="search" action="/" method="get" role="search">
-      {% if filters.view != "all" %}<input type="hidden" name="view" value="{{ filters.view }}">{% endif %}
-      {% if filters.type %}<input type="hidden" name="type" value="{{ filters.type }}">{% endif %}
+      <input type="hidden" name="view" value="latest">
       <input type="search" name="q" value="{{ filters.q }}" placeholder="Search insights" aria-label="Search insights">
     </form>
-    <nav class="chips" aria-label="Filters">
-      <a class="chip{% if filters.view == 'all' and not filters.type %} on{% endif %}" href="{{ feed_url(q=filters.q) }}">All</a>
-      {% for type, count in types %}
-      <a class="chip t-{{ type|type_class }}{% if filters.view == 'all' and filters.type == type %} on{% endif %}" href="{{ feed_url(type=type, q=filters.q) }}">{{ type|label }} <span class="n">{{ count }}</span></a>
-      {% endfor %}
-      <a class="chip{% if filters.view == 'saved' %} on{% endif %}" href="{{ feed_url(view='saved', q=filters.q) }}">Saved</a>
-      <a class="chip{% if filters.view == 'hidden' %} on{% endif %}" href="{{ feed_url(view='hidden', q=filters.q) }}">Hidden</a>
-    </nav>
   </header>
+  <nav class="sticky" aria-label="Feed">
+    <div class="tabs">
+      <a class="tab{% if filters.view == 'for-you' %} on{% endif %}" href="{{ feed_url() }}">For you</a>
+      <a class="tab{% if filters.view == 'latest' %} on{% endif %}" href="{{ feed_url(view='latest') }}">Latest</a>
+      <a class="tab{% if filters.view == 'saved' %} on{% endif %}" href="{{ feed_url(view='saved') }}">Saved</a>
+      <a class="tab{% if filters.view == 'hidden' %} on{% endif %}" href="{{ feed_url(view='hidden') }}">Hidden</a>
+    </div>
+    {% if filters.view in ("for-you", "latest") %}
+    <div class="chips">
+      <a class="chip{% if not filters.type %} on{% endif %}" href="{{ feed_url(view=filters.view, q=filters.q) }}">All types</a>
+      {% for type, count in types %}
+      <a class="chip t-{{ type|type_class }}{% if filters.type == type %} on{% endif %}" href="{{ feed_url(view=filters.view, type=type, q=filters.q) }}">{{ type|label }} <span class="n">{{ count }}</span></a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </nav>
   <a class="fresh" id="fresh" href="{{ next_url }}" hidden></a>
-  <main class="feed" id="feed"{% if top_cursor %} data-top="{{ top_cursor }}"{% endif %}>
+  <main class="feed" id="feed" data-session="{{ session_id }}" data-opened="{{ opened_at }}">
     {% include "_cards.html" %}
   </main>
   <script src="/static/app.js" defer></script>

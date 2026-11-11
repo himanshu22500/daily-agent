@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
@@ -145,28 +146,44 @@ def test_views_type_filter_and_search(db):
     assert feed.types() == [("gotcha", 1), ("repo", 1)]  # hidden not counted
 
 
-def test_seen_is_first_sight_only_and_drives_unseen_count(db):
+def test_views_count_once_per_session_and_drive_unseen_count(db):
     feed = _seed(db, _insight("a", stored=2), _insight("b", stored=1))
     assert feed.unseen_count() == 2
     assert all(e.new for e in feed.page().entries)
 
-    feed.mark_seen(["insight:a"], now="2026-11-02T00:00:00.000000+00:00")
-    feed.mark_seen(["insight:a"], now="2026-11-09T00:00:00.000000+00:00")
+    assert feed.record_views(["insight:a", "insight:a"], session_id="s1", now=T0) == 1
+    assert feed.record_views(["insight:a"], session_id="s1", now=T0) == 0
     entries = {e.key: e for e in feed.page().entries}
     assert not entries["insight:a"].new and entries["insight:b"].new
+    assert entries["insight:a"].view_count == 1
     assert feed.unseen_count() == 1
+    # Unknown keys are ignored, not created.
+    assert feed.record_views(["insight:missing"], session_id="s1") == 0
 
     feed.set_hidden("insight:b", True)
     assert feed.unseen_count() == 0
 
 
-def test_count_newer_than_a_loaded_top(db):
+def test_each_view_schedules_a_growing_revisit_gap(db):
+    feed = _seed(db, _insight("a"), _insight("s"))
+    feed.set_saved("insight:s", True)
+    for i, session in enumerate(("s1", "s2", "s3")):
+        feed.record_views(
+            ["insight:a", "insight:s"], session_id=session, now=T0 + timedelta(days=i)
+        )
+    # Third view: plain gap is 7 days; saved insights come back sooner (4 days).
+    assert feed.next_revisit_at(now=T0) == T0 + timedelta(days=2 + 4)
+    feed.set_hidden("insight:s", True)
+    assert feed.next_revisit_at(now=T0) == T0 + timedelta(days=2 + 7)
+
+
+def test_count_published_after(db):
     feed = _seed(db, _insight("a", stored=1))
-    top = feed.page().entries[0].cursor
-    assert feed.count_newer_than(top) == 0
+    opened = T0 + timedelta(minutes=1, seconds=30)
+    assert feed.count_published_after(opened) == 0
     InsightStore(db).add(_insight("b", stored=2))
     InsightStore(db).add(_insight("c", stored=3))
-    assert feed.count_newer_than(top) == 2
+    assert feed.count_published_after(opened) == 2
 
 
 def test_unknown_key_and_bad_inputs(db):
@@ -178,12 +195,14 @@ def test_unknown_key_and_bad_inputs(db):
     with pytest.raises(ValueError):
         feed.page(cursor="not-a-cursor")
     with pytest.raises(ValueError):
-        feed.count_newer_than("yesterday|insight:a")
+        feed.page(view="for-you")  # editions, not keyset pages
+    with pytest.raises(KeyError):
+        feed.edition_page("no-such-edition")
 
 
 def test_reader_state_leaves_telegram_delivery_untouched(db):
     feed = _seed(db, _insight("a"))
-    feed.mark_seen(["insight:a"])
+    feed.record_views(["insight:a"], session_id="s1")
     feed.set_saved("insight:a", True)
     feed.set_hidden("insight:a", True)
 
@@ -192,3 +211,76 @@ def test_reader_state_leaves_telegram_delivery_untouched(db):
     # The pacer-driven outbox still queues it exactly as before.
     assert enqueue_new_insights(store, Outbox(db)) == 1
     assert Outbox(db).stats()["pending"] == 1
+
+
+def test_pre_80_state_gains_view_columns_and_render_seen_marks_reset(db):
+    # A web_feed_state from #77, where seen_at meant "was rendered".
+    InsightStore(db).add(_insight("a"))
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "CREATE TABLE web_feed_state (key VARCHAR PRIMARY KEY, seen_at VARCHAR, "
+            "saved_at VARCHAR, dismissed_at VARCHAR)"
+        )
+        conn.execute(
+            "INSERT INTO web_feed_state VALUES ('insight:a', '2026-11-11T10:00:00', "
+            "'2026-11-11T10:00:00', NULL)"
+        )
+    feed = WebFeed(db)
+    entry = feed.page().entries[0]
+    assert entry.new and entry.saved and entry.view_count == 0
+    # Idempotent: reopening never resets real views again.
+    feed.record_views(["insight:a"], session_id="s1")
+    assert not WebFeed(db).page().entries[0].new
+
+
+def _edition_keys(feed: WebFeed, edition: str, limit: int = 2) -> list[str]:
+    keys, offset = [], 0
+    while offset is not None:
+        page = feed.edition_page(edition, offset=offset, limit=limit)
+        keys += [e.key.removeprefix("insight:") for e in page.entries]
+        offset = page.next_offset
+    return keys
+
+
+def test_edition_skips_seen_until_due_and_never_hidden(db):
+    feed = _seed(db, *[_insight(k, stored=i) for i, k in enumerate("abcde")])
+    feed.record_views(["insight:a", "insight:b"], session_id="s1", now=T0)
+    feed.set_hidden("insight:c", True)
+
+    edition = feed.new_edition(now=T0 + timedelta(hours=1), rng=random.Random(1))
+    assert sorted(_edition_keys(feed, edition)) == ["d", "e"]
+
+    # A day later the first-view gap (1 day) has elapsed: a and b come back.
+    later = feed.new_edition(now=T0 + timedelta(days=1, hours=1), rng=random.Random(1))
+    assert sorted(_edition_keys(feed, later)) == ["a", "b", "d", "e"]
+
+
+def test_edition_order_is_frozen_while_state_changes(db):
+    feed = _seed(db, *[_insight(k, stored=i) for i, k in enumerate("abcdef")])
+    edition = feed.new_edition(rng=random.Random(7))
+    first = feed.edition_page(edition, limit=2)
+    # Viewing page 1 doesn't reshuffle or drop anything from later pages.
+    feed.record_views([e.key for e in first.entries], session_id=edition)
+    rest = _edition_keys(feed, edition)
+    assert len(rest) == 6 and len(set(rest)) == 6
+    # Hiding mid-scroll removes just that card from later pages.
+    feed.set_hidden("insight:" + rest[-1], True)
+    assert _edition_keys(feed, edition) == rest[:-1]
+
+
+def test_each_open_is_a_different_order(db):
+    feed = _seed(db, *[_insight(k, stored=i) for i, k in enumerate("abcdefghij")])
+    orders = {
+        tuple(_edition_keys(feed, feed.new_edition(rng=random.Random(seed))))
+        for seed in range(8)
+    }
+    assert len(orders) > 1
+
+
+def test_edition_type_filter_and_old_editions_are_pruned(db):
+    feed = _seed(db, _insight("g", type="gotcha"), _insight("r", type="repo", stored=1))
+    edition = feed.new_edition(type="repo", now=T0)
+    assert _edition_keys(feed, edition) == ["r"]
+    feed.new_edition(now=T0 + timedelta(days=4))
+    with pytest.raises(KeyError):
+        feed.edition_page(edition)

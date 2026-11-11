@@ -62,20 +62,31 @@ key and tags. Telegram delivery creates one private channel per type on demand.
 
 ## Web feed
 
-Read every insight like a news feed: newest first, infinite scroll, filters by
-type, search, save, and hide. An insight appears the moment it is stored. It
-doesn't wait for the Telegram pacer, and reading it doesn't change Telegram
-delivery.
+Read every insight like a news feed, with infinite scroll, filters by type,
+search, save, and hide. An insight appears the moment it is stored. It doesn't
+wait for the Telegram pacer, and reading it doesn't change Telegram delivery.
 
 ```bash
 uv run daily-agent web            # http://127.0.0.1:8765/
 scripts/install-web-launchd.sh    # keep it running in the background (macOS)
 ```
 
-The feed is ordered by when an insight was stored. A flush that catches up on
-older sessions still lands its insights at the top, marked "from <date>". A blue
-dot marks insights you haven't scrolled past yet. If the page is left open, a
-pill appears when new insights arrive.
+**For you** (the default) is different every time you open it. It leads with
+unseen insights from the last few days, then the rest of your unseen backlog in
+a fresh random order. Higher-scored insights tend to come earlier, and there are
+never more than two of one type in a row. Insights you've already seen stay out
+until they're due for a revisit: after 1 day, 3 days, 1 week, 3 weeks, then
+every 2 months. Saved ones come back sooner and hidden ones never do. Revisits
+are marked "↻ Revisit". When nothing is left, it says you're caught up instead
+of repeating itself.
+
+An insight counts as **seen** only after it has been on screen for about a
+second; loading it isn't enough. A blue dot marks insights you haven't seen.
+
+**Latest** is the chronological view, ordered by when an insight was stored. A
+flush that catches up on older sessions still lands its insights at the top,
+marked "from <date>". Search and tag links open in Latest. If the page is left
+open, a pill appears when new insights arrive.
 
 It binds to `127.0.0.1` and has **no login**, so don't expose it on a LAN or the
 internet.
