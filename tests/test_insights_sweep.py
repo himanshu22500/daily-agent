@@ -14,6 +14,7 @@ from daily_agent.agents.insight_extractor import (
     REQUEST_TIMEOUT_SECONDS,
     build_insight_extractor,
 )
+from daily_agent.feed.covers import CoverStore
 from daily_agent.feed.insights_capture import collect_insights
 from daily_agent.feed.insights_flush import FlushPaths, RunLock
 from daily_agent.feed.insights_store import InsightStore
@@ -22,6 +23,12 @@ from daily_agent.feed.outbox import Outbox
 from daily_agent.feed.transcripts import all_session_files
 from daily_agent.models import InsightCandidate
 
+COVER = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400">'
+    '<rect width="800" height="400" fill="#274690"/>'
+    + '<rect x="1" y="1" width="2" height="2" fill="#123456"/>' * 12
+    + "</svg>"
+)
 NOW = time.time()  # real clock: cursors record real read times
 SETTLE = 600
 
@@ -269,20 +276,58 @@ def test_dry_run_reports_without_calling_the_model(monkeypatch, tmp_path):
 def test_sweep_publishes_and_queues_but_never_delivers(monkeypatch, tmp_path):
     _real_transcripts(tmp_path)
     models: list[str] = []
+    titled: list[list[str]] = []
+    drawn: list[str] = []
 
     async def fake_extract(model, messages):
         models.append(model)
         return await _extractor([])(messages)
 
+    async def fake_headlines(model, batch):
+        models.append(model)
+        titled.append([r["key"] for r in batch])
+        return {r["key"]: "A written headline" for r in batch}
+
+    async def fake_draw(model, record, feedback=None):
+        models.append(model)
+        drawn.append(record["key"])
+        return COVER
+
     monkeypatch.setattr(cli, "extract_insights", fake_extract)
+    monkeypatch.setattr(cli, "write_headlines", fake_headlines)
+    monkeypatch.setattr(cli, "draw_cover", fake_draw)
+    monkeypatch.setenv("DAILY_AGENT_HEADLINE_MODEL", "claude-code:h")
+    monkeypatch.setenv("DAILY_AGENT_COVER_MODEL", "claude-code:c")
     result = _cli(monkeypatch, tmp_path, "--settle-minutes", "10")
     assert result.exit_code == 0, result.output
     assert "Sweep read 1 transcript(s): captured 1 new" in result.output
     assert "queued 1 for Telegram; 1 still being written" in result.output
-    assert models == ["test"]
-    stats = Outbox(tmp_path / "cli.db").stats()
+    assert "Headlines: wrote 1" in result.output and "Covers: drew 1" in result.output
+    assert models == ["test", "claude-code:h", "claude-code:c"]
+    assert titled == [["insight:lesson-a"]] and drawn == ["insight:lesson-a"]
+    db = tmp_path / "cli.db"
+    assert InsightStore(db).get("insight:lesson-a").title == "A written headline"
+    assert CoverStore(db).get("insight:lesson-a") == COVER
+    stats = Outbox(db).stats()
     assert stats["pending"] == 1 and stats.get("sent", 0) == 0
-    assert not FlushPaths.for_db(tmp_path / "cli.db").lock.exists()
+    assert not FlushPaths.for_db(db).lock.exists()
+
+
+def test_sweep_caps_of_zero_skip_headlines_and_covers(monkeypatch, tmp_path):
+    _real_transcripts(tmp_path)
+
+    async def fake_extract(model, messages):
+        return await _extractor([])(messages)
+
+    async def never(*_args, **_kwargs):
+        raise AssertionError("should not be called")
+
+    monkeypatch.setattr(cli, "extract_insights", fake_extract)
+    monkeypatch.setattr(cli, "write_headlines", never)
+    monkeypatch.setattr(cli, "draw_cover", never)
+    result = _cli(monkeypatch, tmp_path, "--max-titles", "0", "--max-covers", "0")
+    assert result.exit_code == 0, result.output
+    assert "Headlines" not in result.output and "Covers" not in result.output
 
 
 def test_sweep_skips_while_a_flush_holds_the_lock(monkeypatch, tmp_path):

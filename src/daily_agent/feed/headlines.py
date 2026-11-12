@@ -1,15 +1,17 @@
 """Headlines for the Discover-style feed (issue #82).
 
-Headlines are written outside the capture pipeline (no model call at capture
-time): ``titles-export`` hands insights without one to a writer (e.g. a batch
-of Claude subagents), and ``titles-import`` stores the results through
-``apply_titles``, which cleans and validates them. Until an insight has a
+Headlines are written outside capture (no model call while a session is being
+read): the timed sweep or ``titles-generate`` sends untitled insights in batches
+to Claude Code (issue #95), and ``titles-export``/``titles-import`` still let a
+batch of Claude subagents write them by hand. Everything is stored through
+``apply_titles``, which cleans and validates it. Until an insight has a
 headline, the feed shows its first sentence.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from .insights_store import InsightStore
@@ -95,3 +97,43 @@ def apply_titles(
         elif store.set_title(key, title):
             result.applied += 1
     return result
+
+
+# batch of {key, text, type, tags} records -> {key: headline}
+HeadlineWriter = Callable[[list[dict]], Awaitable[dict[str, str]]]
+
+
+@dataclass
+class HeadlineRun:
+    written: int = 0
+    failed: list[str] = field(default_factory=list)
+
+
+async def generate_headlines(
+    store: InsightStore,
+    write: HeadlineWriter,
+    *,
+    limit: int | None = None,
+    batch_size: int = 25,
+    on_progress: Callable[[], None] | None = None,
+) -> HeadlineRun:
+    """Write headlines for untitled insights, newest first, in batches.
+
+    A failed batch is reported and left untitled for the next run; it never
+    stops the other batches. Existing headlines are never replaced.
+    """
+    records = [
+        {"key": i.key, "text": i.text, "type": i.type, "tags": i.tags}
+        for i in store.missing_titles(limit)
+    ]
+    run = HeadlineRun()
+    for start in range(0, len(records), max(1, batch_size)):
+        if on_progress is not None:
+            on_progress()
+        try:
+            titles = await write(records[start : start + batch_size])
+        except Exception as exc:  # noqa: BLE001 - one batch never stops the rest
+            run.failed.append((str(exc).splitlines() or [type(exc).__name__])[0][:200])
+            continue
+        run.written += apply_titles(store, titles).applied
+    return run

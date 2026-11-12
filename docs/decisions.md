@@ -1,5 +1,34 @@
 # Decisions
 
+## 2026-11-12 — All model work runs through Claude Code in the background
+
+The Vertex AI sign-in for the work account stopped refreshing about 9 hours
+after it was created ("Reauthentication is needed"), which looks like a
+Workspace re-sign-in policy; an unattended job can't run on it. Claude Code is
+always installed and signed in on the Mac, and the maintainer wants every model
+call to go through it (issue #95). This supersedes Gemini on Vertex as the
+default; Gemini remains available through pydantic-ai model strings.
+
+- **`claude-code:<alias>`** model strings run headless `claude -p` with JSON
+  output: extraction uses `--json-schema` structured output, covers return SVG
+  text. Defaults: extraction and headlines `sonnet`, covers `fable` (the
+  subagent-drawn covers the maintainer liked were Fable's).
+- **Locked down, because prompts carry transcript text:** `--tools ""` (no
+  tools), `--strict-mcp-config` (no MCP), `disableAllHooks` (the `SessionEnd`
+  hook would start another flush), `--no-session-persistence` (the sweep would
+  otherwise read the call back as a session), a task system prompt instead of
+  Claude Code's, an empty working directory, prompt on stdin, and parent-session
+  variables (`CLAUDECODE`) stripped. 300 s timeout per call.
+- **Headlines and covers are now written automatically** by the sweep after
+  capture (up to 100 headlines and 10 covers per run), with the same briefs the
+  subagents used, and still never by Gemini. `titles-generate` writes headlines
+  on demand; `titles-import` and `covers-import` remain for hand-made batches.
+- **Cost:** usage counts against the signed-in Claude plan; the sweep logs the
+  per-run total Claude Code reports at API rates.
+- Tests can't reach the real CLI: `tests/conftest.py` points
+  `DAILY_AGENT_CLAUDE_BIN` at a missing file, and the backend is tested against
+  a fake `claude` script.
+
 ## 2026-11-12 — A timed sweep reads every project, not just sessions that end
 
 Insights were captured only when a Claude Code session ended: the `SessionEnd`

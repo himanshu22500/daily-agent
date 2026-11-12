@@ -97,13 +97,13 @@ async def sweep_insights(
     run early — that's a provider outage, not a bad transcript. ``on_progress``
     runs before each transcript (the CLI uses it to keep its lock fresh).
     """
-    result = SweepResult()
-    streak = 0
-    for item in pending_transcripts(
+    pending = pending_transcripts(
         store, projects_dir, settle_seconds=settle_seconds, now=now
-    ):
+    )
+    result = SweepResult(waiting=sum(not item.settled for item in pending))
+    streak = 0
+    for item in pending:
         if not item.settled:
-            result.waiting += 1
             continue
         if on_progress is not None:
             on_progress()

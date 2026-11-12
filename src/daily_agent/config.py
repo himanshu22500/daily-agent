@@ -16,7 +16,12 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    model: str = "google:gemini-3.8-flash"
+    # Insight extraction. `claude-code:<alias>` runs the local Claude Code CLI
+    # (`claude -p`); other strings are pydantic-ai models (e.g. google:...).
+    model: str = "claude-code:sonnet"
+    # Feed headlines (Claude Code only) and cover illustrations.
+    headline_model: str = "claude-code:sonnet"
+    cover_model: str = "claude-code:fable"
     db_path: str = "daily_agent.db"
 
     insights_marker: str = "insight:"
