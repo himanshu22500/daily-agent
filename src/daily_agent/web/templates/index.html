@@ -33,8 +33,8 @@
     {% if filters.view in ("for-you", "latest") %}
     <div class="chips">
       <a class="chip{% if not filters.type %} on{% endif %}" href="{{ feed_url(view=filters.view, q=filters.q) }}">All types</a>
-      {% for type, count in types %}
-      <a class="chip t-{{ type|type_class }}{% if filters.type == type %} on{% endif %}" href="{{ feed_url(view=filters.view, type=type, q=filters.q) }}">{{ type|label }} <span class="n">{{ count }}</span></a>
+      {% for type, _ in types %}
+      <a class="chip t-{{ type|type_class }}{% if filters.type == type %} on{% endif %}" href="{{ feed_url(view=filters.view, type=type, q=filters.q) }}">{{ type|label }}</a>
       {% endfor %}
     </div>
     {% endif %}
