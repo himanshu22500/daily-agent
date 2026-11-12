@@ -1,5 +1,36 @@
 # Decisions
 
+## 2026-11-12 — Follow Instagram accounts through the official Graph API
+
+The maintainer asked to follow Instagram accounts the same way as YouTube
+channels (issue #107). Decisions:
+
+- **Official API only, no scraping.** Business Discovery (Instagram API with
+  Facebook Login) reads public posts of Business and Creator accounts through
+  the maintainer's own professional account. Scrapers break Instagram's terms,
+  break often, and can get the account blocked. The cost: personal and private
+  accounts can't be followed.
+- **A Page token, saved to `.env`.** `daily-agent instagram connect` swaps a
+  short-lived Graph API Explorer token for a long-lived user token, then takes
+  the linked Page's token from it. A Page token made this way doesn't expire,
+  so there's no 60-day renewal. It is sent in an `Authorization` header, never
+  in a URL, so it can't reach logs. The connect command never prints it.
+- **Claude sees the images.** Carousels carry their content in the slides, so
+  `claude -p` gets up to 4 images as base64 image blocks in one
+  `--input-format stream-json` message. It still runs with no tools. A reel's
+  audio isn't available; its story covers only the caption and cover frame
+  (transcribing reels is a possible follow-up).
+- **Images are stored.** Instagram's CDN links expire within days, so each
+  post's images are downloaded once (only from Instagram/Facebook CDN hosts,
+  over https, without the token, at most 8 MB each) and served from
+  `/ig/<shortcode>/<n>.jpg`. Expired links on a queued post are renewed by
+  re-reading the account.
+- **Shared queue.** Claiming, retries and source bookkeeping moved from
+  `feed/videos.py` into `feed/story_queue.py`, so both platforms use the same
+  code instead of two copies.
+- Stories are insights with key `ig:<shortcode>`, type `instagram`, status
+  `web-only` (never Telegram), and the account as their source.
+
 ## 2026-11-12 — Follow a YouTube channel even while YouTube's RSS server is down
 
 Following `@anthonywritescode` failed with "no public video feed". The link
@@ -13,6 +44,7 @@ answers. We kept RSS as the only video list rather than adding a fallback
 scraper of the channel page or the YouTube Data API. Outages only delay
 stories by hours, which is fine for a reading feed. The Data API would need a
 Google key.
+
 
 ## 2026-11-12 — Follow YouTube channels; Claude writes a story per video
 

@@ -19,25 +19,28 @@
   </header>
   <main class="sources">
     <h1>Sources</h1>
-    <p class="sources-intro">Follow a YouTube channel or playlist. Its latest 5 videos become stories in your feed, and so does each new upload. Claude writes each story from the video's captions.</p>
+    <p class="sources-intro">Follow a YouTube channel or playlist, or an Instagram Business or Creator account. Its latest 5 videos or posts become stories in your feed, and so does each new one. Claude writes each story from the video's captions, or from the post's caption and images.</p>
     <form class="follow" method="post" action="/sources">
-      <input type="text" name="link" value="{{ link }}" placeholder="youtube.com/@channel" aria-label="YouTube channel or playlist link" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+      <input type="text" name="link" value="{{ link }}" placeholder="YouTube or Instagram link" aria-label="YouTube channel, playlist, or Instagram profile link" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" required>
       <button type="submit" class="act"{% if not can_follow %} disabled{% endif %}>Follow</button>
     </form>
     {% if error %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
-    {% if can_follow and not background %}<p class="sources-note">Stories are written when <code>daily-agent videos sync</code> runs.</p>{% endif %}
+    {% if can_follow and not background %}<p class="sources-note">Stories are written when <code>daily-agent videos sync</code> (or <code>instagram sync</code>) runs.</p>{% endif %}
+    {% if not instagram %}<p class="sources-note">Instagram isn't connected yet: run <code>daily-agent instagram connect</code> on the Mac.</p>{% endif %}
     {% for source in sources %}
     <section class="source">
       <div class="source-head">
         <span class="src-icon" style="--sh:{{ source_hue(source.title) }}" aria-hidden="true">{{ source.title[:1]|upper }}</span>
         <a class="source-title" href="{{ source.url }}" target="_blank" rel="noopener noreferrer">{{ source.title }}</a>
+        <span class="source-platform">{{ "Instagram" if source.platform == "instagram" else "YouTube" }}</span>
         <form method="post" action="/sources/unfollow">
           <input type="hidden" name="id" value="{{ source.id }}">
           <button type="submit" class="act">Unfollow</button>
         </form>
       </div>
       <p class="source-status">
-        {%- if source.writing %}Writing a story now{% elif source.queued %}{{ source.queued }} video{{ "s" if source.queued != 1 }} queued{% elif not source.checked_at %}Its latest videos will appear once YouTube's feed answers{% elif source.stories %}Up to date{% else %}Waiting for new videos{% endif -%}
+        {%- set noun = "post" if source.platform == "instagram" else "video" -%}
+        {%- if source.writing %}Writing a story now{% elif source.queued %}{{ source.queued }} {{ noun }}{{ "s" if source.queued != 1 }} queued{% elif not source.checked_at %}Its latest {{ noun }}s will appear once {% if source.platform == "instagram" %}Instagram answers{% else %}YouTube's feed answers{% endif %}{% elif source.stories %}Up to date{% else %}Waiting for new {{ noun }}s{% endif -%}
         {%- if source.stories %} · {{ source.stories }} stor{{ "ies" if source.stories != 1 else "y" }}{% endif -%}
         {%- if source.checked_at %} · checked {{ source.checked_at|ago_long }}{% endif -%}
       </p>

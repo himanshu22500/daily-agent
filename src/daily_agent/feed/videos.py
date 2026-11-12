@@ -21,17 +21,13 @@ by a crashed runner expires.
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from collections import Counter
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import and_, or_, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from sqlmodel import Field, SQLModel, func, select
+from sqlmodel import Field, SQLModel, select
 
 from ..db import create_tables, make_engine, session_scope
 from ..models import Insight, VideoStory
@@ -46,6 +42,24 @@ from ..sources.youtube import (
     YouTubeError,
 )
 from .insights_store import InsightStore
+from .story_queue import (  # noqa: F401 - re-exported for callers and tests
+    CLAIM_TTL,
+    DONE,
+    FAILED,
+    MAX_ATTEMPTS,
+    PENDING,
+    RETRY_BASE,
+    SKIPPED,
+    WRITING,
+    SourceStatus,
+    StoryQueue,
+    SyncReport,
+    sync_forever,
+)
+from .story_queue import aware as _aware
+from .story_queue import first_line as _first_line
+from .story_queue import iso as _iso
+from .story_queue import now_utc as _now
 
 _LOG = logging.getLogger(__name__)
 
@@ -63,18 +77,6 @@ PER_RUN = 5
 # video without captions waits instead of being written from its description.
 CAPTION_WAIT = timedelta(hours=6)
 CAPTION_RETRY = timedelta(hours=1)
-# Retries wait 1h, 2h, then 4h: long enough to outlast a Claude usage limit.
-MAX_ATTEMPTS = 4
-RETRY_BASE = timedelta(hours=1)
-CLAIM_TTL = timedelta(minutes=15)
-
-PENDING, WRITING, DONE, SKIPPED, FAILED = (
-    "pending",
-    "writing",
-    "done",
-    "skipped",
-    "failed",
-)
 
 
 def video_key(video_id: str) -> str:
@@ -87,19 +89,6 @@ def video_id_of(key: str) -> str:
         return ""
     candidate = key[len(KEY_PREFIX) :]
     return candidate if VIDEO_ID.fullmatch(candidate) else ""
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _iso(moment: datetime) -> str:
-    return moment.astimezone(timezone.utc).isoformat(timespec="microseconds")
-
-
-def _aware(value: str) -> datetime:
-    moment = datetime.fromisoformat(value)
-    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
 class VideoSourceRow(SQLModel, table=True):
@@ -133,24 +122,13 @@ class VideoRow(SQLModel, table=True):
     error: str = ""
 
 
-@dataclass(frozen=True)
-class SourceStatus:
-    """One followed source, as the Sources page and ``videos list`` show it."""
-
-    id: str
-    title: str
-    url: str
-    added_at: datetime
-    checked_at: datetime | None
-    check_error: str
-    stories: int
-    queued: int
-    writing: int
-    failed: list[tuple[str, str]]  # (video title, error)
-
-
-class VideoStore:
+class VideoStore(StoryQueue):
     """The ``video_sources`` and ``videos`` tables."""
+
+    source_row = VideoSourceRow
+    item_row = VideoRow
+    item_id = "video_id"
+    platform = "youtube"
 
     def __init__(self, db_path: str | Path) -> None:
         self._engine = make_engine(str(db_path))
@@ -179,82 +157,6 @@ class VideoStore:
         )
         with session_scope(self._engine) as session:
             session.execute(stmt)
-
-    def unfollow(self, source_id: str, *, now: datetime) -> bool:
-        """Stop following; queued videos are dropped, written stories stay."""
-        with session_scope(self._engine) as session:
-            row = session.get(VideoSourceRow, source_id)
-            if row is None or row.removed_at:
-                return False
-            row.removed_at = _iso(now)
-            session.add(row)
-            session.execute(
-                update(VideoRow)
-                .where(VideoRow.source_id == source_id)
-                .where(VideoRow.state.in_((PENDING, FAILED)))
-                .values(state=SKIPPED)
-            )
-            return True
-
-    def source(self, source_id: str) -> VideoSourceRow | None:
-        with session_scope(self._engine) as session:
-            return session.get(VideoSourceRow, source_id)
-
-    def active_sources(self) -> list[VideoSourceRow]:
-        with session_scope(self._engine) as session:
-            return list(
-                session.exec(
-                    select(VideoSourceRow)
-                    .where(VideoSourceRow.removed_at.is_(None))
-                    .order_by(VideoSourceRow.added_at)
-                ).all()
-            )
-
-    def mark_checked(
-        self, source_id: str, *, now: datetime, error: str = "", title: str = ""
-    ) -> None:
-        """Record a check; ``title`` names a source that has no name yet."""
-        with session_scope(self._engine) as session:
-            row = session.get(VideoSourceRow, source_id)
-            if row is None:
-                return
-            if error:
-                row.check_error = error[:300]
-            else:
-                row.checked_at = _iso(now)
-                row.check_error = ""
-            if title and not row.title:
-                row.title = title
-            session.add(row)
-
-    def statuses(self) -> list[SourceStatus]:
-        sources = self.active_sources()
-        with session_scope(self._engine) as session:
-            videos = session.exec(
-                select(VideoRow).where(VideoRow.source_id.in_([s.id for s in sources]))
-            ).all()
-        by_source: dict[str, list[VideoRow]] = {}
-        for video in videos:
-            by_source.setdefault(video.source_id, []).append(video)
-        out = []
-        for source in sources:
-            rows = by_source.get(source.id, [])
-            states = Counter(v.state for v in rows)
-            out.append(
-                SourceStatus(
-                    id=source.id,
-                    title=source.title or source.id,
-                    url=source.url,
-                    added_at=_aware(source.added_at),
-                    checked_at=_aware(source.checked_at) if source.checked_at else None,
-                    check_error=source.check_error,
-                    stories=states[DONE],
-                    queued=states[PENDING],
-                    writing=states[WRITING],
-                    failed=[(v.title, v.error) for v in rows if v.state == FAILED],
-                )
-            )
-        return out
 
     # --- videos ------------------------------------------------------------ #
     def record(
@@ -307,86 +209,6 @@ class VideoStore:
                 queued += int(take)
         return queued
 
-    def ready(self, *, now: datetime, limit: int) -> list[VideoRow]:
-        """Queued videos that may be worked on now, newest upload first."""
-        stamp = _iso(now)
-        stmt = (
-            select(VideoRow)
-            .where(self._claimable(stamp, _iso(now - CLAIM_TTL)))
-            .order_by(VideoRow.published_at.desc())
-            .limit(limit)
-        )
-        with session_scope(self._engine) as session:
-            return list(session.exec(stmt).all())
-
-    def ready_count(self, *, now: datetime) -> int:
-        stmt = (
-            select(func.count())
-            .select_from(VideoRow)
-            .where(self._claimable(_iso(now), _iso(now - CLAIM_TTL)))
-        )
-        with session_scope(self._engine) as session:
-            return session.scalar(stmt) or 0
-
-    @staticmethod
-    def _claimable(stamp: str, stale: str):
-        return or_(
-            and_(
-                VideoRow.state == PENDING,
-                or_(VideoRow.not_before.is_(None), VideoRow.not_before <= stamp),
-            ),
-            and_(VideoRow.state == WRITING, VideoRow.claimed_at < stale),
-        )
-
-    def claim(self, video_id: str, *, now: datetime) -> bool:
-        """Take a video to work on; False if another runner has it (or it's done)."""
-        stamp = _iso(now)
-        with session_scope(self._engine) as session:
-            result = session.execute(
-                update(VideoRow)
-                .where(VideoRow.video_id == video_id)
-                .where(self._claimable(stamp, _iso(now - CLAIM_TTL)))
-                .values(state=WRITING, claimed_at=stamp)
-            )
-            return result.rowcount == 1
-
-    def finish(self, video_id: str) -> None:
-        self._set(video_id, state=DONE, error="", not_before=None, claimed_at=None)
-
-    def defer(self, video_id: str, until: datetime, *, error: str = "") -> None:
-        """Back to the queue, not before ``until`` (no attempt counted)."""
-        self._set(
-            video_id,
-            state=PENDING,
-            not_before=_iso(until),
-            claimed_at=None,
-            error=error[:300],
-        )
-
-    def fail_attempt(self, video_id: str, error: str, *, now: datetime) -> bool:
-        """Count a failed attempt; retry later or give up. True if given up."""
-        with session_scope(self._engine) as session:
-            row = session.get(VideoRow, video_id)
-            if row is None:
-                return True
-            row.attempts += 1
-            row.error = error[:300]
-            row.claimed_at = None
-            if row.attempts >= MAX_ATTEMPTS:
-                row.state = FAILED
-                row.not_before = None
-            else:
-                row.state = PENDING
-                row.not_before = _iso(now + RETRY_BASE * 2 ** (row.attempts - 1))
-            session.add(row)
-            return row.state == FAILED
-
-    def _set(self, video_id: str, **values) -> None:
-        with session_scope(self._engine) as session:
-            session.execute(
-                update(VideoRow).where(VideoRow.video_id == video_id).values(**values)
-            )
-
     def channel_names(self) -> dict[str, str]:
         """``{"yt:<channel id>": channel name}`` for every story's source label."""
         with session_scope(self._engine) as session:
@@ -400,18 +222,6 @@ class VideoStore:
 
 # (video, its captions or None when it has none) -> the story
 StoryWriter = Callable[[Video, "Transcript | None"], Awaitable[VideoStory]]
-
-
-@dataclass
-class SyncReport:
-    checked: int = 0
-    queued: int = 0
-    written: int = 0
-    waiting: int = 0  # no captions yet; retried later
-    failed: int = 0
-    # Videos ready to write that this pass left for the next one.
-    remaining: int = 0
-    errors: list[str] = field(default_factory=list)
 
 
 class VideoSync:
@@ -547,32 +357,3 @@ class VideoSync:
         if gave_up:
             report.failed += 1
         _LOG.warning("Video %s: %s", row.video_id, error)
-
-
-async def sync_forever(
-    sync: VideoSync, wake: asyncio.Event, *, idle: float = 600.0
-) -> None:
-    """Run sync passes until cancelled (the web server's background loop).
-
-    After a pass that wrote something, the next starts right away while more
-    videos are ready; otherwise it waits ``idle`` seconds, or until ``wake`` is
-    set (a source was just followed).
-    """
-    while True:
-        wake.clear()
-        try:
-            report = await sync.run_once()
-        except Exception:  # noqa: BLE001 - the loop must outlive one bad pass
-            _LOG.exception("Video sync pass failed")
-            report = None
-        if report is not None and report.written and report.remaining:
-            continue
-        try:
-            await asyncio.wait_for(wake.wait(), idle)
-        except asyncio.TimeoutError:
-            pass
-
-
-def _first_line(exc: BaseException) -> str:
-    lines = [line.strip() for line in str(exc).splitlines() if line.strip()]
-    return (lines[0] if lines else type(exc).__name__)[:200]

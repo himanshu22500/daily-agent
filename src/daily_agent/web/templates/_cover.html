@@ -1,12 +1,21 @@
 {# The "photo" slot of a Discover card. Expects `entry`. A video story shows
-   its YouTube thumbnail; an insight its illustrated cover when one exists,
-   otherwise a generated gradient with the topic. #}
+   its YouTube thumbnail; an Instagram story its first stored image; an insight
+   its illustrated cover when one exists, otherwise a generated gradient with
+   the topic. #}
 {% set art = cover_url(entry.key) %}
+{% set post = post_media(entry.key) if entry.post_id else none %}
 {% if entry.video_id %}
 <div class="cover has-art is-video" aria-hidden="true">
   <img src="{{ entry.thumbnail }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
   <span class="play"></span>
   {% if entry.source %}<span class="cover-badge">▶ {{ entry.source }}</span>{% endif %}
+</div>
+{% elif post and post.images %}
+<div class="cover has-art is-post{% if post.is_video %} is-video{% endif %}" aria-hidden="true">
+  <img src="{{ post.image_url(0) }}" alt="" loading="lazy" decoding="async">
+  {% if post.is_video %}<span class="play"></span>{% endif %}
+  {% if post.images > 1 %}<span class="cover-count">1/{{ post.images }}</span>{% endif %}
+  <span class="cover-badge">@{{ post.username }}</span>
 </div>
 {% elif art %}
 <div class="cover has-art" aria-hidden="true">
@@ -16,7 +25,8 @@
 {% else %}
 <div class="cover t-{{ entry.type|type_class }}" style="{{ cover_style(entry.key, entry.type) }}" aria-hidden="true">
   <span class="cover-kind">{{ entry.type|label }}</span>
-  {% if entry.source %}<span class="cover-badge">⌂ {{ entry.source }}</span>{% endif %}
+  {% if post %}<span class="cover-badge">@{{ post.username }}</span>
+  {% elif entry.source %}<span class="cover-badge">⌂ {{ entry.source }}</span>{% endif %}
   <span class="cover-topic">{{ "#" ~ entry.tags[0] if entry.tags else entry.type|label }}</span>
 </div>
 {% endif %}

@@ -52,7 +52,8 @@ class InsightExtraction(BaseModel):
 
 
 class VideoStory(BaseModel):
-    """A feed story written from one YouTube video (issue #99)."""
+    """A feed story Claude wrote from a followed source: a YouTube video (#99)
+    or an Instagram post (#107)."""
 
     headline: str
     text: str

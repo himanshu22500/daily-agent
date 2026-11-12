@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import typer
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 
 load_dotenv()
 
@@ -46,7 +47,16 @@ from .feed.insights_store import InsightStore
 from .feed.insights_sweep import pending_transcripts, sweep_insights, unread_messages
 from .feed.outbox import Channel, Outbox
 from .feed.pacer import Pacer
+from .feed.instagram_posts import InstagramSync
 from .feed.videos import VideoSync
+from .sources.instagram import (
+    SCOPES,
+    Instagram,
+    InstagramError,
+    LinkedAccount,
+    exchange_token,
+    linked_accounts,
+)
 from .sources.telegram_provision import TelethonProvisioner
 from .sources.youtube import BadSourceLink, YouTube, YouTubeError
 
@@ -60,6 +70,10 @@ videos_app = typer.Typer(
     no_args_is_help=True, help="Follow YouTube channels as feed stories."
 )
 app.add_typer(videos_app, name="videos")
+instagram_app = typer.Typer(
+    no_args_is_help=True, help="Follow Instagram accounts as feed stories."
+)
+app.add_typer(instagram_app, name="instagram")
 console = Console()
 
 
@@ -592,6 +606,7 @@ def web(
             page_size=settings.web_page_size,
             allowed_hosts=allowed,
             videos=_video_sync(settings),
+            instagram=_instagram_sync(settings),
             video_loop=settings.web_video_sync,
         ),
         host=bind,
@@ -669,6 +684,195 @@ def videos_sync(
         f"Checked {report.checked} source(s), queued {report.queued} video(s), "
         f"wrote {report.written} story(ies)"
         + (f", {report.waiting} waiting for captions" if report.waiting else "")
+        + (f", {report.remaining} still queued" if report.remaining else "")
+        + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
+        + "."
+    )
+    for error in report.errors:
+        console.print(f"  [dim]{error}[/dim]", markup=False)
+
+
+def _instagram_sync(settings, model: str | None = None) -> InstagramSync | None:
+    """``None`` until `instagram connect` has saved a token."""
+    if not settings.instagram_enabled:
+        return None
+    from .agents.post_writer import write_post_story
+
+    chosen = model or settings.instagram_model
+    return InstagramSync(
+        settings.db_path,
+        Instagram(settings.instagram_token, settings.instagram_user_id),
+        lambda post, name, images: write_post_story(chosen, post, name, images),
+        check_every=timedelta(hours=settings.instagram_check_hours),
+    )
+
+
+def _require_instagram() -> InstagramSync:
+    sync = _instagram_sync(get_settings())
+    if sync is None:
+        console.print(
+            "[red]Instagram isn't connected. Run `daily-agent instagram connect` "
+            "first.[/red]"
+        )
+        raise typer.Exit(1)
+    return sync
+
+
+_CONNECT_GUIDE = f"""\
+Connect your Instagram professional (Business or Creator) account, once.
+You need (see docs/instagram-setup.md for the clicks):
+  1. Your Instagram account switched to Business or Creator and linked to a
+     Facebook Page.
+  2. A Meta app (developers.facebook.com, type Business) with its App ID and
+     App secret (App settings > Basic).
+  3. A User token from the Graph API Explorer for that app with these
+     permissions: {", ".join(SCOPES)}.
+Nothing you paste is printed. The token saved to .env is the Page's token,
+which doesn't expire.
+"""
+
+
+async def _linked(app_id: str, app_secret: str, short: str) -> list[LinkedAccount]:
+    long_lived = await exchange_token(app_id, app_secret, short)
+    return await linked_accounts(long_lived)
+
+
+def _save_env(path: Path, values: dict[str, str]) -> None:
+    """Write ``values`` into the .env file, keeping (or making private) its mode."""
+    existed = path.exists()
+    mode = path.stat().st_mode & 0o777 if existed else 0o600
+    if not existed:
+        path.touch(mode=0o600)
+    for key, value in values.items():
+        set_key(str(path), key, value)
+    os.chmod(path, mode)
+
+
+@instagram_app.command("connect")
+def instagram_connect(
+    env_file: Path = typer.Option(Path(".env"), help="The .env file to save to."),
+) -> None:
+    """Connect your Instagram professional account (one-time setup)."""
+    console.print(_CONNECT_GUIDE, markup=False)
+    app_id = typer.prompt("Meta App ID").strip()
+    app_secret = typer.prompt("Meta App secret", hide_input=True).strip()
+    short = typer.prompt("Graph API Explorer token", hide_input=True).strip()
+    try:
+        accounts = asyncio.run(_linked(app_id, app_secret, short))
+    except (InstagramError, BadSourceLink) as exc:
+        console.print(f"[red]{exc}[/red]", markup=False)
+        raise typer.Exit(1)
+    if not accounts:
+        console.print(
+            "No Facebook Page with a linked Instagram professional account was "
+            "found for that token. Check that the Page is linked to your Instagram "
+            "account and that the token has all the permissions listed above.",
+            markup=False,
+        )
+        raise typer.Exit(1)
+    chosen = accounts[0]
+    if len(accounts) > 1:
+        for n, account in enumerate(accounts, 1):
+            console.print(
+                f"  {n}. @{account.ig_username} (Page: {account.page_name})",
+                markup=False,
+            )
+        pick = typer.prompt("Which account", type=int, default=1)
+        if not 1 <= pick <= len(accounts):
+            console.print("[red]No such account.[/red]")
+            raise typer.Exit(1)
+        chosen = accounts[pick - 1]
+    try:
+        asyncio.run(
+            Instagram(chosen.page_token, chosen.ig_user_id).account(chosen.ig_username)
+        )
+    except (InstagramError, BadSourceLink) as exc:
+        console.print(
+            f"[red]The account was found, but reading it failed: {exc}[/red]",
+            markup=False,
+        )
+        raise typer.Exit(1)
+    _save_env(
+        env_file,
+        {
+            "DAILY_AGENT_INSTAGRAM_TOKEN": chosen.page_token,
+            "DAILY_AGENT_INSTAGRAM_USER_ID": chosen.ig_user_id,
+        },
+    )
+    console.print(
+        f"Connected @{chosen.ig_username} (Page: {chosen.page_name}). Saved "
+        f"DAILY_AGENT_INSTAGRAM_TOKEN and DAILY_AGENT_INSTAGRAM_USER_ID to "
+        f"{env_file}. Restart the feed server to follow accounts from Sources.",
+        markup=False,
+    )
+
+
+@instagram_app.command("add")
+def instagram_add(
+    link: str = typer.Argument(..., help="An Instagram profile link."),
+) -> None:
+    """Follow an account: queue its latest 5 posts and every new one."""
+    sync = _require_instagram()
+    try:
+        source = asyncio.run(sync.follow(link))
+    except (BadSourceLink, InstagramError) as exc:
+        console.print(f"[red]{exc}[/red]", markup=False)
+        raise typer.Exit(1)
+    console.print(
+        f"Following {source.title or source.id} ({source.id}). Stories are "
+        "written by the feed server, or by `daily-agent instagram sync`.",
+        markup=False,
+    )
+
+
+@instagram_app.command("list")
+def instagram_list() -> None:
+    """Followed accounts and their story counts."""
+    from .feed.instagram_posts import InstagramStore
+
+    settings = get_settings()
+    if not settings.instagram_enabled:
+        console.print("Instagram isn't connected (`daily-agent instagram connect`).")
+    statuses = InstagramStore(settings.db_path).statuses()
+    if not statuses:
+        console.print("Not following any Instagram accounts.")
+    for status in statuses:
+        console.print(
+            f"{status.id}  {status.title}  stories={status.stories} "
+            f"queued={status.queued} failed={len(status.failed)}",
+            markup=False,
+        )
+        if status.check_error:
+            console.print(f"  last check failed: {status.check_error}", markup=False)
+
+
+@instagram_app.command("remove")
+def instagram_remove(
+    source_id: str = typer.Argument(..., help="Source id from `instagram list`."),
+) -> None:
+    """Stop following an account (its stories stay in the feed)."""
+    from .feed.instagram_posts import InstagramStore
+
+    store = InstagramStore(get_settings().db_path)
+    if not store.unfollow(source_id, now=datetime.now().astimezone()):
+        console.print(f"[red]Not following {source_id}.[/red]", markup=False)
+        raise typer.Exit(1)
+    console.print(f"Stopped following {source_id}.", markup=False)
+
+
+@instagram_app.command("sync")
+def instagram_sync(
+    limit: int = typer.Option(None, help="Write at most N stories (default 5)."),
+    model: str = typer.Option(
+        None, help="Claude Code model (default: instagram_model)."
+    ),
+) -> None:
+    """Check followed accounts now and write stories for queued posts."""
+    sync = _instagram_sync(get_settings(), model) or _require_instagram()
+    report = asyncio.run(sync.run_once(limit=limit))
+    console.print(
+        f"Checked {report.checked} account(s), queued {report.queued} post(s), "
+        f"wrote {report.written} story(ies)"
         + (f", {report.remaining} still queued" if report.remaining else "")
         + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
         + "."

@@ -303,8 +303,9 @@ details.menu summary::-webkit-details-marker { display: none; }
   object-fit: cover;
 }
 
-/* Video stories: the YouTube thumbnail with a play mark. */
-.cover.is-video .play {
+/* Video stories: the YouTube thumbnail with a play mark (also Instagram reels). */
+.cover.is-video .play,
+.post-slide.is-video .play {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -315,7 +316,8 @@ details.menu summary::-webkit-details-marker { display: none; }
   transform: translate(-50%, -50%);
 }
 
-.cover.is-video .play::after {
+.cover.is-video .play::after,
+.post-slide.is-video .play::after {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -465,6 +467,29 @@ html.reading, html.reading body { overflow: hidden; }
 .reader-figure figcaption { padding: 8px 20px 0; color: var(--muted); font-size: 0.85rem; }
 .reader-figure figcaption a { color: var(--new); text-decoration: none; }
 
+/* Instagram stories: the post's images; a carousel swipes sideways. */
+.cover-count {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.5);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.post-media { display: flex; overflow-x: auto; background: var(--chip); scroll-snap-type: x mandatory; scrollbar-width: none; }
+.post-media::-webkit-scrollbar { display: none; }
+.post-slide { position: relative; flex: 0 0 100%; scroll-snap-align: start; }
+.post-media.is-strip .post-slide { flex-basis: 88%; }
+.post-media.is-strip .post-slide + .post-slide { margin-left: 6px; }
+.post-slide img { display: block; width: 100%; max-height: 80vh; object-fit: contain; background: #000000; }
+
+@media (min-width: 680px) {
+  .post-media { border-radius: 16px; }
+}
+
 .video-embed { aspect-ratio: 16 / 9; overflow: hidden; background: #000000; }
 .video-embed iframe { display: block; width: 100%; height: 100%; border: 0; }
 
@@ -545,7 +570,7 @@ html.reading, html.reading body { overflow: hidden; }
   white-space: nowrap;
 }
 
-/* --- Sources (followed YouTube channels) ---------------------------------- */
+/* --- Sources (followed YouTube channels and Instagram accounts) ------------ */
 
 .sources { max-width: 640px; margin: 0 auto; padding: 8px 16px 48px; }
 .sources h1 { margin: 8px 0 6px; font-size: 1.5rem; font-weight: 600; }
@@ -572,6 +597,7 @@ html.reading, html.reading body { overflow: hidden; }
 .source { padding: 14px 0; border-bottom: 1px solid var(--line); }
 .source-head { display: flex; align-items: center; gap: 10px; }
 .source-head form { margin: 0 0 0 auto; }
+.source-platform { flex: none; color: var(--muted); font-size: 0.78rem; }
 
 .source-title {
   overflow: hidden;
