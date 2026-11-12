@@ -29,6 +29,7 @@ from daily_agent.models import VideoStory
 from daily_agent.sources.youtube import (
     BadSourceLink,
     ChannelFeed,
+    FeedUnavailable,
     NoCaptions,
     Transcript,
     Video,
@@ -60,6 +61,7 @@ class FakeYouTube:
     def __init__(self, videos: list[Video]):
         self.videos = list(videos)
         self.feed_error: Exception | None = None
+        self.page_error: Exception | None = None
         self.no_captions: set[str] = set()
         self.caption_errors: dict[str, Exception] = {}
         self.feeds = 0
@@ -74,6 +76,11 @@ class FakeYouTube:
         if self.feed_error:
             raise self.feed_error
         return ChannelFeed(title="Fireship", videos=list(self.videos))
+
+    async def page_title(self, ref) -> str:
+        if self.page_error:
+            raise self.page_error
+        return "Fireship (page)"
 
     async def transcript(self, video_id: str) -> Transcript:
         if video_id in self.caption_errors:
@@ -273,10 +280,52 @@ async def test_follow_errors_store_nothing(setup):
     sync, youtube, _, _, _, db = setup
     with pytest.raises(BadSourceLink):
         await sync.follow("nope")
-    youtube.feed_error = YouTubeError("down")
+    youtube.feed_error = FeedUnavailable("YouTube's video feed isn't answering (404)")
+    youtube.page_error = BadSourceLink("no such channel")
+    with pytest.raises(BadSourceLink):
+        await sync.follow("@Fireship")
+    youtube.page_error = YouTubeError("couldn't reach YouTube")  # all of it down
     with pytest.raises(YouTubeError):
         await sync.follow("@Fireship")
     assert VideoStore(db).statuses() == []
+
+
+async def test_follow_while_the_feed_is_down_queues_once_it_answers(setup):
+    """YouTube's RSS server has hours-long outages (issue #103)."""
+    sync, youtube, written, _, clock, _ = setup
+    youtube.feed_error = FeedUnavailable("YouTube's video feed isn't answering (404)")
+    source = await sync.follow("youtube.com/@Fireship")
+    assert source.title == "Fireship (page)" and source.checked_at is None
+    [status] = sync.store.statuses()
+    assert "isn't answering" in status.check_error and status.queued == 0
+
+    clock.now += timedelta(minutes=10)  # still down: retried every pass
+    feeds = youtube.feeds
+    report = await sync.run_once()
+    assert youtube.feeds == feeds + 1 and report.checked == 0 and not written
+
+    youtube.feed_error = None
+    clock.now += timedelta(minutes=10)
+    report = await sync.run_once()
+    assert report.checked == 1 and report.queued == 5 and report.written == 5
+    [status] = sync.store.statuses()
+    assert status.check_error == "" and status.checked_at == clock.now
+    assert status.title == "Fireship (page)"  # a name it already had stays
+
+
+async def test_a_source_without_a_name_takes_the_feed_title(setup):
+    sync, youtube, _, _, _, _ = setup
+    youtube.feed_error = FeedUnavailable("down")
+    youtube.page_title = _no_title
+    await sync.follow("@Fireship")
+    assert sync.store.statuses()[0].title == f"channel:{CHANNEL}"
+    youtube.feed_error = None
+    await sync.run_once()
+    assert sync.store.statuses()[0].title == "Fireship"
+
+
+async def _no_title(ref) -> str:
+    return ""
 
 
 async def test_sync_forever_keeps_going_while_work_is_ready_and_wakes_on_demand():

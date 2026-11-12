@@ -11,6 +11,7 @@ import youtube_transcript_api as yta
 
 from daily_agent.sources.youtube import (
     BadSourceLink,
+    FeedUnavailable,
     NoCaptions,
     SourceRef,
     Transcript,
@@ -20,7 +21,9 @@ from daily_agent.sources.youtube import (
     channel_ref,
     parse_feed,
     parse_link,
+    playlist_ref,
     read_transcript,
+    title_from_page,
 )
 
 CHANNEL = "UCsBjURrPoezykLs9EqgamOA"
@@ -214,10 +217,44 @@ async def test_feed_fetch():
     ref = channel_ref(CHANNEL)
     yt = _youtube({ref.feed_url: httpx.Response(200, content=FEED)})
     assert (await yt.feed(ref.feed_url)).title == "Fireship"
-    with pytest.raises(BadSourceLink):
+    # During YouTube's feed outages every feed answers 404 (issue #103): that's
+    # "try later", never "bad link".
+    with pytest.raises(FeedUnavailable, match="isn't answering"):
         await _youtube({}).feed(ref.feed_url)
+    assert issubclass(FeedUnavailable, YouTubeError)
     with pytest.raises(ValueError):
         await yt.feed("https://example.com/feeds/videos.xml")
+
+
+def test_title_from_page():
+    page = '<meta property="og:title" content="Tom &amp; Jerry\n Channel">'
+    assert title_from_page(page) == "Tom & Jerry Channel"
+    assert title_from_page("<html></html>") == ""
+
+
+async def test_page_title_confirms_the_source_exists():
+    channel, playlist = channel_ref(CHANNEL), playlist_ref("PLabcdefghij")
+    titled = f'<meta property="og:title" content="Fireship">{CHANNEL_PAGE}'
+    yt = _youtube({channel.url: httpx.Response(200, text=titled)})
+    assert await yt.page_title(channel) == "Fireship"
+    untitled = _youtube({channel.url: httpx.Response(200, text=CHANNEL_PAGE)})
+    assert await untitled.page_title(channel) == ""  # its id on the page is enough
+    missing = {
+        # a made-up channel id: 200, but neither a title nor the id
+        channel.url: httpx.Response(200, text="<html></html>"),
+        playlist.url: httpx.Response(
+            200,
+            text='<meta property="og:title" content="YouTube">'
+            '{"text":"The playlist does not exist."}',
+        ),
+    }
+    for ref in (channel, playlist):
+        with pytest.raises(BadSourceLink):
+            await _youtube(missing).page_title(ref)
+        with pytest.raises(BadSourceLink):
+            await _youtube({}).page_title(ref)  # 404
+    with pytest.raises(YouTubeError):
+        await _youtube({channel.url: httpx.Response(503)}).page_title(channel)
 
 
 async def test_transcript_runs_the_injected_reader_off_the_loop():

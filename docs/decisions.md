@@ -1,5 +1,19 @@
 # Decisions
 
+## 2026-11-12 — Follow a YouTube channel even while YouTube's RSS server is down
+
+Following `@anthonywritescode` failed with "no public video feed". The link
+was fine; YouTube's RSS server was answering 404 for every channel (#103).
+These outages recur, often for hours a day, and YouTube has never
+acknowledged them. So a feed 404 now means "try later", never "bad link".
+When following, a feed that doesn't answer falls back to the channel's or
+playlist's own page to confirm it exists. The source is then followed,
+unchecked, and the background loop queues its latest videos once the feed
+answers. We kept RSS as the only video list rather than adding a fallback
+scraper of the channel page or the YouTube Data API. Outages only delay
+stories by hours, which is fine for a reading feed. The Data API would need a
+Google key.
+
 ## 2026-11-12 — Follow YouTube channels; Claude writes a story per video
 
 The maintainer wanted feed stories from outside the coding sessions: paste a

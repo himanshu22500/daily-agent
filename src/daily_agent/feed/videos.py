@@ -210,7 +210,10 @@ class VideoStore:
                 ).all()
             )
 
-    def mark_checked(self, source_id: str, *, now: datetime, error: str = "") -> None:
+    def mark_checked(
+        self, source_id: str, *, now: datetime, error: str = "", title: str = ""
+    ) -> None:
+        """Record a check; ``title`` names a source that has no name yet."""
         with session_scope(self._engine) as session:
             row = session.get(VideoSourceRow, source_id)
             if row is None:
@@ -220,6 +223,8 @@ class VideoStore:
             else:
                 row.checked_at = _iso(now)
                 row.check_error = ""
+            if title and not row.title:
+                row.title = title
             session.add(row)
 
     def statuses(self) -> list[SourceStatus]:
@@ -433,11 +438,25 @@ class VideoSync:
     async def follow(self, link: str) -> VideoSourceRow:
         """Follow a pasted link and queue its latest videos.
 
+        YouTube's RSS server has outages that last hours (issue #103). If it
+        doesn't answer, the source is still followed once its own page shows it
+        exists, and stays unchecked: every ``run_once`` retries it, and the
+        first check that gets through queues its latest videos.
+
         Raises ``BadSourceLink`` (tell the reader) or ``YouTubeError`` (try
         again later). Nothing is written to the feed here; that's ``run_once``.
         """
         ref = await self.youtube.resolve(link)
-        feed = await self.youtube.feed(ref.feed_url)
+        try:
+            feed = await self.youtube.feed(ref.feed_url)
+        except YouTubeError as exc:
+            title = await self.youtube.page_title(ref)
+            now = self.clock()
+            self.store.follow(ref, title, now=now)
+            self.store.mark_checked(ref.id, now=now, error=str(exc))
+            source = self.store.source(ref.id)
+            assert source is not None
+            return source
         now = self.clock()
         self.store.follow(ref, feed.title, now=now)
         source = self.store.source(ref.id)
@@ -474,7 +493,7 @@ class VideoSync:
         report.queued += self.store.record(
             source, feed, first=source.checked_at is None, now=self.clock()
         )
-        self.store.mark_checked(source.id, now=self.clock())
+        self.store.mark_checked(source.id, now=self.clock(), title=feed.title)
 
     async def _write(self, row: VideoRow, report: SyncReport) -> None:
         now = self.clock()

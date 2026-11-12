@@ -37,11 +37,11 @@
         </form>
       </div>
       <p class="source-status">
-        {%- if source.writing %}Writing a story now{% elif source.queued %}{{ source.queued }} video{{ "s" if source.queued != 1 }} queued{% elif source.stories %}Up to date{% else %}Waiting for new videos{% endif -%}
+        {%- if source.writing %}Writing a story now{% elif source.queued %}{{ source.queued }} video{{ "s" if source.queued != 1 }} queued{% elif not source.checked_at %}Its latest videos will appear once YouTube's feed answers{% elif source.stories %}Up to date{% else %}Waiting for new videos{% endif -%}
         {%- if source.stories %} · {{ source.stories }} stor{{ "ies" if source.stories != 1 else "y" }}{% endif -%}
         {%- if source.checked_at %} · checked {{ source.checked_at|ago_long }}{% endif -%}
       </p>
-      {% if source.check_error %}<p class="source-problem">Last check failed: {{ source.check_error }}</p>{% endif %}
+      {% if source.check_error %}<p class="source-problem">Last check failed: {{ source.check_error.rstrip('.') }}.{% if background %} Retrying automatically.{% endif %}</p>{% endif %}
       {% for title, problem in source.failed %}<p class="source-problem">Gave up on “{{ title }}”: {{ problem }}</p>{% endfor %}
     </section>
     {% else %}
