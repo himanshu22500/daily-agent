@@ -26,9 +26,13 @@
   </header>
   <article class="reader-body">
     <h1 class="reader-h1">{{ entry.headline }}</h1>
+    {% set post = post_media(entry.key) if entry.post_id else none %}
     {% if entry.video_id %}
     <p class="byline">From <strong>{{ entry.source or "YouTube" }}</strong> on YouTube</p>
     <p class="dateline">Uploaded {{ entry.captured_at|longdate }} · Added {{ entry.published_at|ago }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
+    {% elif entry.post_id %}
+    <p class="byline">From <strong>{{ entry.source or "Instagram" }}</strong>{% if post %} (@{{ post.username }}){% endif %} on Instagram</p>
+    <p class="dateline">Posted {{ entry.captured_at|longdate }} · Added {{ entry.published_at|ago }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
     {% else %}
     <p class="byline">Learned in <strong>{{ entry.source or "a coding session" }}</strong>{% if branch %} on <code>{{ branch }}</code>{% endif %}</p>
     <p class="dateline">{{ entry.captured_at|longdate }} · Published {{ entry.published_at|ago }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
@@ -46,6 +50,17 @@
         <iframe src="{{ entry.embed_url }}" title="{{ entry.headline }}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
       </div>
       <figcaption><a href="{{ entry.video_url }}" target="_blank" rel="noopener noreferrer">Watch on YouTube</a>{% for tag in entry.tags %} · #{{ tag }}{% endfor %}</figcaption>
+      {% elif entry.post_id %}
+      {% if post and post.images %}
+      <div class="post-media{% if post.images > 1 %} is-strip{% endif %}">
+        {% for n in range(post.images) %}
+        <a class="post-slide{% if post.is_video %} is-video{% endif %}" href="{{ entry.post_url }}" target="_blank" rel="noopener noreferrer"><img src="{{ post.image_url(n) }}" alt="{{ 'Slide ' ~ (n + 1) ~ ' of ' ~ post.images if post.images > 1 else 'The post' }}" loading="lazy" decoding="async">{% if post.is_video %}<span class="play"></span>{% endif %}</a>
+        {% endfor %}
+      </div>
+      {% else %}
+      {% include "_cover.html" %}
+      {% endif %}
+      <figcaption><a href="{{ entry.post_url }}" target="_blank" rel="noopener noreferrer">{{ "Watch" if post and post.is_video else "View" }} on Instagram</a>{% if post and post.images > 1 %} · {{ post.images }} slides, swipe{% endif %}{% for tag in entry.tags %} · #{{ tag }}{% endfor %}</figcaption>
       {% else %}
       {% include "_cover.html" %}
       <figcaption>{{ entry.type|label }}{% for tag in entry.tags %} · #{{ tag }}{% endfor %}</figcaption>
@@ -70,7 +85,8 @@
           <span class="next-title">{{ item.headline }}</span>
           <time datetime="{{ item.published_at.isoformat() }}">{{ item.published_at|ago_long }}</time>
         </span>
-        {% set thumb = item.thumbnail or cover_url(item.key) %}
+        {% set item_post = post_media(item.key) if item.post_id else none %}
+        {% set thumb = item.thumbnail or (item_post.image_url(0) if item_post else "") or cover_url(item.key) %}
         {% if thumb %}
         <span class="cover thumb has-art" aria-hidden="true"><img src="{{ thumb }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"></span>
         {% else %}

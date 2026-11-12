@@ -69,7 +69,7 @@ TRANSCRIPT_TIMEOUT_SECONDS = 60.0
 
 
 class BadSourceLink(ValueError):
-    """Not a YouTube channel or playlist link we can follow."""
+    """Not a link we can follow (the message tells the reader why)."""
 
 
 class YouTubeError(RuntimeError):

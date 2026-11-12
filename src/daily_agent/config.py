@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     # each followed channel is checked for new uploads.
     video_model: str = "claude-code:sonnet"
     video_check_hours: float = 3.0
+    # Instagram (issue #107), set by `daily-agent instagram connect`: a Facebook
+    # Page token (doesn't expire) and the id of your own Instagram professional
+    # account, which Business Discovery reads other accounts through.
+    instagram_token: str = ""
+    instagram_user_id: str = ""
+    instagram_model: str = "claude-code:sonnet"
+    instagram_check_hours: float = 3.0
     db_path: str = "daily_agent.db"
 
     insights_marker: str = "insight:"
@@ -52,9 +59,14 @@ class Settings(BaseSettings):
     # Extra Host names the feed answers to (comma-separated), e.g. a Tailscale
     # MagicDNS name. Loopback names and web_host are always allowed.
     web_allowed_hosts: str = ""
-    # Write stories for followed YouTube channels in the background while the
-    # feed server runs. Off: run `daily-agent videos sync` instead.
+    # Write stories for followed YouTube channels and Instagram accounts in the
+    # background while the feed server runs. Off: run `daily-agent videos sync`
+    # and `daily-agent instagram sync` instead.
     web_video_sync: bool = True
+
+    @property
+    def instagram_enabled(self) -> bool:
+        return bool(self.instagram_token and self.instagram_user_id)
 
     @property
     def telegram_enabled(self) -> bool:

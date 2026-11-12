@@ -16,18 +16,23 @@ Every call is locked down, because prompts carry untrusted transcript text:
   the run happens in an empty directory, so no project ``CLAUDE.md`` is loaded.
 - ``ANTHROPIC_API_KEY``/``ANTHROPIC_AUTH_TOKEN`` are not passed on, so the
   call always uses Claude Code's own sign-in.
+
+Images (issue #107) are sent as base64 image blocks in a single
+``--input-format stream-json`` user message, so the model can read them
+without being given any tool to open files.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 PREFIX = "claude-code:"
 DEFAULT_TIMEOUT_SECONDS = 300.0
@@ -47,6 +52,10 @@ _DROPPED_VARS = (
 )
 
 
+# What Claude accepts as image input.
+IMAGE_TYPES = ("image/jpeg", "image/png", "image/gif", "image/webp")
+
+
 class ClaudeCodeError(RuntimeError):
     """``claude -p`` failed, timed out, or returned no usable output."""
 
@@ -56,6 +65,12 @@ class ClaudeResult:
     text: str
     structured: Any
     cost_usd: float
+
+
+@dataclass(frozen=True)
+class ImageInput:
+    media_type: str  # one of IMAGE_TYPES
+    data: bytes
 
 
 @dataclass
@@ -115,14 +130,21 @@ def build_args(
     model: str,
     system_prompt: str,
     json_schema: dict | None,
+    stream: bool = False,
 ) -> list[str]:
+    """``stream``: read one stream-json message (with images) from stdin."""
+    io = (
+        ["--input-format", "stream-json", "--output-format", "stream-json"]
+        + ["--verbose"]  # required by stream-json output with -p
+        if stream
+        else ["--output-format", "json"]
+    )
     args = [
         binary,
         "-p",
         "--model",
         model_alias(model),
-        "--output-format",
-        "json",
+        *io,
         "--tools",
         "",
         "--strict-mcp-config",
@@ -141,13 +163,44 @@ def child_env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if k not in _DROPPED_VARS}
 
 
+def stream_message(prompt: str, images: Sequence[ImageInput]) -> str:
+    """One stream-json user message: the images, then the prompt."""
+    content: list[dict] = [
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": image.media_type,
+                "data": base64.b64encode(image.data).decode(),
+            },
+        }
+        for image in images
+    ]
+    content.append({"type": "text", "text": prompt})
+    message = {"type": "user", "message": {"role": "user", "content": content}}
+    return json.dumps(message) + "\n"
+
+
+def _result_event(stdout: bytes) -> dict:
+    """The ``result`` event: the whole reply (json) or one of its lines (stream)."""
+    lines = stdout.decode(errors="replace").strip().splitlines()
+    last: Any = None
+    for line in reversed(lines):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if last is None:
+            last = event
+        if isinstance(event, dict) and event.get("type") == "result":
+            return event
+    if isinstance(last, dict):
+        return last
+    raise ClaudeCodeError("claude returned no JSON result")
+
+
 def parse_output(stdout: bytes, *, want_structured: bool) -> ClaudeResult:
-    try:
-        data = json.loads(stdout.decode(errors="replace").strip().splitlines()[-1])
-    except (IndexError, json.JSONDecodeError) as exc:
-        raise ClaudeCodeError("claude returned no JSON result") from exc
-    if not isinstance(data, dict):
-        raise ClaudeCodeError("claude returned no JSON result")
+    data = _result_event(stdout)
     message = str(data.get("result") or "").strip()
     if data.get("is_error") or data.get("subtype") not in (None, "success"):
         status = data.get("api_error_status")
@@ -169,16 +222,25 @@ async def run_claude(
     model: str,
     system_prompt: str,
     json_schema: dict | None = None,
+    images: Sequence[ImageInput] = (),
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     binary: str | None = None,
 ) -> ClaudeResult:
-    """One locked-down ``claude -p`` call; the prompt goes in on stdin."""
+    """One locked-down ``claude -p`` call; the prompt goes in on stdin.
+
+    ``images`` are shown to the model before the prompt.
+    """
+    for image in images:
+        if image.media_type not in IMAGE_TYPES:
+            raise ValueError(f"unsupported image type {image.media_type!r}")
     args = build_args(
         binary or claude_binary(),
         model=model,
         system_prompt=system_prompt,
         json_schema=json_schema,
+        stream=bool(images),
     )
+    stdin = stream_message(prompt, images) if images else prompt
     with tempfile.TemporaryDirectory(prefix="daily-agent-claude-") as workdir:
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -193,7 +255,7 @@ async def run_claude(
             raise ClaudeCodeError(f"claude CLI not found at {args[0]}") from exc
         try:
             stdout, stderr = await asyncio.wait_for(
-                proc.communicate(prompt.encode()), timeout
+                proc.communicate(stdin.encode()), timeout
             )
         except asyncio.TimeoutError as exc:
             proc.kill()

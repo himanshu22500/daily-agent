@@ -179,6 +179,37 @@ uv run daily-agent videos remove channel:UC...
 Set `DAILY_AGENT_WEB_VIDEO_SYNC=false` to stop the server from writing stories,
 and run `videos sync` yourself instead.
 
+### Instagram stories
+
+Follow an Instagram **Business or Creator** account and its posts become stories
+in the feed. Paste a profile link (`instagram.com/name`) on the Sources page. This
+uses Instagram's official Graph API (Business Discovery), not scraping, so
+personal and private accounts can't be followed. It works like video stories:
+the latest 5 posts are queued at once, then each account is checked every 3
+hours (`DAILY_AGENT_INSTAGRAM_CHECK_HOURS`).
+
+Claude Code (`DAILY_AGENT_INSTAGRAM_MODEL`, default `claude-code:sonnet`) writes
+each story from the caption and the post's images. It reads a carousel's slides,
+where these posts usually put their content. A reel's audio isn't available, so
+a reel's story only covers its caption and cover frame. The images (up to 4 per
+post) are saved in the database, because Instagram's image links expire. Cards
+show the first image with the @username, and the reader shows the slides and a
+link that opens the post in the Instagram app. These stories never go to
+Telegram either.
+
+One-time setup: an Instagram professional account linked to a Facebook Page, a
+Meta app, and `daily-agent instagram connect`. See
+[docs/instagram-setup.md](docs/instagram-setup.md). The command saves a Page
+token, which doesn't expire, to `.env`. Restart the feed server afterwards.
+
+```bash
+uv run daily-agent instagram connect                   # once
+uv run daily-agent instagram add instagram.com/name    # same as the Sources page
+uv run daily-agent instagram list
+uv run daily-agent instagram sync                      # one pass now (5 stories max)
+uv run daily-agent instagram remove instagram:name
+```
+
 ### On your phone (Tailscale)
 
 Keep the server on loopback and let `tailscale serve` relay it to devices signed

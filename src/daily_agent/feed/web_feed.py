@@ -35,10 +35,12 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Field, SQLModel, func, select
 
 from ..db import create_tables, make_engine, session_scope
+from ..sources.instagram import post_url
 from ..sources.youtube import embed_url, thumbnail_url, watch_url
 from .for_you import Candidate, build_edition, revisit_interval
 from .headlines import fallback_headline, plain, split_first_sentence
 from .insights_store import InsightCursorRow, InsightRow, InsightStore
+from .instagram_posts import InstagramStore, shortcode_of
 from .projects import session_projects
 from .videos import VideoStore, video_id_of
 
@@ -118,6 +120,15 @@ class FeedEntry:
         return embed_url(self.video_id) if self.video_id else ""
 
     @property
+    def post_id(self) -> str:
+        """Instagram shortcode for a post story ("" for anything else)."""
+        return shortcode_of(self.key)
+
+    @property
+    def post_url(self) -> str:
+        return post_url(self.post_id) if self.post_id else ""
+
+    @property
     def snippet(self) -> str:
         """Plain-text teaser under the headline (never repeats it)."""
         if self.title:
@@ -170,6 +181,7 @@ class WebFeed:
         self._engine = make_engine(self.db_path)
         create_tables(self._engine, WebFeedStateRow, WebFeedSessionRow)
         self._videos = VideoStore(self.db_path)
+        self._instagram = InstagramStore(self.db_path)
         self._migrate()
 
     def _migrate(self) -> None:
@@ -201,10 +213,15 @@ class WebFeed:
             session.execute(text("UPDATE web_feed_state SET seen_at = NULL"))
 
     def _sources(self) -> dict[str, str]:
-        """``{source_session: label}``: projects for insights, channels for videos."""
+        """``{source_session: label}``: projects for insights, channels for
+        videos, accounts for Instagram posts."""
         with session_scope(self._engine) as session:
             paths = session.exec(select(InsightCursorRow.file_path)).all()
-        return {**session_projects(paths), **self._videos.channel_names()}
+        return {
+            **session_projects(paths),
+            **self._videos.channel_names(),
+            **self._instagram.account_names(),
+        }
 
     # --- reading: chronological views -------------------------------------- #
     def _base(self):

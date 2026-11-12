@@ -6,6 +6,7 @@ prints a canned result.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import sys
@@ -18,6 +19,7 @@ from daily_agent import cli
 from daily_agent.agents import claude_code, cover_illustrator, headline_writer
 from daily_agent.agents.claude_code import (
     ClaudeCodeError,
+    ImageInput,
     inline_refs,
     is_claude_code,
     model_alias,
@@ -54,6 +56,13 @@ if mode == "error":
 if mode == "crash":
     print("boom: not signed in", file=sys.stderr)
     sys.exit(2)
+if mode == "stream":  # stream-json: events around the result, like the real CLI
+    print(json.dumps({"type": "system", "subtype": "init"}))
+    print(json.dumps({"type": "result", "subtype": "success", "is_error": False,
+                      "result": "", "structured_output": {"seen": True},
+                      "total_cost_usd": 0.5}))
+    print(json.dumps({"type": "system", "subtype": "session_state_changed"}))
+    sys.exit(0)
 print(json.dumps({"type": "result", "subtype": "success", "is_error": False,
                   "result": os.environ.get("FAKE_CLAUDE_TEXT", "done"),
                   "structured_output": json.loads(os.environ.get("FAKE_CLAUDE_JSON", "null")),
@@ -113,6 +122,47 @@ async def test_calls_are_locked_down_and_isolated(fake, monkeypatch):
     assert call["env_api_keys"] == [None, None]
     assert call["cwd_files"] == [] and "daily-agent-claude-" in call["cwd"]
     assert not os.path.exists(call["cwd"])  # cleaned up afterwards
+
+
+async def test_images_go_in_as_one_stream_json_message(fake, monkeypatch):
+    monkeypatch.setenv("FAKE_CLAUDE_MODE", "stream")
+    result = await run_claude(
+        "describe the slides",
+        model="claude-code:sonnet",
+        system_prompt="s",
+        json_schema={"type": "object"},
+        images=[
+            ImageInput("image/jpeg", b"\xff\xd8jpeg"),
+            ImageInput("image/png", b"png"),
+        ],
+    )
+    # The result event is found among the other stream events.
+    assert result.structured == {"seen": True} and result.cost_usd == 0.5
+    call = fake()
+    argv = call["argv"]
+    assert _flag(argv, "--input-format") == "stream-json"
+    assert _flag(argv, "--output-format") == "stream-json" and "--verbose" in argv
+    assert _flag(argv, "--tools") == ""  # still no tools
+    message = json.loads(call["stdin"])
+    assert message["type"] == "user" and message["message"]["role"] == "user"
+    blocks = message["message"]["content"]
+    assert [b["type"] for b in blocks] == ["image", "image", "text"]
+    assert blocks[0]["source"] == {
+        "type": "base64",
+        "media_type": "image/jpeg",
+        "data": base64.b64encode(b"\xff\xd8jpeg").decode(),
+    }
+    assert blocks[-1]["text"] == "describe the slides"
+
+
+async def test_unsupported_image_types_are_refused(fake):
+    with pytest.raises(ValueError, match="unsupported image type"):
+        await run_claude(
+            "x",
+            model="claude-code:sonnet",
+            system_prompt="s",
+            images=[ImageInput("image/heic", b"x")],
+        )
 
 
 async def test_errors_surface_as_claude_code_errors(fake, monkeypatch):
