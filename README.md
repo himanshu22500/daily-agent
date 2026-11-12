@@ -71,6 +71,10 @@ uv run daily-agent insights feed --to-telegram
 # Collect and deliver after transcript files settle.
 uv run daily-agent insights flush --to-telegram
 
+# Read every project's transcripts, ended sessions or not (see Automation).
+uv run daily-agent insights sweep --dry-run   # what it would read, no model calls
+uv run daily-agent insights sweep
+
 # Inspect captured and queued counts.
 uv run daily-agent insights status
 
@@ -201,6 +205,27 @@ scripts/install-insights-flush-launchd.sh
 It watches the configured transcript directory, waits for file activity to become
 quiet, then runs `insights flush --to-telegram`. The flush lock and debounce stamp
 prevent overlapping or duplicate runs.
+
+### When new insights appear
+
+A flush reads only one project's folder: the Claude Code `SessionEnd` hook (or
+the watcher above) runs it when a session ends. Sessions inside an editor over
+ACP, such as Claude in Zed, almost never end (the editor keeps each thread's
+process alive), so their transcripts would wait indefinitely. Install the sweep
+to cover them:
+
+```bash
+scripts/install-insights-sweep-launchd.sh        # every 30 minutes; pass minutes to change
+```
+
+Every run reads, across all of `~/.claude/projects` (override with
+`DAILY_AGENT_INSIGHTS_PROJECTS_DIR`), each transcript written to since it was
+last read, skipping any written to in the last 10 minutes (`--settle-minutes`)
+so a live conversation is read once it pauses. It shares the flush's cursors and
+lock, so nothing is read twice and the two never run at once. New insights show
+on the web feed immediately and are queued for Telegram; only the flush delivers,
+so Telegram's pace is unchanged. Logs go to `digests/sweep.{out,err}.log`; a run
+missed while the Mac sleeps happens on wake.
 
 Keep the web feed running with `scripts/install-web-launchd.sh`. Logs go to
 `digests/web.{out,err}.log`; uninstall with

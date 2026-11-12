@@ -165,24 +165,46 @@ class InsightStore:
             row = session.get(InsightCursorRow, file_path)
             return row.processed_lines if row else 0
 
-    def set_cursor(self, file_path: str, processed_lines: int) -> None:
+    def set_cursor(
+        self,
+        file_path: str,
+        processed_lines: int,
+        *,
+        read_at: datetime | None = None,
+    ) -> None:
+        """Record how far ``file_path`` was read.
+
+        ``read_at`` is when reading started (default: now). The sweep compares
+        it with the file's mtime, so anything written after that moment is
+        always read again.
+        """
+        stamp = read_at.isoformat() if read_at else _now_iso()
         with session_scope(self._engine) as session:
             stmt = (
                 sqlite_insert(InsightCursorRow)
                 .values(
                     file_path=file_path,
                     processed_lines=processed_lines,
-                    updated_at=_now_iso(),
+                    updated_at=stamp,
                 )
                 .on_conflict_do_update(
                     index_elements=["file_path"],
-                    set_={
-                        "processed_lines": processed_lines,
-                        "updated_at": _now_iso(),
-                    },
+                    set_={"processed_lines": processed_lines, "updated_at": stamp},
                 )
             )
             session.execute(stmt)
+
+    def last_read_at(self, file_path: str) -> datetime | None:
+        """When ``file_path`` was last read (``None`` if it never was)."""
+        with session_scope(self._engine) as session:
+            row = session.get(InsightCursorRow, file_path)
+        if row is None:
+            return None
+        try:
+            stamp = datetime.fromisoformat(row.updated_at)
+        except ValueError:
+            return None
+        return stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)
 
 
 def _to_insight(row: InsightRow) -> Insight:

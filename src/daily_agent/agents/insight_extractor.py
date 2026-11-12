@@ -13,6 +13,12 @@ from ..feed.transcripts import TranscriptMessage
 from ..models import InsightCandidate, InsightExtraction
 from .model import build_model, cache_settings, run_with_backoff
 
+# Unattended runs (the hook flush, the timed sweep) must never hang on a slow
+# provider; 3 attempts x 120s also keeps one transcript well inside the
+# 10-minute flush lock.
+REQUEST_TIMEOUT_SECONDS = 120
+ATTEMPTS = 3
+
 _SYSTEM_PROMPT = """\
 You extract durable engineering insights from Claude Code pairing transcripts.
 
@@ -39,7 +45,10 @@ def build_insight_extractor(model: str) -> Agent[None, InsightExtraction]:
         build_model(model),
         output_type=InsightExtraction,
         system_prompt=_SYSTEM_PROMPT,
-        model_settings=cache_settings(model),
+        model_settings={
+            **(cache_settings(model) or {}),
+            "timeout": REQUEST_TIMEOUT_SECONDS,
+        },
     )
 
 
@@ -66,11 +75,16 @@ def _render(messages: list[TranscriptMessage]) -> str:
     return "\n".join(lines).strip()
 
 
+def prompt_chars(messages: list[TranscriptMessage]) -> int:
+    """Size of the extraction prompt for ``messages`` (for cost estimates)."""
+    return len(_SYSTEM_PROMPT) + len(_render(messages)) if messages else 0
+
+
 async def extract_insights(
     model: str, messages: list[TranscriptMessage]
 ) -> list[InsightCandidate]:
     if not messages:
         return []
     agent = build_insight_extractor(model)
-    result = await run_with_backoff(agent, _render(messages))
+    result = await run_with_backoff(agent, _render(messages), attempts=ATTEMPTS)
     return result.output.candidates

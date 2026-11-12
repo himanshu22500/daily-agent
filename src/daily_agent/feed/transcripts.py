@@ -78,6 +78,16 @@ def session_files(transcripts_dir: str | Path) -> list[Path]:
     return sorted(d.glob("*.jsonl")) if d.exists() else []
 
 
+def all_session_files(projects_dir: str | Path) -> list[Path]:
+    """Transcript files of every project under ``~/.claude/projects``-style roots.
+
+    Only top-level session files (``<project>/<session>.jsonl``) — the same files
+    a per-project flush reads; subagent transcripts in nested folders are skipped.
+    """
+    d = Path(projects_dir)
+    return sorted(d.glob("*/*.jsonl")) if d.exists() else []
+
+
 def read_lines(path: Path) -> list[str]:
     """All lines of a transcript file (tolerant of undecodable bytes)."""
     return path.read_text(errors="replace").splitlines()
