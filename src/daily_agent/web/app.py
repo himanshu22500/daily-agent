@@ -37,6 +37,7 @@ from starlette.templating import Jinja2Templates
 
 from ..feed.covers import CoverStore, cover_slug
 from ..feed.instagram_posts import InstagramStore, InstagramSync, shortcode_of
+from ..feed.prep import PrepStore, PrepSync
 from ..feed.story_queue import sync_forever
 from ..feed.videos import VideoStore, VideoSync
 from ..feed.web_feed import FOR_YOU, VIEWS, WebFeed
@@ -121,6 +122,8 @@ def create_app(
     instagram: InstagramSync | None = None,
     video_loop: bool = False,
     video_idle_seconds: float = 600.0,
+    prep: PrepSync | None = None,
+    prep_loop: bool = False,
 ) -> Starlette:
     """Build the feed app.
 
@@ -132,11 +135,14 @@ def create_app(
     ``videos`` lets the Sources page follow YouTube channels (issue #99), and
     ``instagram`` Instagram accounts (issue #107; ``None`` until connected).
     With ``video_loop`` the server also writes their stories in the background.
+    With ``prep`` and ``prep_loop`` it writes queued interview-prep concept
+    explainers (issue #108).
     """
     feed = WebFeed(db_path)
     covers = CoverStore(db_path)
     video_store = videos.store if videos is not None else VideoStore(db_path)
     ig_store = instagram.store if instagram is not None else InstagramStore(db_path)
+    prep_store = prep.store if prep is not None else PrepStore(db_path)
     wake = asyncio.Event()
     ig_wake = asyncio.Event()
 
@@ -413,6 +419,7 @@ def create_app(
             "sources.html",
             {
                 "sources": video_store.statuses() + ig_store.statuses(),
+                "prep": prep_store.progress(),
                 "error": error,
                 "link": link,
                 "can_follow": videos is not None or instagram is not None,
@@ -498,6 +505,12 @@ def create_app(
                             sync_forever(sync, event, idle=video_idle_seconds)
                         )
                     )
+        if prep is not None and prep_loop:
+            tasks.append(
+                asyncio.create_task(
+                    sync_forever(prep, asyncio.Event(), idle=video_idle_seconds)
+                )
+            )
         try:
             yield
         finally:

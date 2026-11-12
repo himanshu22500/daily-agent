@@ -51,7 +51,7 @@ from .story_queue import (  # noqa: F401 - re-exported for callers and tests
     SKIPPED,
     WRITING,
     SourceStatus,
-    StoryQueue,
+    FollowedSources,
     SyncReport,
     sync_forever,
 )
@@ -121,7 +121,7 @@ class VideoRow(SQLModel, table=True):
     error: str = ""
 
 
-class VideoStore(StoryQueue):
+class VideoStore(FollowedSources):
     """The ``video_sources`` and ``videos`` tables."""
 
     source_row = VideoSourceRow

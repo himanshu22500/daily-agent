@@ -50,6 +50,7 @@ from .feed.insights_sweep import pending_transcripts, sweep_insights, unread_mes
 from .feed.outbox import Channel, Outbox
 from .feed.pacer import Pacer
 from .feed.instagram_posts import InstagramSync
+from .feed.prep import PrepSync
 from .feed.videos import VideoSync
 from .sources.instagram import (
     SCOPES,
@@ -60,6 +61,7 @@ from .sources.instagram import (
     linked_accounts,
 )
 from .sources.telegram_provision import TelethonProvisioner
+from .sources.deep_dive import DeepDiveError
 from .sources.youtube import BadSourceLink, YouTube, YouTubeError
 
 app = typer.Typer(
@@ -80,6 +82,10 @@ db_app = typer.Typer(
     no_args_is_help=True, help="Which database the stores use, and moving data."
 )
 app.add_typer(db_app, name="db")
+prep_app = typer.Typer(
+    no_args_is_help=True, help="Interview prep from a resume deep dive, as feed cards."
+)
+app.add_typer(prep_app, name="prep")
 console = Console()
 
 
@@ -612,6 +618,8 @@ def web(
             videos=_video_sync(settings),
             instagram=_instagram_sync(settings),
             video_loop=settings.web_video_sync,
+            prep=_prep_sync(settings),
+            prep_loop=settings.web_prep_sync,
         ),
         host=bind,
         port=listen,
@@ -640,7 +648,7 @@ def videos_add(
     try:
         source = asyncio.run(sync.follow(link))
     except (BadSourceLink, YouTubeError) as exc:
-        console.print(f"[red]{exc}[/red]", markup=False)
+        console.print(str(exc), style="red", markup=False)
         raise typer.Exit(1)
     console.print(
         f"Following {source.title or source.id} ({source.id}). Stories are "
@@ -671,7 +679,7 @@ def videos_remove(
 ) -> None:
     """Stop following a channel (its stories stay in the feed)."""
     if not _video_sync(get_settings()).unfollow(source_id):
-        console.print(f"[red]Not following {source_id}.[/red]", markup=False)
+        console.print(f"Not following {source_id}.", style="red", markup=False)
         raise typer.Exit(1)
     console.print(f"Stopped following {source_id}.", markup=False)
 
@@ -820,7 +828,7 @@ def instagram_add(
     try:
         source = asyncio.run(sync.follow(link))
     except (BadSourceLink, InstagramError) as exc:
-        console.print(f"[red]{exc}[/red]", markup=False)
+        console.print(str(exc), style="red", markup=False)
         raise typer.Exit(1)
     console.print(
         f"Following {source.title or source.id} ({source.id}). Stories are "
@@ -859,7 +867,7 @@ def instagram_remove(
 
     store = InstagramStore(get_settings().db)
     if not store.unfollow(source_id, now=datetime.now().astimezone()):
-        console.print(f"[red]Not following {source_id}.[/red]", markup=False)
+        console.print(f"Not following {source_id}.", style="red", markup=False)
         raise typer.Exit(1)
     console.print(f"Stopped following {source_id}.", markup=False)
 
@@ -877,6 +885,76 @@ def instagram_sync(
     console.print(
         f"Checked {report.checked} account(s), queued {report.queued} post(s), "
         f"wrote {report.written} story(ies)"
+        + (f", {report.remaining} still queued" if report.remaining else "")
+        + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
+        + "."
+    )
+    for error in report.errors:
+        console.print(f"  [dim]{error}[/dim]", markup=False)
+
+
+def _prep_sync(settings, model: str | None = None) -> PrepSync:
+    from .agents.concept_writer import write_explainer
+
+    chosen = model or settings.prep_model
+    return PrepSync(settings.db, lambda request: write_explainer(chosen, request))
+
+
+@prep_app.command("import")
+def prep_import(
+    folder: Path = typer.Argument(..., help="The deep-dive folder (with README.md)."),
+    all_points: bool = typer.Option(
+        False, "--all", help="Also import non-job points (skills, general)."
+    ),
+) -> None:
+    """Add the folder's interview Q&A as flashcards and queue its concepts.
+
+    Run it again after editing the notes: changed answers are updated, removed
+    questions dropped, and changed concepts rewritten.
+    """
+    try:
+        report = _prep_sync(get_settings()).import_folder(
+            folder, jobs_only=not all_points
+        )
+    except DeepDiveError as exc:
+        console.print(str(exc), style="red", markup=False)
+        raise typer.Exit(1)
+    console.print(
+        f"{report.points} resume point(s): {report.cards_added} flashcard(s) added, "
+        f"{report.cards_updated} updated, {report.cards_removed} removed "
+        f"({report.unanswered} question(s) have no answer yet). "
+        f"{report.concepts_queued} concept explainer(s) queued"
+        + (f", {report.concepts_removed} removed" if report.concepts_removed else "")
+        + ". The feed server writes them in the background, or run "
+        "`daily-agent prep write`.",
+        markup=False,
+    )
+
+
+@prep_app.command("status")
+def prep_status() -> None:
+    """Flashcards in the feed and how far the explainers have got."""
+    progress = _prep_sync(get_settings()).store.progress()
+    console.print(
+        f"{progress.cards} flashcard(s); explainers: {progress.explainers} written, "
+        f"{progress.queued + progress.writing} to write, "
+        f"{len(progress.failed)} failed.",
+        markup=False,
+    )
+    for concept, error in progress.failed:
+        console.print(f"  failed: {concept}: {error}", markup=False)
+
+
+@prep_app.command("write")
+def prep_write(
+    limit: int = typer.Option(None, help="Write at most N explainers (default 5)."),
+    model: str = typer.Option(None, help="Claude Code model (default: prep_model)."),
+) -> None:
+    """Write queued concept explainers now."""
+    settings = get_settings()
+    report = asyncio.run(_prep_sync(settings, model).run_once(limit=limit))
+    console.print(
+        f"Wrote {report.written} explainer(s)"
         + (f", {report.remaining} still queued" if report.remaining else "")
         + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
         + "."

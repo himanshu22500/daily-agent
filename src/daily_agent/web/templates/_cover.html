@@ -20,13 +20,13 @@
 {% elif art %}
 <div class="cover has-art" aria-hidden="true">
   <img src="{{ art }}" alt="" loading="lazy" decoding="async">
-  {% if entry.source %}<span class="cover-badge">⌂ {{ entry.source }}</span>{% endif %}
+  {% if entry.source %}<span class="cover-badge">{{ "✎" if entry.type in ("interview", "concept") else "⌂" }} {{ entry.source }}</span>{% endif %}
 </div>
 {% else %}
 <div class="cover t-{{ entry.type|type_class }}" style="{{ cover_style(entry.key, entry.type) }}" aria-hidden="true">
   <span class="cover-kind">{{ entry.type|label }}</span>
   {% if post %}<span class="cover-badge">@{{ post.username }}</span>
-  {% elif entry.source %}<span class="cover-badge">⌂ {{ entry.source }}</span>{% endif %}
+  {% elif entry.source %}<span class="cover-badge">{{ "✎" if entry.type in ("interview", "concept") else "⌂" }} {{ entry.source }}</span>{% endif %}
   <span class="cover-topic">{{ "#" ~ entry.tags[0] if entry.tags else entry.type|label }}</span>
 </div>
 {% endif %}

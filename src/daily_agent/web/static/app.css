@@ -497,6 +497,25 @@ html.reading, html.reading body { overflow: hidden; }
   .video-embed { border-radius: 16px; }
 }
 
+/* Interview flashcards: the answer stays folded until tapped. */
+.answer { margin: 4px 0 8px; }
+.answer > summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 22px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.answer > summary::-webkit-details-marker { display: none; }
+.answer[open] > summary { margin-bottom: 18px; color: var(--muted); font-weight: 500; }
+.answer .if-open, .answer[open] .if-closed { display: none; }
+.answer[open] .if-open { display: inline; }
+
 .reader-text { font-size: 1.12rem; line-height: 1.7; }
 .reader-text p { margin: 0 0 1em; overflow-wrap: anywhere; }
 [data-reader-size="lg"] .reader-text { font-size: 1.28rem; }

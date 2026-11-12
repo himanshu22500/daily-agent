@@ -1,5 +1,35 @@
 # Decisions
 
+## 2026-11-12 — Interview prep from the resume deep dive: flashcards + explainers
+
+The maintainer keeps interview prep for their resume in a local deep-dive
+folder: one file per resume point, in a fixed section format (#108). They asked
+for two things in the feed:
+
+- **Flashcards:** the written Q&A, with the answer hidden until tapped.
+- **Explainers:** one per "concept to master", written by Claude.
+
+Their constraints were only resume points (the tracker rows under a job, not
+skills or general) and no recurring daily drip.
+
+- **A one-time CLI import** (`daily-agent prep import <folder>`), re-runnable
+  after editing. There's no folder watcher. Card keys are
+  `prep:<point>-q<n>`, so a re-import updates answers in place and keeps the
+  reader's seen and saved state. It also removes cards whose question is gone
+  and rewrites explainers whose concept text changed.
+- **No answer, no card.** Questions whose answer is still `⬜ OPEN` with
+  nothing written (98 of 367) get no card. "Reference design — confirm"
+  drafts are dropped as unconfirmed.
+- **Hidden answers.** The card teaser shows the level, never the answer. The
+  reader folds the answer in a native `<details>`, so it needs no JavaScript.
+- **Explainers send the whole point file to `claude -p`** (Sonnet). That's how
+  they can use the reader's real numbers and incidents, and the prompt forbids
+  inventing any. Measured at about $0.048 each, roughly $5 for all 111. They're
+  written by the web server's background loop through the shared story queue.
+- **All at once.** The cards are web-only and lead For you as fresh items for
+  three days, broken up by the existing type-run limit. The maintainer chose
+  this over a daily drip. The Interview and Concept type chips filter them.
+
 ## 2026-11-12 — One shared Postgres; the feed is served from an always-on server
 
 The phone could only read the feed while the Mac was awake, because the feed

@@ -30,6 +30,12 @@
     {% if entry.video_id %}
     <p class="byline">From <strong>{{ entry.source or "YouTube" }}</strong> on YouTube</p>
     <p class="dateline">Uploaded {{ entry.captured_at|longdate }} · Added {{ entry.published_at|ago }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
+    {% elif entry.flashcard %}
+    <p class="byline">Interview question · <strong>{{ entry.source or "your resume" }}</strong></p>
+    <p class="dateline">{{ entry.prep_level or "Interview" }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
+    {% elif entry.type == "concept" %}
+    <p class="byline">Concept from your resume · <strong>{{ entry.source or "interview prep" }}</strong></p>
+    <p class="dateline">Written {{ entry.published_at|ago }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
     {% elif entry.post_id %}
     <p class="byline">From <strong>{{ entry.source or "Instagram" }}</strong>{% if post %} (@{{ post.username }}){% endif %} on Instagram</p>
     <p class="dateline">Posted {{ entry.captured_at|longdate }} · Added {{ entry.published_at|ago }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
@@ -44,6 +50,7 @@
       <button type="button" class="pill-btn" data-textsize aria-label="Text size">{{ icon("text") }}</button>
       <button type="button" class="pill-btn" data-share data-title="{{ entry.headline }}" data-text="{{ entry.text }}" aria-label="Share">{{ icon("share") }}</button>
     </div>
+    {% if not entry.flashcard %}
     <figure class="reader-figure">
       {% if entry.video_id %}
       <div class="video-embed">
@@ -66,7 +73,15 @@
       <figcaption>{{ entry.type|label }}{% for tag in entry.tags %} · #{{ tag }}{% endfor %}</figcaption>
       {% endif %}
     </figure>
+    {% endif %}
+    {% if entry.flashcard %}
+    <details class="answer">
+      <summary><span class="if-closed">Show answer</span><span class="if-open">Hide answer</span></summary>
+      <div class="reader-text">{{ entry.text|md }}</div>
+    </details>
+    {% else %}
     <div class="reader-text">{{ entry.text|md }}</div>
+    {% endif %}
     {% if entry.tags %}
     <section class="topics">
       <p class="topics-label">Suggested topics:</p>
