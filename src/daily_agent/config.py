@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     instagram_user_id: str = ""
     instagram_model: str = "claude-code:sonnet"
     instagram_check_hours: float = 3.0
+    # Concept explainers for interview prep (`daily-agent prep import`).
+    prep_model: str = "claude-code:sonnet"
     db_path: str = "daily_agent.db"
     # Shared database (issue #111), e.g. postgresql://user:pass@daily-agent/db.
     # When set, every store uses it instead of the SQLite file at db_path; lock
@@ -67,6 +69,9 @@ class Settings(BaseSettings):
     # background while the feed server runs. Off: run `daily-agent videos sync`
     # and `daily-agent instagram sync` instead.
     web_video_sync: bool = True
+    # Write queued interview-prep explainers in the background (else:
+    # `daily-agent prep write`).
+    web_prep_sync: bool = True
 
     @property
     def db(self) -> str:

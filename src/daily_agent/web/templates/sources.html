@@ -50,6 +50,19 @@
     {% else %}
     <p class="empty">Not following anything yet.</p>
     {% endfor %}
+    {% if prep.cards or prep.explainers or prep.queued or prep.writing or prep.failed %}
+    <section class="source">
+      <div class="source-head">
+        <span class="src-icon" style="--sh:{{ source_hue('Interview prep') }}" aria-hidden="true">I</span>
+        <a class="source-title" href="{{ feed_url(view='latest', type='interview') }}">Interview prep</a>
+      </div>
+      <p class="source-status">
+        {{- prep.cards }} flashcard{{ "s" if prep.cards != 1 }} · {{ prep.explainers }} explainer{{ "s" if prep.explainers != 1 }} written
+        {%- if prep.queued or prep.writing %} · {{ prep.queued + prep.writing }} still to write{% endif -%}
+      </p>
+      {% for concept, problem in prep.failed %}<p class="source-problem">Gave up on “{{ concept }}”: {{ problem }}</p>{% endfor %}
+    </section>
+    {% endif %}
   </main>
 </body>
 </html>

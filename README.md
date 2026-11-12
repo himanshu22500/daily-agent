@@ -210,6 +210,44 @@ uv run daily-agent instagram sync                      # one pass now (5 stories
 uv run daily-agent instagram remove instagram:name
 ```
 
+### Interview prep (resume deep dive)
+
+Put interview prep for your resume in the feed: flashcards for your drafted
+answers, and an explainer for every concept you want to master. The input is a
+"deep dive" folder. It has a `README.md` whose progress tracker lists one
+markdown file per resume point, grouped by job. Each point file has
+`## 4. Likely interview questions` (`**Q1. ...**` followed by
+`- **Answer:** ...`) and `## 5. Concepts to master`.
+
+```bash
+uv run daily-agent prep import ~/path/to/deep-dive   # once; run again after editing
+uv run daily-agent prep status                        # flashcards and explainer progress
+uv run daily-agent prep write                         # write queued explainers now (5 max)
+```
+
+- **Which points:** only points under a job in the tracker are imported. Add
+  `--all` to include skills and general points.
+- **Flashcards:** each answered question becomes a card under an **Interview**
+  type chip. The question is the headline, and the card shows only its level
+  ("Deep dive question · tap to answer"). The reader keeps the answer behind
+  **Show answer**.
+  - Answers still marked `⬜ OPEN` with nothing written are skipped. Partial
+    ones show what's written plus a **Still open** note. "Reference design —
+    confirm" drafts are left out.
+- **Explainers:** each concept is queued. While `daily-agent web` runs, it has
+  Claude Code (`DAILY_AGENT_PREP_MODEL`) write an explainer for it, under a
+  **Concept** chip. An explainer teaches the concept and ties it to your own
+  work using only facts from that point's notes. That costs about $0.05 each,
+  since the whole point file goes along. Set
+  `DAILY_AGENT_WEB_PREP_SYNC=false` to write them only with `prep write`.
+- **Running it again:** nothing watches the folder, so run `prep import` again
+  after editing. Changed answers are updated in place, keeping what you've
+  seen or saved. Removed questions disappear, and changed concepts are
+  rewritten.
+
+Everything stays in the web feed; none of it goes to Telegram. The Sources page
+shows how many explainers are left to write.
+
 ### On your phone (Tailscale)
 
 Keep the server on loopback and let `tailscale serve` relay it to devices signed

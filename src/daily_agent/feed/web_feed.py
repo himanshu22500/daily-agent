@@ -47,6 +47,7 @@ from .headlines import fallback_headline, plain, split_first_sentence
 from .insights_store import InsightCursorRow, InsightRow, InsightStore
 from .instagram_posts import InstagramStore, shortcode_of
 from .projects import session_projects
+from .prep import CARD_TYPE, PrepStore, level_label
 from .videos import VideoStore, video_id_of
 
 FOR_YOU = "for-you"
@@ -113,6 +114,16 @@ class FeedEntry:
         return video_id_of(self.key)
 
     @property
+    def flashcard(self) -> bool:
+        """An interview question whose answer stays hidden until tapped."""
+        return self.type == CARD_TYPE
+
+    @property
+    def prep_level(self) -> str:
+        """ "Deep dive" etc. for a flashcard ("" otherwise)."""
+        return level_label(self.tags) if self.flashcard else ""
+
+    @property
     def thumbnail(self) -> str:
         return thumbnail_url(self.video_id) if self.video_id else ""
 
@@ -136,6 +147,9 @@ class FeedEntry:
     @property
     def snippet(self) -> str:
         """Plain-text teaser under the headline (never repeats it)."""
+        if self.flashcard:  # never give the answer away on the card
+            level = self.prep_level
+            return f"{level} question · tap to answer" if level else "Tap to answer"
         if self.title:
             return plain(self.text)
         return split_first_sentence(self.text)[1]
@@ -187,6 +201,7 @@ class WebFeed:
         create_tables(self._engine, WebFeedStateRow, WebFeedSessionRow)
         self._videos = VideoStore(self.db_path)
         self._instagram = InstagramStore(self.db_path)
+        self._prep = PrepStore(self.db_path)
         self._migrate()
 
     def _migrate(self) -> None:
@@ -214,13 +229,14 @@ class WebFeed:
 
     def _sources(self) -> dict[str, str]:
         """``{source_session: label}``: projects for insights, channels for
-        videos, accounts for Instagram posts."""
+        videos, accounts for Instagram posts, resume points for prep."""
         with session_scope(self._engine) as session:
             paths = session.exec(select(InsightCursorRow.file_path)).all()
         return {
             **session_projects(paths),
             **self._videos.channel_names(),
             **self._instagram.account_names(),
+            **self._prep.labels(),
         }
 
     # --- reading: chronological views -------------------------------------- #

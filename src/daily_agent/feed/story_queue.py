@@ -5,14 +5,16 @@ Each platform keeps two tables: the sources being followed, and the items
 (videos, posts) found on them. An item is queued (``pending``), claimed by one
 runner (``writing``) with a conditional update, then ``done``, or retried with
 backoff and finally ``failed``. A claim left by a crashed runner expires. This
-module holds that logic once; ``VideoStore`` and ``InstagramStore`` supply
-their tables (``source_row``/``item_row``) and how a source's items are
-recorded.
+module holds that logic once. ``StoryQueue`` is the queue alone (interview-prep
+explainers, #108, use just that); ``FollowedSources`` adds the followed
+sources, and ``VideoStore`` and ``InstagramStore`` supply their tables
+(``source_row``/``item_row``) and how a source's items are recorded.
 
-Both item tables need these columns: ``source_id``, ``title``,
-``published_at``, ``state``, ``attempts``, ``not_before``, ``claimed_at``,
-``error``. Both source tables need: ``id``, ``url``, ``title``, ``added_at``,
-``removed_at``, ``checked_at``, ``check_error``.
+A queue table needs these columns: ``published_at`` (orders the queue),
+``state``, ``attempts``, ``not_before``, ``claimed_at``, ``error``; with
+followed sources also ``source_id`` and ``title``. Source tables need: ``id``,
+``url``, ``title``, ``added_at``, ``removed_at``, ``checked_at``,
+``check_error``.
 """
 
 from __future__ import annotations
@@ -93,96 +95,12 @@ class SyncReport:
 
 
 class StoryQueue:
-    """Source and queue bookkeeping over a platform's two tables."""
+    """Claim/retry bookkeeping over a table of queued items."""
 
-    source_row: ClassVar[Any]
     item_row: ClassVar[Any]
     item_id: ClassVar[str]  # primary-key column of ``item_row``
-    platform: ClassVar[str]
     _engine: Engine
 
-    # --- sources ---------------------------------------------------------- #
-    def unfollow(self, source_id: str, *, now: datetime) -> bool:
-        """Stop following; queued items are dropped, written stories stay."""
-        item = self.item_row
-        with session_scope(self._engine) as session:
-            row = session.get(self.source_row, source_id)
-            if row is None or row.removed_at:
-                return False
-            row.removed_at = iso(now)
-            session.add(row)
-            session.execute(
-                update(item)
-                .where(item.source_id == source_id)
-                .where(item.state.in_((PENDING, FAILED)))
-                .values(state=SKIPPED)
-            )
-            return True
-
-    def source(self, source_id: str):
-        with session_scope(self._engine) as session:
-            return session.get(self.source_row, source_id)
-
-    def active_sources(self) -> list:
-        src = self.source_row
-        with session_scope(self._engine) as session:
-            return list(
-                session.exec(
-                    select(src)
-                    .where(src.removed_at.is_(None))
-                    .order_by(src.added_at, *src.__table__.primary_key.columns)
-                ).all()
-            )
-
-    def mark_checked(
-        self, source_id: str, *, now: datetime, error: str = "", title: str = ""
-    ) -> None:
-        """Record a check; ``title`` names a source that has no name yet."""
-        with session_scope(self._engine) as session:
-            row = session.get(self.source_row, source_id)
-            if row is None:
-                return
-            if error:
-                row.check_error = error[:300]
-            else:
-                row.checked_at = iso(now)
-                row.check_error = ""
-            if title and not row.title:
-                row.title = title
-            session.add(row)
-
-    def statuses(self) -> list[SourceStatus]:
-        sources = self.active_sources()
-        item = self.item_row
-        with session_scope(self._engine) as session:
-            items = session.exec(
-                select(item).where(item.source_id.in_([s.id for s in sources]))
-            ).all()
-        by_source: dict[str, list] = {}
-        for row in items:
-            by_source.setdefault(row.source_id, []).append(row)
-        out = []
-        for source in sources:
-            rows = by_source.get(source.id, [])
-            states = Counter(r.state for r in rows)
-            out.append(
-                SourceStatus(
-                    id=source.id,
-                    title=source.title or source.id,
-                    url=source.url,
-                    added_at=aware(source.added_at),
-                    checked_at=aware(source.checked_at) if source.checked_at else None,
-                    check_error=source.check_error,
-                    stories=states[DONE],
-                    queued=states[PENDING],
-                    writing=states[WRITING],
-                    failed=[(r.title, r.error) for r in rows if r.state == FAILED],
-                    platform=self.platform,
-                )
-            )
-        return out
-
-    # --- queue ------------------------------------------------------------ #
     def _claimable(self, stamp: str, stale: str):
         item = self.item_row
         return or_(
@@ -264,6 +182,93 @@ class StoryQueue:
             session.execute(
                 update(self.item_row).where(self._id_col() == item_id).values(**values)
             )
+
+
+class FollowedSources(StoryQueue):
+    """A platform's followed sources plus the queue of items found on them."""
+
+    source_row: ClassVar[Any]
+    platform: ClassVar[str]
+
+    def unfollow(self, source_id: str, *, now: datetime) -> bool:
+        """Stop following; queued items are dropped, written stories stay."""
+        item = self.item_row
+        with session_scope(self._engine) as session:
+            row = session.get(self.source_row, source_id)
+            if row is None or row.removed_at:
+                return False
+            row.removed_at = iso(now)
+            session.add(row)
+            session.execute(
+                update(item)
+                .where(item.source_id == source_id)
+                .where(item.state.in_((PENDING, FAILED)))
+                .values(state=SKIPPED)
+            )
+            return True
+
+    def source(self, source_id: str):
+        with session_scope(self._engine) as session:
+            return session.get(self.source_row, source_id)
+
+    def active_sources(self) -> list:
+        src = self.source_row
+        with session_scope(self._engine) as session:
+            return list(
+                session.exec(
+                    select(src)
+                    .where(src.removed_at.is_(None))
+                    .order_by(src.added_at, *src.__table__.primary_key.columns)
+                ).all()
+            )
+
+    def mark_checked(
+        self, source_id: str, *, now: datetime, error: str = "", title: str = ""
+    ) -> None:
+        """Record a check; ``title`` names a source that has no name yet."""
+        with session_scope(self._engine) as session:
+            row = session.get(self.source_row, source_id)
+            if row is None:
+                return
+            if error:
+                row.check_error = error[:300]
+            else:
+                row.checked_at = iso(now)
+                row.check_error = ""
+            if title and not row.title:
+                row.title = title
+            session.add(row)
+
+    def statuses(self) -> list[SourceStatus]:
+        sources = self.active_sources()
+        item = self.item_row
+        with session_scope(self._engine) as session:
+            items = session.exec(
+                select(item).where(item.source_id.in_([s.id for s in sources]))
+            ).all()
+        by_source: dict[str, list] = {}
+        for row in items:
+            by_source.setdefault(row.source_id, []).append(row)
+        out = []
+        for source in sources:
+            rows = by_source.get(source.id, [])
+            states = Counter(r.state for r in rows)
+            out.append(
+                SourceStatus(
+                    id=source.id,
+                    title=source.title or source.id,
+                    url=source.url,
+                    added_at=aware(source.added_at),
+                    checked_at=aware(source.checked_at) if source.checked_at else None,
+                    check_error=source.check_error,
+                    stories=states[DONE],
+                    queued=states[PENDING],
+                    writing=states[WRITING],
+                    failed=[(r.title, r.error) for r in rows if r.state == FAILED],
+                    platform=self.platform,
+                )
+            )
+        return out
 
 
 class Syncer(Protocol):
