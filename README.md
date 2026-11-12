@@ -147,6 +147,38 @@ open, a pill appears when new insights arrive.
 It binds to `127.0.0.1` and has **no login**, so don't expose it on a LAN or the
 internet.
 
+### Video stories (YouTube)
+
+Follow a YouTube channel and its videos become stories in the feed. Open
+**Sources** (top right of the feed), paste a channel link (`youtube.com/@name`,
+a `/channel/` link, a playlist, or any video from the channel), and tap Follow.
+The latest 5 videos are queued at once. After that the channel is checked every
+3 hours (`DAILY_AGENT_VIDEO_CHECK_HOURS`) and each new upload is queued. Shorts
+are skipped.
+
+While `daily-agent web` runs, it writes queued videos in the background, one
+at a time: it fetches the video's captions (no API key) and has Claude Code
+(`DAILY_AGENT_VIDEO_MODEL`, default `claude-code:sonnet`) write a headline and
+a short article from them. A new video without captions waits up to 6 hours for
+YouTube's auto-captions, then is written from its title and description.
+Failures are retried after 1, 2, and 4 hours. After 4 tries the video is shown
+as failed on the Sources page; following the channel again retries it.
+
+Video stories mix into For you and Latest under a **Video** type chip, with the
+channel as the source and the YouTube thumbnail as the cover. The reader embeds
+the video (`youtube-nocookie.com`) above the article. They never go to Telegram.
+Unfollowing stops new stories and keeps the ones already written.
+
+```bash
+uv run daily-agent videos add youtube.com/@name   # same as the Sources page
+uv run daily-agent videos list
+uv run daily-agent videos sync                    # one pass now (5 stories max)
+uv run daily-agent videos remove channel:UC...
+```
+
+Set `DAILY_AGENT_WEB_VIDEO_SYNC=false` to stop the server from writing stories,
+and run `videos sync` yourself instead.
+
 ### On your phone (Tailscale)
 
 Keep the server on loopback and let `tailscale serve` relay it to devices signed

@@ -64,6 +64,14 @@ code {
 
 .unseen { color: var(--new); font-size: 0.8rem; font-weight: 600; }
 
+.bar-link {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
 .search input {
   width: 100%;
   margin: 8px 0;
@@ -295,6 +303,29 @@ details.menu summary::-webkit-details-marker { display: none; }
   object-fit: cover;
 }
 
+/* Video stories: the YouTube thumbnail with a play mark. */
+.cover.is-video .play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 56px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgb(0 0 0 / 0.62);
+  transform: translate(-50%, -50%);
+}
+
+.cover.is-video .play::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-width: 9px 0 9px 15px;
+  border-style: solid;
+  border-color: transparent transparent transparent #ffffff;
+  content: "";
+  transform: translate(-40%, -50%);
+}
+
 .cover-kind {
   position: absolute;
   top: 14px;
@@ -432,6 +463,14 @@ html.reading, html.reading body { overflow: hidden; }
 .reader-figure { margin: 0 -20px 20px; }
 .reader-figure .cover { aspect-ratio: 16 / 9; }
 .reader-figure figcaption { padding: 8px 20px 0; color: var(--muted); font-size: 0.85rem; }
+.reader-figure figcaption a { color: var(--new); text-decoration: none; }
+
+.video-embed { aspect-ratio: 16 / 9; overflow: hidden; background: #000000; }
+.video-embed iframe { display: block; width: 100%; height: 100%; border: 0; }
+
+@media (min-width: 680px) {
+  .video-embed { border-radius: 16px; }
+}
 
 .reader-text { font-size: 1.12rem; line-height: 1.7; }
 .reader-text p { margin: 0 0 1em; overflow-wrap: anywhere; }
@@ -505,6 +544,46 @@ html.reading, html.reading body { overflow: hidden; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* --- Sources (followed YouTube channels) ---------------------------------- */
+
+.sources { max-width: 640px; margin: 0 auto; padding: 8px 16px 48px; }
+.sources h1 { margin: 8px 0 6px; font-size: 1.5rem; font-weight: 600; }
+.sources-intro, .sources-note { margin: 0 0 14px; color: var(--muted); font-size: 0.92rem; }
+
+.follow { display: flex; gap: 8px; margin: 0 0 8px; }
+
+.follow input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--chip);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+}
+
+.follow .act { padding: 8px 18px; background: var(--chip-on); color: var(--chip-on-text); font-weight: 600; }
+.act:disabled { opacity: 0.5; cursor: default; }
+.form-error, .source-problem { margin: 6px 0; color: var(--love); font-size: 0.9rem; }
+
+.source { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.source-head { display: flex; align-items: center; gap: 10px; }
+.source-head form { margin: 0 0 0 auto; }
+
+.source-title {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-status { margin: 6px 0 0 32px; color: var(--muted); font-size: 0.88rem; }
+.source .source-problem { margin-left: 32px; }
 
 /* --- Misc ------------------------------------------------------------------ */
 

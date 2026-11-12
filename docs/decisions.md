@@ -1,5 +1,42 @@
 # Decisions
 
+## 2026-11-12 — Follow YouTube channels; Claude writes a story per video
+
+The maintainer wanted feed stories from outside the coding sessions: paste a
+YouTube channel link, and its latest videos turn into feed stories in the
+background, with the video embedded in the reader (issue #99). The
+maintainer's calls: one article per video; the latest 5 on follow, then every
+new upload; mixed into For you and Latest with a Sources page to manage
+channels; and written the same way as all other model work, through Claude
+Code (#95).
+
+- **Captions in, not the video.** `claude -p` runs with no tools, so it can't
+  open a link. The app fetches captions with `youtube-transcript-api` and sends
+  them as text, marked untrusted like transcripts. No YouTube API key: channels
+  resolve through their public page and RSS feed. Only `youtube.com` is ever
+  fetched, since pasted links are rebuilt on it. A new video without captions
+  waits up to 6 hours for auto-captions, then is written from its title and
+  description.
+- **Stored as insights** (`video:<id>`, type `video`, status `web-only`), so
+  saving, hiding, views, revisits, search, and Read next work unchanged. The
+  outbox only queues `new` insights, so video stories never reach Telegram
+  (Telegram pacing is unchanged). Channel and queue state live in
+  `video_sources` and `videos`.
+- **Written by the web server**, in a background loop. It is the one process
+  that always runs under launchd, and Follow starts it at once. A conditional
+  claim keeps it and a manual `videos sync` from writing the same video twice.
+  A claim left by a crash expires after 15 minutes.
+- **Limits in the JSON schema, not just the prompt.** Sonnet ignored "at most
+  75 characters" (headlines ran to 100+). Claude Code validates
+  `--json-schema` replies and has the model retry, so `maxLength` holds.
+- **YouTube images are loaded from YouTube.** Cards use the video thumbnail
+  (`i.ytimg.com`, no referrer), and the reader embeds `youtube-nocookie.com`.
+  This is the first thing the feed loads from outside the Mac. It is limited to
+  public video content the maintainer chose to follow. Insight covers still
+  come from the database.
+- Cost: about $0.03-0.04 per video story with Sonnet (measured on 5 videos of
+  about 7 minutes each).
+
 ## 2026-11-12 — All model work runs through Claude Code in the background
 
 The Vertex AI sign-in for the work account stopped refreshing about 9 hours

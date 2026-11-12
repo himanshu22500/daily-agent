@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import typer
@@ -46,7 +46,9 @@ from .feed.insights_store import InsightStore
 from .feed.insights_sweep import pending_transcripts, sweep_insights, unread_messages
 from .feed.outbox import Channel, Outbox
 from .feed.pacer import Pacer
+from .feed.videos import VideoSync
 from .sources.telegram_provision import TelethonProvisioner
+from .sources.youtube import BadSourceLink, YouTube, YouTubeError
 
 app = typer.Typer(
     add_completion=False,
@@ -54,6 +56,10 @@ app = typer.Typer(
 )
 insights_app = typer.Typer(no_args_is_help=True, help="Capture and resurface insights.")
 app.add_typer(insights_app, name="insights")
+videos_app = typer.Typer(
+    no_args_is_help=True, help="Follow YouTube channels as feed stories."
+)
+app.add_typer(videos_app, name="videos")
 console = Console()
 
 
@@ -585,11 +591,90 @@ def web(
             settings.db_path,
             page_size=settings.web_page_size,
             allowed_hosts=allowed,
+            videos=_video_sync(settings),
+            video_loop=settings.web_video_sync,
         ),
         host=bind,
         port=listen,
         log_level="warning",
     )
+
+
+def _video_sync(settings, model: str | None = None) -> VideoSync:
+    from .agents.video_writer import write_story
+
+    chosen = model or settings.video_model
+    return VideoSync(
+        settings.db_path,
+        YouTube(),
+        lambda video, transcript: write_story(chosen, video, transcript),
+        check_every=timedelta(hours=settings.video_check_hours),
+    )
+
+
+@videos_app.command("add")
+def videos_add(
+    link: str = typer.Argument(..., help="A YouTube channel or playlist link."),
+) -> None:
+    """Follow a channel: queue its latest 5 videos and every new upload."""
+    sync = _video_sync(get_settings())
+    try:
+        source = asyncio.run(sync.follow(link))
+    except (BadSourceLink, YouTubeError) as exc:
+        console.print(f"[red]{exc}[/red]", markup=False)
+        raise typer.Exit(1)
+    console.print(
+        f"Following {source.title or source.id} ({source.id}). Stories are "
+        "written by the feed server, or by `daily-agent videos sync`.",
+        markup=False,
+    )
+
+
+@videos_app.command("list")
+def videos_list() -> None:
+    """Followed channels and their story counts."""
+    statuses = _video_sync(get_settings()).store.statuses()
+    if not statuses:
+        console.print("Not following any channels.")
+    for status in statuses:
+        console.print(
+            f"{status.id}  {status.title}  stories={status.stories} "
+            f"queued={status.queued} failed={len(status.failed)}",
+            markup=False,
+        )
+        if status.check_error:
+            console.print(f"  last check failed: {status.check_error}", markup=False)
+
+
+@videos_app.command("remove")
+def videos_remove(
+    source_id: str = typer.Argument(..., help="Source id from `videos list`."),
+) -> None:
+    """Stop following a channel (its stories stay in the feed)."""
+    if not _video_sync(get_settings()).unfollow(source_id):
+        console.print(f"[red]Not following {source_id}.[/red]", markup=False)
+        raise typer.Exit(1)
+    console.print(f"Stopped following {source_id}.", markup=False)
+
+
+@videos_app.command("sync")
+def videos_sync(
+    limit: int = typer.Option(None, help="Write at most N stories (default 5)."),
+    model: str = typer.Option(None, help="Claude Code model (default: video_model)."),
+) -> None:
+    """Check followed channels now and write stories for queued videos."""
+    settings = get_settings()
+    report = asyncio.run(_video_sync(settings, model).run_once(limit=limit))
+    console.print(
+        f"Checked {report.checked} source(s), queued {report.queued} video(s), "
+        f"wrote {report.written} story(ies)"
+        + (f", {report.waiting} waiting for captions" if report.waiting else "")
+        + (f", {report.remaining} still queued" if report.remaining else "")
+        + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
+        + "."
+    )
+    for error in report.errors:
+        console.print(f"  [dim]{error}[/dim]", markup=False)
 
 
 @app.command(name="telegram-check")

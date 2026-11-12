@@ -35,10 +35,12 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Field, SQLModel, func, select
 
 from ..db import create_tables, make_engine, session_scope
+from ..sources.youtube import embed_url, thumbnail_url, watch_url
 from .for_you import Candidate, build_edition, revisit_interval
 from .headlines import fallback_headline, plain, split_first_sentence
 from .insights_store import InsightCursorRow, InsightRow, InsightStore
 from .projects import session_projects
+from .videos import VideoStore, video_id_of
 
 FOR_YOU = "for-you"
 VIEWS = (FOR_YOU, "latest", "saved", "hidden")
@@ -99,6 +101,23 @@ class FeedEntry:
         return self.title or fallback_headline(self.text)
 
     @property
+    def video_id(self) -> str:
+        """YouTube id for a video story ("" for a coding insight)."""
+        return video_id_of(self.key)
+
+    @property
+    def thumbnail(self) -> str:
+        return thumbnail_url(self.video_id) if self.video_id else ""
+
+    @property
+    def video_url(self) -> str:
+        return watch_url(self.video_id) if self.video_id else ""
+
+    @property
+    def embed_url(self) -> str:
+        return embed_url(self.video_id) if self.video_id else ""
+
+    @property
     def snippet(self) -> str:
         """Plain-text teaser under the headline (never repeats it)."""
         if self.title:
@@ -150,6 +169,7 @@ class WebFeed:
         InsightStore(self.db_path)
         self._engine = make_engine(self.db_path)
         create_tables(self._engine, WebFeedStateRow, WebFeedSessionRow)
+        self._videos = VideoStore(self.db_path)
         self._migrate()
 
     def _migrate(self) -> None:
@@ -181,10 +201,10 @@ class WebFeed:
             session.execute(text("UPDATE web_feed_state SET seen_at = NULL"))
 
     def _sources(self) -> dict[str, str]:
-        """``{session id: project label}`` from the transcripts captured so far."""
+        """``{source_session: label}``: projects for insights, channels for videos."""
         with session_scope(self._engine) as session:
             paths = session.exec(select(InsightCursorRow.file_path)).all()
-        return session_projects(paths)
+        return {**session_projects(paths), **self._videos.channel_names()}
 
     # --- reading: chronological views -------------------------------------- #
     def _base(self):

@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # Feed headlines (Claude Code only) and cover illustrations.
     headline_model: str = "claude-code:sonnet"
     cover_model: str = "claude-code:sonnet"
+    # Stories from followed YouTube channels (Claude Code only), and how often
+    # each followed channel is checked for new uploads.
+    video_model: str = "claude-code:sonnet"
+    video_check_hours: float = 3.0
     db_path: str = "daily_agent.db"
 
     insights_marker: str = "insight:"
@@ -48,6 +52,9 @@ class Settings(BaseSettings):
     # Extra Host names the feed answers to (comma-separated), e.g. a Tailscale
     # MagicDNS name. Loopback names and web_host are always allowed.
     web_allowed_hosts: str = ""
+    # Write stories for followed YouTube channels in the background while the
+    # feed server runs. Off: run `daily-agent videos sync` instead.
+    web_video_sync: bool = True
 
     @property
     def telegram_enabled(self) -> bool:

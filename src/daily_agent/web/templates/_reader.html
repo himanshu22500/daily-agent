@@ -26,8 +26,13 @@
   </header>
   <article class="reader-body">
     <h1 class="reader-h1">{{ entry.headline }}</h1>
+    {% if entry.video_id %}
+    <p class="byline">From <strong>{{ entry.source or "YouTube" }}</strong> on YouTube</p>
+    <p class="dateline">Uploaded {{ entry.captured_at|longdate }} · Added {{ entry.published_at|ago }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
+    {% else %}
     <p class="byline">Learned in <strong>{{ entry.source or "a coding session" }}</strong>{% if branch %} on <code>{{ branch }}</code>{% endif %}</p>
     <p class="dateline">{{ entry.captured_at|longdate }} · Published {{ entry.published_at|ago }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
+    {% endif %}
     <div class="reader-actions">
       <form method="post" action="{{ save_action }}" data-action>
         <button type="submit" class="pill-btn{% if entry.saved %} on{% endif %}" aria-label="{{ 'Unsave' if entry.saved else 'Save' }}">{{ icon("bookmark", entry.saved) }}</button>
@@ -36,8 +41,15 @@
       <button type="button" class="pill-btn" data-share data-title="{{ entry.headline }}" data-text="{{ entry.text }}" aria-label="Share">{{ icon("share") }}</button>
     </div>
     <figure class="reader-figure">
+      {% if entry.video_id %}
+      <div class="video-embed">
+        <iframe src="{{ entry.embed_url }}" title="{{ entry.headline }}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+      </div>
+      <figcaption><a href="{{ entry.video_url }}" target="_blank" rel="noopener noreferrer">Watch on YouTube</a>{% for tag in entry.tags %} · #{{ tag }}{% endfor %}</figcaption>
+      {% else %}
       {% include "_cover.html" %}
       <figcaption>{{ entry.type|label }}{% for tag in entry.tags %} · #{{ tag }}{% endfor %}</figcaption>
+      {% endif %}
     </figure>
     <div class="reader-text">{{ entry.text|md }}</div>
     {% if entry.tags %}
@@ -58,9 +70,9 @@
           <span class="next-title">{{ item.headline }}</span>
           <time datetime="{{ item.published_at.isoformat() }}">{{ item.published_at|ago_long }}</time>
         </span>
-        {% set thumb = cover_url(item.key) %}
+        {% set thumb = item.thumbnail or cover_url(item.key) %}
         {% if thumb %}
-        <span class="cover thumb has-art" aria-hidden="true"><img src="{{ thumb }}" alt="" loading="lazy" decoding="async"></span>
+        <span class="cover thumb has-art" aria-hidden="true"><img src="{{ thumb }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"></span>
         {% else %}
         <span class="cover thumb" style="{{ cover_style(item.key, item.type) }}" aria-hidden="true">
           <span class="thumb-topic">{{ "#" ~ item.tags[0] if item.tags else item.type|label }}</span>
