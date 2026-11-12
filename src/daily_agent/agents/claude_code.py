@@ -14,6 +14,8 @@ Every call is locked down, because prompts carry untrusted transcript text:
   reads its own prompts back as a "session".
 - ``--system-prompt`` replaces Claude Code's agent prompt with the task's, and
   the run happens in an empty directory, so no project ``CLAUDE.md`` is loaded.
+- ``ANTHROPIC_API_KEY``/``ANTHROPIC_AUTH_TOKEN`` are not passed on, so the
+  call always uses Claude Code's own sign-in.
 """
 
 from __future__ import annotations
@@ -29,9 +31,20 @@ from typing import Any
 
 PREFIX = "claude-code:"
 DEFAULT_TIMEOUT_SECONDS = 300.0
-# Set by a parent Claude Code session (e.g. when the SessionEnd hook runs a
-# flush); a child `claude -p` must start as a fresh top-level run.
-_PARENT_SESSION_VARS = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT")
+# Dropped from the child's environment:
+# - set by a parent Claude Code session (e.g. when the SessionEnd hook runs a
+#   flush); a child `claude -p` must start as a fresh top-level run;
+# - API credentials, which would override Claude Code's own sign-in. The CLI
+#   loads `.env` into the environment, and a stale key there turned every
+#   background call into "401 Invalid API key" (issue #97). Claude Code's own
+#   settings (e.g. `apiKeyHelper`) still apply.
+_DROPPED_VARS = (
+    "CLAUDECODE",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_SSE_PORT",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+)
 
 
 class ClaudeCodeError(RuntimeError):
@@ -125,7 +138,7 @@ def build_args(
 
 
 def child_env() -> dict[str, str]:
-    return {k: v for k, v in os.environ.items() if k not in _PARENT_SESSION_VARS}
+    return {k: v for k, v in os.environ.items() if k not in _DROPPED_VARS}
 
 
 def parse_output(stdout: bytes, *, want_structured: bool) -> ClaudeResult:

@@ -35,8 +35,9 @@ All model work runs through the Claude Code CLI already signed in on the Mac
 because prompts contain transcript text: no tools, no MCP servers, hooks off
 (so it can't trigger the `SessionEnd` flush again), no saved session (so the
 sweep never reads it back), Claude Code's agent prompt replaced by the task's,
-and run from an empty directory. Usage counts against the signed-in Claude
-plan. Set `DAILY_AGENT_CLAUDE_BIN` if `claude` isn't on `PATH`.
+and run from an empty directory. `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN`
+are not passed on, so a key in `.env` can't override Claude Code's own sign-in.
+Usage counts against the signed-in Claude plan. Set `DAILY_AGENT_CLAUDE_BIN` if `claude` isn't on `PATH`.
 
 Gemini still works for extraction and covers with a pydantic-ai model string
 (`google:gemini-3.8-flash` with `GEMINI_API_KEY`, or `google-cloud:...` on
