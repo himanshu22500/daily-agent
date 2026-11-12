@@ -21,6 +21,8 @@ class Settings(BaseSettings):
 
     insights_marker: str = "insight:"
     insights_transcripts_dir: str = ""
+    # Root the timed sweep reads (every <project>/<session>.jsonl under it).
+    insights_projects_dir: str = ""
     insights_feed_max_per_run: int = 2
     feed_quiet_start: int = 22
     feed_quiet_end: int = 8
@@ -60,6 +62,12 @@ class Settings(BaseSettings):
             return self.insights_transcripts_dir
         mangled = str(Path.cwd().resolve()).replace("/", "-")
         return str(Path.home() / ".claude" / "projects" / mangled)
+
+    @property
+    def projects_path(self) -> str:
+        if self.insights_projects_dir:
+            return str(Path(self.insights_projects_dir).expanduser())
+        return str(Path.home() / ".claude" / "projects")
 
 
 @lru_cache

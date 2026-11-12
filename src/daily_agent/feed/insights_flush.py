@@ -67,6 +67,14 @@ class RunLock:
         except FileNotFoundError:
             return True
 
+    def refresh(self) -> None:
+        """Show a long run is still alive, so others don't reclaim the lock."""
+        if self._fd is not None:
+            try:
+                os.utime(self.path)
+            except FileNotFoundError:
+                pass
+
     def release(self) -> None:
         if self._fd is not None:
             os.close(self._fd)

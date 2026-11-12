@@ -14,7 +14,7 @@ load_dotenv()
 
 from rich.console import Console
 
-from .agents.insight_extractor import extract_insights
+from .agents.insight_extractor import extract_insights, prompt_chars
 from .config import get_settings
 from .feed.channel_registry import ChannelRegistry, reap_stale
 from .feed.channels import (
@@ -41,6 +41,7 @@ from .feed.insights_flush import (
     wait_for_quiet_path,
 )
 from .feed.insights_store import InsightStore
+from .feed.insights_sweep import pending_transcripts, sweep_insights, unread_messages
 from .feed.outbox import Channel, Outbox
 from .feed.pacer import Pacer
 from .sources.telegram_provision import TelethonProvisioner
@@ -248,6 +249,101 @@ def insights_flush(
         mark_ran(paths.stamp)
     finally:
         lock.release()
+
+
+@insights_app.command("sweep")
+def insights_sweep(
+    settle_minutes: float = typer.Option(
+        10.0,
+        help="Leave transcripts written to in the last N minutes for the next sweep.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show what would be read; don't call the model or move any cursor.",
+    ),
+    extract: bool = typer.Option(True, "--extract/--no-extract"),
+    max_failures: int = typer.Option(
+        3, help="Stop after this many transcripts fail in a row (provider outage)."
+    ),
+    lock_ttl_seconds: int = typer.Option(600),
+) -> None:
+    """Capture insights from every project's transcripts, ended sessions or not.
+
+    For sessions that rarely end, such as Claude inside Zed over ACP. New
+    insights reach the web feed at once and are queued for Telegram, which
+    keeps its own pace (only `flush` delivers).
+    """
+    settings = get_settings()
+    root = Path(settings.projects_path)
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if not root.exists():
+        console.print(f"{stamp} [yellow]No transcripts found[/yellow] at {root}.")
+        raise typer.Exit(1)
+    store = InsightStore(settings.db_path)
+    settle_seconds = max(0.0, settle_minutes * 60)
+
+    if dry_run:
+        pending = pending_transcripts(store, root, settle_seconds=settle_seconds)
+        ready = [item for item in pending if item.settled]
+        messages = chars = 0
+        for item in ready:
+            unread = unread_messages(store, item.path)
+            messages += len(unread)
+            chars += prompt_chars(unread)
+        console.print(
+            f"{stamp} Sweep dry run: {len(ready)} transcript(s) to read, "
+            f"{messages} message(s), about {chars // 4:,} input tokens; "
+            f"{len(pending) - len(ready)} still being written.",
+            soft_wrap=True,
+        )
+        return
+
+    lock = RunLock(
+        FlushPaths.for_db(settings.db_path).lock, ttl_seconds=lock_ttl_seconds
+    )
+    if not lock.acquire():
+        console.print(
+            f"{stamp} [yellow]A flush or sweep is already running[/yellow] — skipping."
+        )
+        return
+    try:
+        result = asyncio.run(
+            sweep_insights(
+                store,
+                root,
+                settings.insights_marker,
+                (lambda messages: extract_insights(settings.model, messages))
+                if extract
+                else None,
+                settle_seconds=settle_seconds,
+                max_consecutive_failures=max_failures,
+                on_progress=lock.refresh,
+            )
+        )
+        queued = enqueue_new_insights(store, Outbox(settings.db_path))
+    finally:
+        lock.release()
+
+    got = result.captured
+    console.print(
+        f"{stamp} Sweep read {result.read} transcript(s): captured "
+        f"[bold]{got.new}[/bold] new ({got.marked} marker, {got.extracted} "
+        f"extracted); queued {queued} for Telegram; {result.waiting} still being "
+        "written"
+        + (f"; [red]{len(result.failed)} failed[/red]" if result.failed else "")
+        + ".",
+        soft_wrap=True,
+    )
+    for path, reason in result.failed.items():
+        console.print(f"  {path}: {reason}", soft_wrap=True, markup=False)
+    if result.stopped_early:
+        console.print(
+            "[red]Stopped after repeated failures[/red]; the rest wait for the "
+            "next sweep.",
+            soft_wrap=True,
+        )
+        raise typer.Exit(1)
 
 
 @insights_app.command("titles-export")

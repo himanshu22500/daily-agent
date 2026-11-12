@@ -35,6 +35,14 @@ class CollectResult:
     marked: int
     extracted: int
 
+    def __add__(self, other: "CollectResult") -> "CollectResult":
+        return CollectResult(
+            new=self.new + other.new,
+            scanned=self.scanned + other.scanned,
+            marked=self.marked + other.marked,
+            extracted=self.extracted + other.extracted,
+        )
+
 
 def canonical_key(text: str) -> str:
     """Stable key from normalized text, so the same insight dedups exactly."""
@@ -156,27 +164,50 @@ async def collect_insights(
     Returns counts for all newly stored insights plus per-lane breakdowns. The
     cursor advances only after both lanes succeed for a transcript file.
     """
-    new = scanned = marked = extracted = 0
+    total = CollectResult(new=0, scanned=0, marked=0, extracted=0)
     for path in session_files(transcripts_dir):
-        key = str(path)
-        start = store.cursor(key)
-        lines = read_lines(path)
-        messages: list[TranscriptMessage] = []
-        for raw in lines[start:]:
-            scanned += 1
-            msg = parse_line(raw)
-            if msg is None:
-                continue
-            messages.append(msg)
-            insight = extract_marked(msg, marker)
+        total = total + await collect_file(store, path, marker, extractor)
+    return total
+
+
+def unread_lines(store: InsightStore, path: Path) -> tuple[list[str], int]:
+    """All lines of ``path`` and the index of the first one not yet read."""
+    lines = read_lines(path)
+    return lines, min(store.cursor(str(path)), len(lines))
+
+
+async def collect_file(
+    store: InsightStore,
+    path: Path,
+    marker: str,
+    extractor: InsightExtractor | None,
+) -> CollectResult:
+    """Both capture lanes over one transcript's unread lines.
+
+    The cursor advances only after both lanes succeed; if the extractor raises,
+    the exception propagates and the same lines are read again next time
+    (marker-lane insights dedup on their key).
+    """
+    read_at = datetime.now(timezone.utc)
+    lines, start = unread_lines(store, path)
+    new = marked = extracted = 0
+    messages: list[TranscriptMessage] = []
+    for raw in lines[start:]:
+        msg = parse_line(raw)
+        if msg is None:
+            continue
+        messages.append(msg)
+        insight = extract_marked(msg, marker)
+        if insight is not None and store.add(insight):
+            new += 1
+            marked += 1
+    if extractor is not None and messages:
+        for candidate in await extractor(messages):
+            insight = insight_from_candidate(candidate, messages)
             if insight is not None and store.add(insight):
                 new += 1
-                marked += 1
-        if extractor is not None and messages:
-            for candidate in await extractor(messages):
-                insight = insight_from_candidate(candidate, messages)
-                if insight is not None and store.add(insight):
-                    new += 1
-                    extracted += 1
-        store.set_cursor(key, len(lines))
-    return CollectResult(new=new, scanned=scanned, marked=marked, extracted=extracted)
+                extracted += 1
+    store.set_cursor(str(path), len(lines), read_at=read_at)
+    return CollectResult(
+        new=new, scanned=len(lines) - start, marked=marked, extracted=extracted
+    )

@@ -1,5 +1,30 @@
 # Decisions
 
+## 2026-11-12 — A timed sweep reads every project, not just sessions that end
+
+Insights were captured only when a Claude Code session ended: the `SessionEnd`
+hook flushes the ended session's folder. Most sessions run inside Zed over ACP,
+which keeps each thread's Claude process alive until Zed quits, so they rarely
+end. Over 30 days 19 of 41 Zed transcripts were never read, and folders used only
+from Zed were never read at all (issue #91).
+
+- **`insights sweep` on a 30-minute launchd timer** reads every
+  `<project>/<session>.jsonl` under `~/.claude/projects` that was written to
+  since it was last read and has been quiet for 10 minutes. A long conversation
+  is therefore read in pieces at its pauses; each piece is extracted on its own.
+- **The cursor records when reading started**, so the "written since last read"
+  check never skips lines appended mid-read, and unchanged files aren't opened.
+- **Shared with the flush:** the same per-file cursors and lock (refreshed per
+  transcript so a long sweep isn't reclaimed as stale). The hook stays as the
+  fast path for terminal sessions.
+- **Web now, Telegram unchanged.** The sweep publishes to the web feed and
+  queues for Telegram but never delivers; Telegram's pace stays tied to the
+  flush until the maintainer revisits it.
+- **Failure handling:** a transcript that fails keeps its cursor and is retried
+  next sweep; three failures in a row end the run (a provider outage). The
+  extractor now has a 120 s request timeout and 3 attempts so an unattended run
+  can't hang.
+
 ## 2026-11-12 — Gemini runs on Vertex AI, not the Gemini API key
 
 The Gemini API key's project ran out of quota (`429 ... check your plan and
