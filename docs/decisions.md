@@ -1,5 +1,23 @@
 # Decisions
 
+## 2026-11-12 — Interview prep gets its own tab, in resume-point order
+
+After the 269 flashcards were imported, they took over For you: 14 of the
+first 20 cards. The maintainer asked for a separate section (#115) and chose:
+
+- **Only in the Interview tab.** Flashcards and concept explainers stay out of
+  For you and Latest, their type chips, the unseen count and the "new stories"
+  banner. Saved, Hidden and search still include them (search now also matches
+  headlines, so a question finds its card).
+- **Resume-point order, not a shuffled deck.** Points follow the tracker (their
+  files sort that way: `01-tranzact/...` before `02-edra-labs/...`). Within a
+  point come its questions in order, then its explainers. Chips pick one point.
+- Flashcard cards have no cover or time, since the question is the card.
+  Read next under prep suggests only prep, and under anything else never prep.
+- Concept explainers aren't written automatically on the Mac for now
+  (`DAILY_AGENT_WEB_PREP_SYNC=false` in the live `.env`): the maintainer asked
+  for the flashcards only. `daily-agent prep write` writes them on demand.
+
 ## 2026-11-12 — Interview prep from the resume deep dive: flashcards + explainers
 
 The maintainer keeps interview prep for their resume in a local deep-dive

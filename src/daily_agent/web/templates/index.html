@@ -21,13 +21,14 @@
     </div>
     <form class="search" action="/" method="get" role="search">
       <input type="hidden" name="view" value="latest">
-      <input type="search" name="q" value="{{ filters.q }}" placeholder="Search insights" aria-label="Search insights">
+      <input type="search" name="q" value="{{ filters.q or '' }}" placeholder="Search insights" aria-label="Search insights">
     </form>
   </header>
   <nav class="sticky" aria-label="Feed">
     <div class="tabs">
       <a class="tab{% if filters.view == 'for-you' %} on{% endif %}" href="{{ feed_url() }}">For you</a>
       <a class="tab{% if filters.view == 'latest' %} on{% endif %}" href="{{ feed_url(view='latest') }}">Latest</a>
+      <a class="tab{% if filters.view == 'interview' %} on{% endif %}" href="{{ feed_url(view='interview') }}">Interview</a>
       <a class="tab{% if filters.view == 'saved' %} on{% endif %}" href="{{ feed_url(view='saved') }}">Saved</a>
       <a class="tab{% if filters.view == 'hidden' %} on{% endif %}" href="{{ feed_url(view='hidden') }}">Hidden</a>
     </div>
@@ -36,6 +37,13 @@
       <a class="chip{% if not filters.type %} on{% endif %}" href="{{ feed_url(view=filters.view, q=filters.q) }}">All types</a>
       {% for type, _ in types %}
       <a class="chip t-{{ type|type_class }}{% if filters.type == type %} on{% endif %}" href="{{ feed_url(view=filters.view, type=type, q=filters.q) }}">{{ type|label }}</a>
+      {% endfor %}
+    </div>
+    {% elif filters.view == "interview" and points %}
+    <div class="chips">
+      <a class="chip{% if not filters.point %} on{% endif %}" href="{{ feed_url(view='interview') }}">All points</a>
+      {% for id, name, count in points %}
+      <a class="chip chip-point{% if filters.point == id %} on{% endif %}" href="{{ feed_url(view='interview', point=id) }}" title="{{ name }} ({{ count }})">{{ name }}</a>
       {% endfor %}
     </div>
     {% endif %}

@@ -22,6 +22,7 @@ point, e.g. "T5 · MySQL 8 → PostgreSQL 18 on AWS DMS + UUIDv7".
 from __future__ import annotations
 
 import logging
+import re
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -78,6 +79,18 @@ def source_of(point_id: str) -> str:
 def level_label(tags: list[str]) -> str:
     """ "Deep dive" for a flashcard tagged ``deep-dive`` ("" if none)."""
     return next((LEVELS[t] for t in tags if t in LEVELS), "")
+
+
+_POSITION = re.compile(r"-(q|c)(\d+)$")
+
+
+def position_in_point(key: str) -> tuple[int, int]:
+    """Study order within a point: questions (``-q<n>``) in order, then
+    concept explainers (``-c<n>``)."""
+    match = _POSITION.search(key)
+    if not match:
+        return (2, 0)
+    return (0 if match.group(1) == "q" else 1, int(match.group(2)))
 
 
 def card_text(card: Flashcard) -> str:
@@ -249,6 +262,16 @@ class PrepStore(StoryQueue):
     def point(self, point_id: str) -> PrepPointRow | None:
         with session_scope(self._engine) as session:
             return session.get(PrepPointRow, point_id.lower())
+
+    def points(self) -> list[PrepPointRow]:
+        """Resume points in the tracker's order (their files sort that way:
+        ``01-tranzact/05-...`` comes before ``02-edra-labs/...``)."""
+        with session_scope(self._engine) as session:
+            return list(
+                session.exec(
+                    select(PrepPointRow).order_by(PrepPointRow.path, PrepPointRow.id)
+                ).all()
+            )
 
     def labels(self) -> dict[str, str]:
         """``{"prep:t5": "T5 · <point name>"}`` for every entry's source label."""

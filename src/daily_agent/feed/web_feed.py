@@ -47,11 +47,24 @@ from .headlines import fallback_headline, plain, split_first_sentence
 from .insights_store import InsightCursorRow, InsightRow, InsightStore
 from .instagram_posts import InstagramStore, shortcode_of
 from .projects import session_projects
-from .prep import CARD_TYPE, PrepStore, level_label
+from .prep import (
+    CARD_TYPE,
+    CONCEPT_TYPE,
+    PrepStore,
+    level_label,
+    position_in_point,
+    source_of,
+)
 from .videos import VideoStore, video_id_of
 
 FOR_YOU = "for-you"
-VIEWS = (FOR_YOU, "latest", "saved", "hidden")
+INTERVIEW = "interview"
+VIEWS = (FOR_YOU, "latest", INTERVIEW, "saved", "hidden")
+# Interview prep (#108) has its own tab (#115) and stays out of For you and
+# Latest (and their chips, unseen count and "new stories" banner). Saved,
+# Hidden and search still include it.
+PREP_TYPES = (CARD_TYPE, CONCEPT_TYPE)
+_NOT_PREP = InsightRow.type.not_in(PREP_TYPES)
 # Editions older than this are pruned; their infinite scroll asks for a refresh.
 EDITION_TTL = timedelta(days=3)
 
@@ -249,11 +262,14 @@ class WebFeed:
     def _filters(
         view: str, type: str | None, query: str | None
     ) -> list[ColumnElement[bool]]:
-        if view not in VIEWS or view == FOR_YOU:
+        if view not in VIEWS or view in (FOR_YOU, INTERVIEW):
             raise ValueError(f"not a chronological view: {view!r}")
         clauses: list[ColumnElement[bool]] = []
+        searching = bool(query and query.strip())
         if view == "latest":
             clauses.append(WebFeedStateRow.dismissed_at.is_(None))
+            if not searching:
+                clauses.append(_NOT_PREP)
         elif view == "saved":
             clauses.append(WebFeedStateRow.saved_at.is_not(None))
         else:
@@ -264,6 +280,7 @@ class WebFeed:
             q = query.strip()
             clauses.append(
                 or_(
+                    InsightRow.title.icontains(q, autoescape=True),
                     InsightRow.text.icontains(q, autoescape=True),
                     InsightRow.tags.icontains(q, autoescape=True),
                     InsightRow.git_branch.icontains(q, autoescape=True),
@@ -313,7 +330,9 @@ class WebFeed:
     ) -> str:
         """Build and store a fresh For you order; return its edition id."""
         moment = now or _now()
-        stmt = self._base().where(WebFeedStateRow.dismissed_at.is_(None))
+        stmt = (
+            self._base().where(WebFeedStateRow.dismissed_at.is_(None)).where(_NOT_PREP)
+        )
         if type:
             stmt = stmt.where(InsightRow.type == type)
         with session_scope(self._engine) as session:
@@ -371,6 +390,57 @@ class WebFeed:
             entries=entries, next_offset=position if position < len(keys) else None
         )
 
+    # --- reading: the Interview tab ----------------------------------------- #
+    def interview_page(
+        self, *, point: str | None = None, offset: int = 0, limit: int = 20
+    ) -> EditionPage:
+        """Interview prep in study order: resume points as in the tracker, and
+        within each point its questions in order, then its explainers. Hidden
+        ones are left out. ``point`` (e.g. ``"t5"``) keeps just one point."""
+        stmt = (
+            self._base()
+            .where(InsightRow.type.in_(PREP_TYPES))
+            .where(WebFeedStateRow.dismissed_at.is_(None))
+        )
+        if point:
+            stmt = stmt.where(InsightRow.source_session == source_of(point))
+        with session_scope(self._engine) as session:
+            rows = list(session.exec(stmt).all())
+        rank = {source_of(p.id): n for n, p in enumerate(self._prep.points())}
+        rows.sort(
+            key=lambda row: (
+                rank.get(row[0].source_session, len(rank)),
+                row[0].source_session,
+                *position_in_point(row[0].key),
+                row[0].key,
+            )
+        )
+        start = max(offset, 0)
+        sources = self._sources()
+        entries = [_entry(*row, sources) for row in rows[start : start + limit]]
+        end = start + limit
+        return EditionPage(
+            entries=entries, next_offset=end if end < len(rows) else None
+        )
+
+    def interview_points(self) -> list[tuple[str, str, int]]:
+        """``(point id, label, entries)`` for the Interview tab's chips, in the
+        tracker's order; points with nothing visible are left out."""
+        stmt = (
+            select(InsightRow.source_session, func.count())
+            .outerjoin(WebFeedStateRow, WebFeedStateRow.key == InsightRow.key)
+            .where(InsightRow.type.in_(PREP_TYPES))
+            .where(WebFeedStateRow.dismissed_at.is_(None))
+            .group_by(InsightRow.source_session)
+        )
+        with session_scope(self._engine) as session:
+            counts = dict(session.exec(stmt).all())
+        return [
+            (p.id, f"{p.label_id} · {p.name}", counts[source_of(p.id)])
+            for p in self._prep.points()
+            if counts.get(source_of(p.id))
+        ]
+
     def next_revisit_at(self, *, now: datetime | None = None) -> datetime | None:
         """When the next seen insight becomes due again (``None`` if none pending)."""
         stamp = _iso(now or _now())
@@ -405,11 +475,16 @@ class WebFeed:
             return []
         moment = now or _now()
         sources = self._sources()
+        # Prep suggests prep, everything else suggests everything else.
+        same_kind = (
+            InsightRow.type.in_(PREP_TYPES) if current.type in PREP_TYPES else _NOT_PREP
+        )
         with session_scope(self._engine) as session:
             rows = session.exec(
                 self._base()
                 .where(WebFeedStateRow.dismissed_at.is_(None))
                 .where(InsightRow.key != key)
+                .where(same_kind)
             ).all()
         tags = set(current.tags)
         scored = []
@@ -443,6 +518,7 @@ class WebFeed:
             select(InsightRow.type, func.count())
             .outerjoin(WebFeedStateRow, WebFeedStateRow.key == InsightRow.key)
             .where(WebFeedStateRow.dismissed_at.is_(None))
+            .where(_NOT_PREP)
             .group_by(InsightRow.type)
             .order_by(func.count().desc(), InsightRow.type)
         )
@@ -456,6 +532,7 @@ class WebFeed:
             .outerjoin(WebFeedStateRow, WebFeedStateRow.key == InsightRow.key)
             .where(WebFeedStateRow.seen_at.is_(None))
             .where(WebFeedStateRow.dismissed_at.is_(None))
+            .where(_NOT_PREP)
         )
         with session_scope(self._engine) as session:
             return session.scalar(stmt) or 0
@@ -467,6 +544,7 @@ class WebFeed:
             .select_from(InsightRow)
             .outerjoin(WebFeedStateRow, WebFeedStateRow.key == InsightRow.key)
             .where(WebFeedStateRow.dismissed_at.is_(None))
+            .where(_NOT_PREP)
             .where(_PUBLISHED > _iso(since))
         )
         with session_scope(self._engine) as session:

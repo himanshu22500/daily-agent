@@ -155,3 +155,17 @@ def test_not_a_deep_dive_folder(tmp_path):
     (tmp_path / "README.md").write_text("# Just notes\n", encoding="utf-8")
     with pytest.raises(DeepDiveError, match="tracker"):
         read_deep_dive(tmp_path)
+
+
+def test_question_emphasis_is_dropped_but_identifiers_kept(tmp_path):
+    folder = make_folder(tmp_path)
+    point = folder / "01-tranzact" / "05-mysql.md"
+    point.write_text(
+        POINT.replace(
+            "**Q1. Walk me through this migration in two minutes.**",
+            "**Q1. Why the *worst* day, `QA_*` keys and 2*n retries?**",
+        ),
+        encoding="utf-8",
+    )
+    cards = {c.number: c for c in read_deep_dive(folder).cards}
+    assert cards[1].question == "Why the worst day, QA_* keys and 2*n retries?"
