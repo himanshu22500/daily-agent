@@ -6,6 +6,8 @@ Everything here reads public YouTube pages; there is no API key:
   ``/c/…``, ``/user/…``), a playlist link (``?list=…``), or a video link (via
   its channel) -> the public RSS feed of those uploads.
 - ``YouTube.feed``: that RSS feed -> its title and latest ~15 videos.
+- ``YouTube.page_title``: a channel's or playlist's own page -> its name; this
+  checks a source exists while the RSS server is down (issue #103).
 - ``YouTube.transcript``: a video's captions, via ``youtube-transcript-api``.
 
 Only YouTube is ever fetched. Pasted links are parsed and rebuilt on
@@ -16,6 +18,7 @@ URL.
 from __future__ import annotations
 
 import asyncio
+import html
 import re
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
@@ -41,6 +44,12 @@ _CHANNEL_ID_ON_PAGE = (
     re.compile(r'<meta itemprop="identifier" content="(UC[\w-]{22})"'),
     re.compile(r'"externalId":"(UC[\w-]{22})"'),
 )  # fmt: skip
+_OG_TITLE = re.compile(r'<meta property="og:title" content="([^"]*)"')
+# A missing channel's page answers 200 with neither a title nor its id; a
+# missing playlist's page answers 200 with one of these alerts.
+_MISSING = re.compile(
+    r'"text":"(?:The playlist does not exist|This playlist is private)\.'
+)
 _NS = {
     "a": "http://www.w3.org/2005/Atom",
     "yt": "http://www.youtube.com/xml/schemas/2015",
@@ -65,6 +74,11 @@ class BadSourceLink(ValueError):
 
 class YouTubeError(RuntimeError):
     """YouTube couldn't be reached or its reply wasn't understood (may pass)."""
+
+
+class FeedUnavailable(YouTubeError):
+    """YouTube's RSS server didn't answer. It has outages that last hours, during
+    which it answers 404 even for channels that exist (issue #103)."""
 
 
 class NoCaptions(Exception):
@@ -189,6 +203,11 @@ def channel_id_from_page(html: str) -> str | None:
         if match:
             return match.group(1)
     return None
+
+
+def title_from_page(page: str) -> str:
+    match = _OG_TITLE.search(page)
+    return " ".join(html.unescape(match.group(1)).split()) if match else ""
 
 
 def _when(value: str | None) -> datetime:
@@ -374,11 +393,31 @@ class YouTube:
             raise ValueError(f"not a YouTube feed URL: {feed_url!r}")
         async with self._client() as client:
             reply = await self._get(client, feed_url)
-        if reply.status_code == 404:
-            raise BadSourceLink("YouTube has no public video feed for that link.")
         if reply.status_code != 200:
-            raise YouTubeError(f"YouTube feed answered {reply.status_code}")
+            # Not BadSourceLink even for a 404: during YouTube's feed outages
+            # every channel's feed answers 404.
+            raise FeedUnavailable(
+                f"YouTube's video feed isn't answering ({reply.status_code})"
+            )
         return parse_feed(reply.content)
+
+    async def page_title(self, ref: SourceRef) -> str:
+        """The source's name from its own page ("" if the page doesn't say).
+
+        Raises ``BadSourceLink`` when YouTube has no such public channel or
+        playlist.
+        """
+        async with self._client() as client:
+            page = await self._get(client, ref.url)
+        if page.status_code != 200 and page.status_code != 404:
+            raise YouTubeError(f"YouTube answered {page.status_code}")
+        title = title_from_page(page.text) if page.status_code == 200 else ""
+        found = title or channel_id_from_page(page.text)
+        if page.status_code == 404 or not found or _MISSING.search(page.text):
+            raise BadSourceLink(
+                "YouTube has no public channel or playlist at that link."
+            )
+        return title
 
     async def transcript(self, video_id: str) -> Transcript:
         if not VIDEO_ID.fullmatch(video_id):

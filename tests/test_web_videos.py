@@ -15,6 +15,7 @@ from daily_agent.models import Insight, VideoStory
 from daily_agent.sources.youtube import (
     BadSourceLink,
     ChannelFeed,
+    FeedUnavailable,
     Transcript,
     Video,
     YouTubeError,
@@ -30,6 +31,7 @@ VIDEO_ID = "1FurWDiK9A4"
 class FakeYouTube:
     def __init__(self):
         self.down = False
+        self.feed_down = False
 
     async def resolve(self, link):
         if "example.com" in link:
@@ -38,7 +40,12 @@ class FakeYouTube:
             raise YouTubeError("YouTube answered 503")
         return channel_ref(CHANNEL)
 
+    async def page_title(self, ref):
+        return "Fireship"
+
     async def feed(self, feed_url):
+        if self.feed_down:
+            raise FeedUnavailable("YouTube's video feed isn't answering (404)")
         return ChannelFeed(
             title="Fireship",
             videos=[
@@ -132,6 +139,24 @@ def test_bad_links_and_outages_are_explained(client, youtube):
     youtube.down = True
     down = client.post("/sources", data={"link": "@Fireship"})
     assert down.status_code == 502 and "Try again" in down.text
+
+
+def test_following_while_youtubes_feed_is_down(db, youtube):
+    """Issue #103: the follow is kept and explained, not blamed on the link."""
+    youtube.feed_down = True
+    app = create_app(db, videos=VideoSync(db, youtube, _writer), video_loop=False)
+    client = TestClient(app)
+    followed = client.post(
+        "/sources", data={"link": "youtube.com/@Fireship"}, follow_redirects=False
+    )
+    assert followed.status_code == 303
+    page = client.get("/sources").text
+    assert "Fireship" in page
+    assert "Its latest videos will appear once YouTube's feed answers" in page
+    assert (
+        "Last check failed: YouTube&#39;s video feed isn&#39;t answering (404)." in page
+    )
+    assert "no public video feed" not in page
 
 
 def test_sources_posts_must_be_same_origin(client):
