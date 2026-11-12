@@ -28,10 +28,11 @@ All model work runs through the Claude Code CLI already signed in on the Mac
 |---|---|---|
 | Insight extraction | `DAILY_AGENT_MODEL` | `claude-code:sonnet` |
 | Feed headlines | `DAILY_AGENT_HEADLINE_MODEL` | `claude-code:sonnet` |
-| Cover illustrations | `DAILY_AGENT_COVER_MODEL` | `claude-code:fable` |
+| Cover illustrations | `DAILY_AGENT_COVER_MODEL` | `claude-code:sonnet` |
 
 `claude-code:<alias>` takes any model `claude --model` accepts (`haiku`,
-`sonnet`, `opus`, `fable`, or a full model name). Every call is locked down
+`sonnet`, `opus`, or a full model name). Fable isn't used by default: it uses up the
+plan's limits fastest. Every call is locked down
 because prompts contain transcript text: no tools, no MCP servers, hooks off
 (so it can't trigger the `SessionEnd` flush again), no saved session (so the
 sweep never reads it back), Claude Code's agent prompt replaced by the task's,

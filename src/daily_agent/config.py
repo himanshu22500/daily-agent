@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     model: str = "claude-code:sonnet"
     # Feed headlines (Claude Code only) and cover illustrations.
     headline_model: str = "claude-code:sonnet"
-    cover_model: str = "claude-code:fable"
+    cover_model: str = "claude-code:sonnet"
     db_path: str = "daily_agent.db"
 
     insights_marker: str = "insight:"

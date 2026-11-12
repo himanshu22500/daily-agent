@@ -1,7 +1,7 @@
 """Run model work through the local Claude Code CLI (issue #95).
 
 ``claude-code:<model>`` model strings (e.g. ``claude-code:sonnet``,
-``claude-code:fable``) run headless ``claude -p`` with the Mac's signed-in
+``claude-code:haiku``) run headless ``claude -p`` with the Mac's signed-in
 Claude Code, instead of an API key or cloud credentials that expire.
 
 Every call is locked down, because prompts carry untrusted transcript text:
