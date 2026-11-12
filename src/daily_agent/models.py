@@ -49,3 +49,11 @@ class InsightCandidate(BaseModel):
 
 class InsightExtraction(BaseModel):
     candidates: list[InsightCandidate] = Field(default_factory=list)
+
+
+class VideoStory(BaseModel):
+    """A feed story written from one YouTube video (issue #99)."""
+
+    headline: str
+    text: str
+    tags: list[str] = Field(default_factory=list)

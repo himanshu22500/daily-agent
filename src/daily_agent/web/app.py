@@ -10,13 +10,15 @@ It only reads the insight store and writes reader state (``web_feed_state``,
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import secrets
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
-from urllib.parse import quote, urlencode
+from urllib.parse import parse_qs, quote, urlencode
 
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
@@ -34,7 +36,9 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 from ..feed.covers import CoverStore, cover_slug
+from ..feed.videos import VideoStore, VideoSync, sync_forever
 from ..feed.web_feed import FOR_YOU, VIEWS, WebFeed
+from ..sources.youtube import BadSourceLink, YouTubeError
 from .render import (
     ago,
     ago_long,
@@ -60,6 +64,7 @@ _ACTIONS = {
 _VIEW_ALIASES = {"all": "latest"}
 MAX_SEEN_BATCH = 500
 MAX_SEEN_BODY = 64 * 1024
+MAX_FORM_BODY = 8 * 1024
 
 
 def _feed_url(view: str = FOR_YOU, type: str = "", q: str = "", **extra: str) -> str:
@@ -95,11 +100,23 @@ def _asset_version() -> str:
     return digest.hexdigest()[:10]
 
 
+async def _form(request: Request) -> dict[str, str]:
+    """A small urlencoded form body (first value per field)."""
+    body = await request.body()
+    if len(body) > MAX_FORM_BODY:
+        return {}
+    fields = parse_qs(body.decode(errors="replace"), keep_blank_values=True)
+    return {name: values[0] for name, values in fields.items()}
+
+
 def create_app(
     db_path: str | Path,
     *,
     page_size: int = 20,
     allowed_hosts: Sequence[str] | None = None,
+    videos: VideoSync | None = None,
+    video_loop: bool = False,
+    video_idle_seconds: float = 600.0,
 ) -> Starlette:
     """Build the feed app.
 
@@ -107,9 +124,14 @@ def create_app(
     get a 400). The CLI always sets it: without it, a hostile website could use
     DNS rebinding to point its own name at this loopback server and read the
     feed. ``None`` disables the check (tests).
+
+    ``videos`` lets the Sources page follow YouTube channels (issue #99); with
+    ``video_loop`` the server also writes their stories in the background.
     """
     feed = WebFeed(db_path)
     covers = CoverStore(db_path)
+    video_store = videos.store if videos is not None else VideoStore(db_path)
+    wake = asyncio.Event()
 
     def cover_url(key: str) -> str:
         """URL of the insight's illustrated cover, or "" if it has none."""
@@ -352,6 +374,72 @@ def create_app(
             },
         )
 
+    def _sources_page(
+        request: Request, *, error: str = "", link: str = "", status_code: int = 200
+    ) -> Response:
+        return templates.TemplateResponse(
+            request,
+            "sources.html",
+            {
+                "sources": video_store.statuses(),
+                "error": error,
+                "link": link,
+                "can_follow": videos is not None,
+                "background": videos is not None and video_loop,
+            },
+            status_code=status_code,
+        )
+
+    async def sources(request: Request) -> Response:
+        """Followed YouTube channels; POST a link to follow one."""
+        if request.method == "GET":
+            return _sources_page(request)
+        if not _same_origin(request):
+            return PlainTextResponse("Cross-site request refused.", status_code=403)
+        link = (await _form(request)).get("link", "").strip()[:500]
+        if videos is None:
+            return _sources_page(
+                request,
+                error="Following channels isn't available on this server.",
+                link=link,
+                status_code=503,
+            )
+        try:
+            await videos.follow(link)
+        except BadSourceLink as exc:
+            return _sources_page(request, error=str(exc), link=link, status_code=400)
+        except YouTubeError as exc:
+            return _sources_page(
+                request,
+                error=f"Couldn't reach YouTube ({exc}). Try again in a minute.",
+                link=link,
+                status_code=502,
+            )
+        wake.set()
+        return RedirectResponse("/sources", status_code=303)
+
+    async def unfollow(request: Request) -> Response:
+        if not _same_origin(request):
+            return PlainTextResponse("Cross-site request refused.", status_code=403)
+        source_id = (await _form(request)).get("id", "")
+        video_store.unfollow(source_id, now=datetime.now(timezone.utc))
+        return RedirectResponse("/sources", status_code=303)
+
+    @asynccontextmanager
+    async def lifespan(_app: Starlette):
+        task = None
+        if videos is not None and video_loop:
+            task = asyncio.create_task(
+                sync_forever(videos, wake, idle=video_idle_seconds)
+            )
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+
     middleware = (
         [Middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))]
         if allowed_hosts
@@ -359,8 +447,11 @@ def create_app(
     )
     return Starlette(
         middleware=middleware,
+        lifespan=lifespan,
         routes=[
             Route("/", index),
+            Route("/sources", sources, methods=["GET", "POST"]),
+            Route("/sources/unfollow", unfollow, methods=["POST"]),
             Route("/new-count", new_count),
             Route("/seen", seen, methods=["POST"]),
             Route("/items/{key:path}/{action}", act, methods=["POST"]),

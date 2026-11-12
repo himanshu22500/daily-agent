@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css?v={{ asset_version }}">
+  <title>Sources · Insights</title>
+</head>
+<body>
+  <header class="top">
+    <div class="bar">
+      <a class="brand" href="/">Insights</a>
+      <a class="bar-link" href="/">Back to feed</a>
+    </div>
+  </header>
+  <main class="sources">
+    <h1>Sources</h1>
+    <p class="sources-intro">Follow a YouTube channel or playlist. Its latest 5 videos become stories in your feed, and so does each new upload. Claude writes each story from the video's captions.</p>
+    <form class="follow" method="post" action="/sources">
+      <input type="text" name="link" value="{{ link }}" placeholder="youtube.com/@channel" aria-label="YouTube channel or playlist link" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+      <button type="submit" class="act"{% if not can_follow %} disabled{% endif %}>Follow</button>
+    </form>
+    {% if error %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
+    {% if can_follow and not background %}<p class="sources-note">Stories are written when <code>daily-agent videos sync</code> runs.</p>{% endif %}
+    {% for source in sources %}
+    <section class="source">
+      <div class="source-head">
+        <span class="src-icon" style="--sh:{{ source_hue(source.title) }}" aria-hidden="true">{{ source.title[:1]|upper }}</span>
+        <a class="source-title" href="{{ source.url }}" target="_blank" rel="noopener noreferrer">{{ source.title }}</a>
+        <form method="post" action="/sources/unfollow">
+          <input type="hidden" name="id" value="{{ source.id }}">
+          <button type="submit" class="act">Unfollow</button>
+        </form>
+      </div>
+      <p class="source-status">
+        {%- if source.writing %}Writing a story now{% elif source.queued %}{{ source.queued }} video{{ "s" if source.queued != 1 }} queued{% elif source.stories %}Up to date{% else %}Waiting for new videos{% endif -%}
+        {%- if source.stories %} · {{ source.stories }} stor{{ "ies" if source.stories != 1 else "y" }}{% endif -%}
+        {%- if source.checked_at %} · checked {{ source.checked_at|ago_long }}{% endif -%}
+      </p>
+      {% if source.check_error %}<p class="source-problem">Last check failed: {{ source.check_error }}</p>{% endif %}
+      {% for title, problem in source.failed %}<p class="source-problem">Gave up on “{{ title }}”: {{ problem }}</p>{% endfor %}
+    </section>
+    {% else %}
+    <p class="empty">Not following anything yet.</p>
+    {% endfor %}
+  </main>
+</body>
+</html>
