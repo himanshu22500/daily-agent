@@ -40,6 +40,7 @@ record = {
     "cwd": os.getcwd(),
     "cwd_files": os.listdir(os.getcwd()),
     "env_claudecode": os.environ.get("CLAUDECODE"),
+    "env_api_keys": [os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")],
 }
 with open(os.environ["FAKE_CLAUDE_LOG"], "w") as fh:
     json.dump(record, fh)
@@ -69,6 +70,8 @@ def fake(tmp_path, monkeypatch):
     monkeypatch.setenv("DAILY_AGENT_CLAUDE_BIN", str(script))
     monkeypatch.setenv("FAKE_CLAUDE_LOG", str(log))
     monkeypatch.setenv("CLAUDECODE", "1")  # as if run from a Claude session's hook
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "stale-key-from-dotenv")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "stale-token")
     monkeypatch.chdir(tmp_path)
 
     def call() -> dict:
@@ -106,6 +109,8 @@ async def test_calls_are_locked_down_and_isolated(fake, monkeypatch):
     assert all("secret" not in arg for arg in argv)
     # Fresh top-level run, from an empty directory (no project CLAUDE.md).
     assert call["env_claudecode"] is None
+    # Claude Code's own sign-in, never an API key from .env.
+    assert call["env_api_keys"] == [None, None]
     assert call["cwd_files"] == [] and "daily-agent-claude-" in call["cwd"]
     assert not os.path.exists(call["cwd"])  # cleaned up afterwards
 
