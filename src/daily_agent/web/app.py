@@ -40,7 +40,7 @@ from ..feed.instagram_posts import InstagramStore, InstagramSync, shortcode_of
 from ..feed.prep import PrepStore, PrepSync
 from ..feed.story_queue import sync_forever
 from ..feed.videos import VideoStore, VideoSync
-from ..feed.web_feed import FOR_YOU, VIEWS, WebFeed
+from ..feed.web_feed import FOR_YOU, INTERVIEW, PREP_TYPES, VIEWS, WebFeed
 from ..sources.instagram import InstagramAuthError, InstagramError, is_instagram_link
 from ..sources.youtube import BadSourceLink, YouTubeError
 from .render import (
@@ -238,6 +238,26 @@ def create_app(
             ),
         }
 
+    def _interview(request: Request, point: str) -> Response | dict:
+        """The Interview tab (#115): prep in resume-point order, paged by offset."""
+        try:
+            offset = int(request.query_params.get("offset") or 0)
+        except ValueError:
+            return PlainTextResponse("Invalid offset.", status_code=400)
+        page = feed.interview_page(point=point or None, offset=offset, limit=page_size)
+        return {
+            "entries": page.entries,
+            # Views count once per page load, as in the chronological lists.
+            "session_id": request.query_params.get("pv")
+            or "p-" + secrets.token_urlsafe(6),
+            "first_page": offset == 0,
+            "more_url": (
+                _feed_url(view=INTERVIEW, point=point, offset=str(page.next_offset))
+                if page.next_offset is not None
+                else None
+            ),
+        }
+
     def index(request: Request) -> Response:
         params = request.query_params
         view = params.get("view") or FOR_YOU
@@ -246,16 +266,23 @@ def create_app(
             return PlainTextResponse(f"Unknown view: {view}", status_code=400)
         type_ = params.get("type") or ""
         q = params.get("q") or ""
+        point = (params.get("point") or "").strip().lower()[:20]
         partial = params.get("partial") == "1"
+        if view in (FOR_YOU, "latest") and type_ in PREP_TYPES and not partial:
+            # Old links to the Interview/Concept chips: prep has its own tab now.
+            return RedirectResponse(_feed_url(view=INTERVIEW), status_code=303)
 
-        result = (
-            _for_you(request, type_, partial)
-            if view == FOR_YOU
-            else _chronological(request, view, type_, q)
-        )
+        if view == FOR_YOU:
+            result = _for_you(request, type_, partial)
+        elif view == INTERVIEW:
+            result = _interview(request, point)
+        else:
+            result = _chronological(request, view, type_, q)
         if isinstance(result, Response):
             return result
         filters = {"view": view, "type": type_, "q": q}
+        if view == INTERVIEW:
+            filters = {"view": view, "point": point}
         context = {
             **result,
             "filters": filters,
@@ -270,6 +297,7 @@ def create_app(
         context.update(
             views=VIEWS,
             types=feed.types(),
+            points=feed.interview_points() if view == INTERVIEW else [],
             unseen=feed.unseen_count(),
             opened_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         )

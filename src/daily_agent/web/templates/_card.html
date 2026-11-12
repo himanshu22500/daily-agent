@@ -1,17 +1,19 @@
 {% from "_icons.html" import icon %}
 {% set base = "/items/" ~ quote(entry.key) %}
 {% set back = "&next=" ~ quote(next_url) ~ ("&v=for-you" if show_revisit else "") %}
-<article class="story t-{{ entry.type|type_class }}{% if entry.new %} is-new{% endif %}" data-card data-swap data-key="{{ entry.key }}">
+<article class="story t-{{ entry.type|type_class }}{% if entry.new %} is-new{% endif %}{% if entry.flashcard %} is-flashcard{% endif %}" data-card data-swap data-key="{{ entry.key }}">
   <a class="story-open" href="/i/{{ quote(entry.key) }}" data-open>
-    {% include "_cover.html" %}
+    {% if not entry.flashcard %}{% include "_cover.html" %}{% endif %}
     <h2 class="headline">{{ entry.headline }}</h2>
     {% if entry.snippet %}<p class="snippet">{{ entry.snippet }}</p>{% endif %}
   </a>
   <div class="story-meta">
     <span class="src-icon" style="--sh:{{ source_hue(entry.source) }}" aria-hidden="true">{{ (entry.source or entry.type)[:1]|upper }}</span>
     <span class="src">{{ entry.source or entry.type|label }}</span>
+    {% if not entry.flashcard %}{# when a question was imported means nothing #}
     <span class="sep">·</span>
     <time datetime="{{ entry.published_at.isoformat() }}">{{ entry.published_at|ago }}</time>
+    {% endif %}
     {% if show_revisit and entry.revisit %}<span class="revisit" title="Seen {{ entry.view_count }}×">↻ Revisit</span>{% endif %}
     {% if entry.new %}<span class="dot" role="img" aria-label="Unseen"></span>{% endif %}
     <span class="grow"></span>

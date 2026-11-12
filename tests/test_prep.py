@@ -67,7 +67,11 @@ def test_import_adds_web_only_flashcards_labelled_by_point(setup):
     assert entry.flashcard and entry.prep_level == "Deep dive"
     assert entry.snippet == "Deep dive question · tap to answer"
     assert "checker" not in entry.snippet
-    assert ("interview", 4) in WebFeed(db).types()
+    # Not a type chip in the main feed: prep has its own Interview tab (#115).
+    assert WebFeed(db).types() == []
+    assert WebFeed(db).interview_points() == [
+        ("t5", "T5 · MySQL 8 → PostgreSQL 18 on AWS DMS + UUIDv7", 4)
+    ]
 
 
 def test_reimport_updates_answers_and_drops_removed_questions(setup):

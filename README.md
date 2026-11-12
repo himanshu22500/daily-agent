@@ -227,16 +227,20 @@ uv run daily-agent prep write                         # write queued explainers 
 
 - **Which points:** only points under a job in the tracker are imported. Add
   `--all` to include skills and general points.
-- **Flashcards:** each answered question becomes a card under an **Interview**
-  type chip. The question is the headline, and the card shows only its level
-  ("Deep dive question · tap to answer"). The reader keeps the answer behind
-  **Show answer**.
+- **The Interview tab:** all of it lives in its own tab, next to For you and
+  Latest, and never mixes into those two (Saved, Hidden and search still
+  include it). It runs in study order: resume points as in the tracker, and
+  within each point its questions in order, then its explainers. Chips at the
+  top pick one point.
+- **Flashcards:** each answered question becomes a card. The question is the
+  headline, and the card shows only its level ("Deep dive question · tap to
+  answer"), with no cover. The reader keeps the answer behind **Show answer**.
   - Answers still marked `⬜ OPEN` with nothing written are skipped. Partial
     ones show what's written plus a **Still open** note. "Reference design —
     confirm" drafts are left out.
 - **Explainers:** each concept is queued. While `daily-agent web` runs, it has
-  Claude Code (`DAILY_AGENT_PREP_MODEL`) write an explainer for it, under a
-  **Concept** chip. An explainer teaches the concept and ties it to your own
+  Claude Code (`DAILY_AGENT_PREP_MODEL`) write an explainer for it, after
+  that point's questions. An explainer teaches the concept and ties it to your own
   work using only facts from that point's notes. That costs about $0.05 each,
   since the whole point file goes along. Set
   `DAILY_AGENT_WEB_PREP_SYNC=false` to write them only with `prep write`.

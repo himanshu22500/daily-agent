@@ -95,9 +95,13 @@ code {
   border-bottom: 1px solid var(--line);
 }
 
-.tabs { display: flex; gap: 20px; margin-bottom: 8px; }
+.tabs { display: flex; gap: 20px; margin-bottom: 8px; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+/* Five tabs fit a 360px phone too. */
+@media (max-width: 380px) { .tabs { gap: 15px; } }
 
 .tab {
+  flex: none;
   padding: 6px 0;
   border-bottom: 3px solid transparent;
   color: var(--muted);
@@ -129,6 +133,8 @@ code {
 }
 
 .chip.on { background: var(--chip-on); color: var(--chip-on-text); }
+/* Interview tab: resume points ("T5 · MySQL 8 → PostgreSQL 18 ..."). */
+.chip-point { max-width: 15em; overflow: hidden; text-overflow: ellipsis; }
 
 /* --- Feed stories (Discover-style cards) ------------------------------------- */
 
@@ -146,6 +152,9 @@ code {
 }
 
 .story-open { display: block; color: inherit; text-decoration: none; }
+
+/* Flashcards have no cover: the question is the card. */
+.story.is-flashcard .headline { margin-top: 18px; -webkit-line-clamp: 6; }
 
 .headline {
   display: -webkit-box;
@@ -194,6 +203,7 @@ code {
 }
 
 .src { overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.story-meta time { flex: none; white-space: nowrap; }
 .grow { flex: 1; }
 .revisit { color: var(--new); font-weight: 600; white-space: nowrap; }
 

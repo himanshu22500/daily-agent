@@ -3,6 +3,13 @@
 // link. JS adds the reader overlay, in-place actions, sharing, view tracking.
 (() => {
   const feed = document.getElementById("feed");
+
+  // A selected chip far along the row (a resume point in the Interview tab)
+  // starts out of view; bring it in without moving the page.
+  const activeChip = document.querySelector(".chips .chip.on");
+  if (activeChip && activeChip !== activeChip.parentElement.firstElementChild) {
+    activeChip.scrollIntoView({ block: "nearest", inline: "center" });
+  }
   const sessionId = feed && feed.dataset.session;
   const overlay = document.getElementById("reader-overlay");
   const toastEl = document.getElementById("toast");

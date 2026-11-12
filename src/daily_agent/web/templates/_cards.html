@@ -12,6 +12,7 @@
 <p class="empty">
   {%- if filters.view == "saved" %}Nothing saved yet.
   {%- elif filters.view == "hidden" %}Nothing hidden.
+  {%- elif filters.view == "interview" %}No interview prep yet. On the Mac, run <code>daily-agent prep import &lt;deep-dive folder&gt;</code>.
   {%- elif filters.q %}No insights match “{{ filters.q }}”.
   {%- else %}No insights yet. They appear here as soon as a session is flushed.
   {%- endif %}</p>

@@ -37,6 +37,9 @@ _RESUME_LINE = re.compile(r"^>\s*\*\*Resume line[^*]*:\*\*\s*(.+)$", re.MULTILIN
 _SECTION = re.compile(r"^##\s+(\d+)\.\s*(.*)$")
 # A trailing note may follow the question: ``**Q12. ...** _(adjacent fundamentals)_``.
 _QUESTION = re.compile(r"^\*\*Q(\d+)\.\s+(.+?)\*\*(?:\s+_\([^)]*\)_)?\s*$")
+# ``*worst*``-style emphasis inside a question (a card headline is plain text).
+# A ``*`` touching a word character (``QA_*``, ``2*n``) is left alone.
+_EMPHASIS = re.compile(r"(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])")
 _ANSWER = re.compile(r"^-\s+\*\*Answer:\*\*\s*(.*)$")
 _OPEN = re.compile(r"⬜\s*OPEN(?:\s*\(partial\))?\.?\s*[—–-]?\s*")
 _DISCUSS = re.compile(r"_Discuss:\s*(.+?)_(?=\s|$)")
@@ -213,7 +216,7 @@ def parse_point(text: str, point_id: str) -> tuple[list[Flashcard], list[Concept
                 point_id=point_id,
                 number=question[0],
                 level=level,
-                question=plain(question[1]),
+                question=plain(_EMPHASIS.sub(r"\1", question[1])),
                 answer=answer,
                 still_open=still_open,
             )
