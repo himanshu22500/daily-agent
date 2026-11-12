@@ -35,11 +35,13 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Field, SQLModel, func, select
 
 from ..db import create_tables, make_engine, session_scope
+from ..sources import instagram
 from ..sources.youtube import embed_url, thumbnail_url, watch_url
 from .for_you import Candidate, build_edition, revisit_interval
 from .headlines import fallback_headline, plain, split_first_sentence
 from .insights_store import InsightCursorRow, InsightRow, InsightStore
 from .projects import session_projects
+from .instagram_posts import InstagramStore, code_of
 from .videos import VideoStore, video_id_of
 
 FOR_YOU = "for-you"
@@ -106,16 +108,35 @@ class FeedEntry:
         return video_id_of(self.key)
 
     @property
+    def instagram_code(self) -> str:
+        """Shortcode for an Instagram story ("" otherwise)."""
+        return code_of(self.key)
+
+    @property
     def thumbnail(self) -> str:
-        return thumbnail_url(self.video_id) if self.video_id else ""
+        """The card image of a video or Instagram story ("" otherwise)."""
+        if self.video_id:
+            return thumbnail_url(self.video_id)
+        if self.instagram_code:
+            return f"/media/instagram/{self.instagram_code}"
+        return ""
 
     @property
     def video_url(self) -> str:
         return watch_url(self.video_id) if self.video_id else ""
 
     @property
+    def instagram_url(self) -> str:
+        code = self.instagram_code
+        return instagram.post_url(code) if code else ""
+
+    @property
     def embed_url(self) -> str:
-        return embed_url(self.video_id) if self.video_id else ""
+        if self.video_id:
+            return embed_url(self.video_id)
+        if self.instagram_code:
+            return instagram.embed_url(self.instagram_code)
+        return ""
 
     @property
     def snippet(self) -> str:
@@ -170,6 +191,7 @@ class WebFeed:
         self._engine = make_engine(self.db_path)
         create_tables(self._engine, WebFeedStateRow, WebFeedSessionRow)
         self._videos = VideoStore(self.db_path)
+        self._instagram = InstagramStore(self.db_path)
         self._migrate()
 
     def _migrate(self) -> None:
@@ -201,10 +223,15 @@ class WebFeed:
             session.execute(text("UPDATE web_feed_state SET seen_at = NULL"))
 
     def _sources(self) -> dict[str, str]:
-        """``{source_session: label}``: projects for insights, channels for videos."""
+        """``{source_session: label}``: projects for insights, channels for
+        videos, creators for Instagram posts."""
         with session_scope(self._engine) as session:
             paths = session.exec(select(InsightCursorRow.file_path)).all()
-        return {**session_projects(paths), **self._videos.channel_names()}
+        return {
+            **session_projects(paths),
+            **self._videos.channel_names(),
+            **self._instagram.author_names(),
+        }
 
     # --- reading: chronological views -------------------------------------- #
     def _base(self):

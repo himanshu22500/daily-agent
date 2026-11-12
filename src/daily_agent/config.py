@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     # each followed channel is checked for new uploads.
     video_model: str = "claude-code:sonnet"
     video_check_hours: float = 3.0
+    # Stories from followed Instagram creators (Claude Code only), and how often
+    # each creator is checked for new posts (logged-out headless Chrome).
+    instagram_model: str = "claude-code:sonnet"
+    instagram_check_hours: float = 6.0
     db_path: str = "daily_agent.db"
 
     insights_marker: str = "insight:"
@@ -55,6 +59,8 @@ class Settings(BaseSettings):
     # Write stories for followed YouTube channels in the background while the
     # feed server runs. Off: run `daily-agent videos sync` instead.
     web_video_sync: bool = True
+    # The same for followed Instagram creators (`daily-agent instagram sync`).
+    web_instagram_sync: bool = True
 
     @property
     def telegram_enabled(self) -> bool:

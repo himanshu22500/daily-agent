@@ -37,9 +37,24 @@ def _clip(text: str, limit: int) -> str:
     return cut + "…"
 
 
+_QUOTES = "\"'“”‘’"
+
+
 def clean_headline(raw: str) -> str:
-    """Normalize a written headline (quotes, markup, trailing period, length)."""
-    title = plain(raw).strip().strip("\"'“”‘’").strip()
+    """Normalize a written headline (quotes, markup, trailing period, length).
+
+    Quotes are removed only when they wrap the whole headline, so one that
+    ends with a quoted phrase (``posts a "Power user PSA"``) keeps it.
+    """
+    title = plain(raw).strip()
+    inner = title[1:-1]
+    if (
+        len(title) > 2
+        and title[0] in _QUOTES
+        and title[-1] in _QUOTES
+        and not any(q in inner for q in _QUOTES if q != "'")
+    ):
+        title = inner.strip()
     title = title.rstrip(".:;").strip()
     return _clip(title, MAX_HEADLINE)
 

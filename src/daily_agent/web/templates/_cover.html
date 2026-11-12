@@ -1,12 +1,18 @@
 {# The "photo" slot of a Discover card. Expects `entry`. A video story shows
-   its YouTube thumbnail; an insight its illustrated cover when one exists,
-   otherwise a generated gradient with the topic. #}
+   its YouTube thumbnail and an Instagram story its post's stored image; an
+   insight its illustrated cover when one exists, otherwise a generated
+   gradient with the topic. #}
 {% set art = cover_url(entry.key) %}
 {% if entry.video_id %}
 <div class="cover has-art is-video" aria-hidden="true">
   <img src="{{ entry.thumbnail }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
   <span class="play"></span>
   {% if entry.source %}<span class="cover-badge">▶ {{ entry.source }}</span>{% endif %}
+</div>
+{% elif entry.instagram_code %}
+<div class="cover has-art is-instagram" aria-hidden="true">
+  <img src="{{ entry.thumbnail }}" alt="" loading="lazy" decoding="async">
+  {% if entry.source %}<span class="cover-badge">◎ {{ entry.source }}</span>{% endif %}
 </div>
 {% elif art %}
 <div class="cover has-art" aria-hidden="true">

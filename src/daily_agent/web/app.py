@@ -36,8 +36,11 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 from ..feed.covers import CoverStore, cover_slug
-from ..feed.videos import VideoStore, VideoSync, sync_forever
+from ..feed.instagram_posts import InstagramStore, InstagramSync
+from ..feed.story_queue import sync_forever
+from ..feed.videos import VideoStore, VideoSync
 from ..feed.web_feed import FOR_YOU, VIEWS, WebFeed
+from ..sources.instagram import SHORTCODE, BadInstagramLink, is_instagram_link
 from ..sources.youtube import BadSourceLink, YouTubeError
 from .render import (
     ago,
@@ -52,6 +55,19 @@ from .render import (
 )
 
 HERE = Path(__file__).parent
+
+# Shown for an Instagram story whose image couldn't be stored.
+_IMAGE_PLACEHOLDER = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300">'
+    '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+    '<stop offset="0" stop-color="#f58529"/><stop offset=".5" stop-color="#dd2a7b"/>'
+    '<stop offset="1" stop-color="#515bd4"/></linearGradient></defs>'
+    '<rect width="400" height="300" fill="url(#g)"/>'
+    '<rect x="165" y="115" width="70" height="70" rx="20" fill="none" '
+    'stroke="#fff" stroke-width="7"/><circle cx="200" cy="150" r="16" fill="none" '
+    'stroke="#fff" stroke-width="7"/><circle cx="220" cy="130" r="4" fill="#fff"/>'
+    "</svg>"
+)
 
 # action -> (WebFeed method name, value)
 _ACTIONS = {
@@ -117,6 +133,8 @@ def create_app(
     videos: VideoSync | None = None,
     video_loop: bool = False,
     video_idle_seconds: float = 600.0,
+    instagram: InstagramSync | None = None,
+    instagram_loop: bool = False,
 ) -> Starlette:
     """Build the feed app.
 
@@ -125,13 +143,16 @@ def create_app(
     DNS rebinding to point its own name at this loopback server and read the
     feed. ``None`` disables the check (tests).
 
-    ``videos`` lets the Sources page follow YouTube channels (issue #99); with
-    ``video_loop`` the server also writes their stories in the background.
+    ``videos`` lets the Sources page follow YouTube channels (issue #99), and
+    ``instagram`` Instagram creators (issue #105); with ``video_loop`` and
+    ``instagram_loop`` the server also writes their stories in the background.
     """
     feed = WebFeed(db_path)
     covers = CoverStore(db_path)
     video_store = videos.store if videos is not None else VideoStore(db_path)
+    ig_store = instagram.store if instagram is not None else InstagramStore(db_path)
     wake = asyncio.Event()
+    ig_wake = asyncio.Event()
 
     def cover_url(key: str) -> str:
         """URL of the insight's illustrated cover, or "" if it has none."""
@@ -374,29 +395,71 @@ def create_app(
             },
         )
 
+    def instagram_image(request: Request) -> Response:
+        """A followed Instagram post's stored image (or a plain placeholder)."""
+        code = request.path_params["code"]
+        found = ig_store.image(code) if SHORTCODE.fullmatch(code) else None
+        locked = {
+            "Content-Security-Policy": "default-src 'none'",
+            "X-Content-Type-Options": "nosniff",
+        }
+        if found is None:
+            return Response(
+                _IMAGE_PLACEHOLDER,
+                media_type="image/svg+xml",
+                headers={**locked, "Cache-Control": "private, max-age=300"},
+            )
+        data, content_type = found
+        return Response(
+            data,
+            media_type=content_type,
+            headers={**locked, "Cache-Control": "private, max-age=86400"},
+        )
+
     def _sources_page(
         request: Request, *, error: str = "", link: str = "", status_code: int = 200
     ) -> Response:
+        followed = sorted(
+            video_store.statuses() + ig_store.statuses(), key=lambda s: s.added_at
+        )
         return templates.TemplateResponse(
             request,
             "sources.html",
             {
-                "sources": video_store.statuses(),
+                "sources": followed,
                 "error": error,
                 "link": link,
-                "can_follow": videos is not None,
-                "background": videos is not None and video_loop,
+                "can_follow": videos is not None or instagram is not None,
+                "background": (videos is not None and video_loop)
+                or (instagram is not None and instagram_loop),
             },
             status_code=status_code,
         )
 
     async def sources(request: Request) -> Response:
-        """Followed YouTube channels; POST a link to follow one."""
+        """Followed sources; POST a link to follow one."""
         if request.method == "GET":
             return _sources_page(request)
         if not _same_origin(request):
             return PlainTextResponse("Cross-site request refused.", status_code=403)
         link = (await _form(request)).get("link", "").strip()[:500]
+        if is_instagram_link(link):
+            if instagram is None:
+                return _sources_page(
+                    request,
+                    error="Following Instagram creators isn't available on this "
+                    "server.",
+                    link=link,
+                    status_code=503,
+                )
+            try:
+                instagram.follow(link)
+            except BadInstagramLink as exc:
+                return _sources_page(
+                    request, error=str(exc), link=link, status_code=400
+                )
+            ig_wake.set()
+            return RedirectResponse("/sources", status_code=303)
         if videos is None:
             return _sources_page(
                 request,
@@ -422,20 +485,27 @@ def create_app(
         if not _same_origin(request):
             return PlainTextResponse("Cross-site request refused.", status_code=403)
         source_id = (await _form(request)).get("id", "")
-        video_store.unfollow(source_id, now=datetime.now(timezone.utc))
+        store = ig_store if source_id.startswith("instagram:") else video_store
+        store.unfollow(source_id, now=datetime.now(timezone.utc))
         return RedirectResponse("/sources", status_code=303)
 
     @asynccontextmanager
     async def lifespan(_app: Starlette):
-        task = None
+        tasks = []
         if videos is not None and video_loop:
-            task = asyncio.create_task(
-                sync_forever(videos, wake, idle=video_idle_seconds)
+            tasks.append(
+                asyncio.create_task(sync_forever(videos, wake, idle=video_idle_seconds))
+            )
+        if instagram is not None and instagram_loop:
+            tasks.append(
+                asyncio.create_task(
+                    sync_forever(instagram, ig_wake, idle=video_idle_seconds)
+                )
             )
         try:
             yield
         finally:
-            if task is not None:
+            for task in tasks:
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
@@ -457,6 +527,7 @@ def create_app(
             Route("/items/{key:path}/{action}", act, methods=["POST"]),
             Route("/card/{key:path}", card),
             Route("/covers/{name}.svg", cover),
+            Route("/media/instagram/{code}", instagram_image),
             Route("/i/{key:path}", reader),
             Mount(
                 "/static", StaticFiles(directory=str(HERE / "static")), name="static"

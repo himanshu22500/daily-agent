@@ -19,13 +19,13 @@
   </header>
   <main class="sources">
     <h1>Sources</h1>
-    <p class="sources-intro">Follow a YouTube channel or playlist. Its latest 5 videos become stories in your feed, and so does each new upload. Claude writes each story from the video's captions.</p>
+    <p class="sources-intro">Follow a YouTube channel or playlist, or an Instagram creator. Their latest 5 videos or posts become stories in your feed, and so does each new one. Claude writes each story from the video's captions or the post's caption.</p>
     <form class="follow" method="post" action="/sources">
-      <input type="text" name="link" value="{{ link }}" placeholder="youtube.com/@channel" aria-label="YouTube channel or playlist link" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+      <input type="text" name="link" value="{{ link }}" placeholder="youtube.com/@channel or instagram.com/name" aria-label="YouTube channel or Instagram profile link" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" required>
       <button type="submit" class="act"{% if not can_follow %} disabled{% endif %}>Follow</button>
     </form>
     {% if error %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
-    {% if can_follow and not background %}<p class="sources-note">Stories are written when <code>daily-agent videos sync</code> runs.</p>{% endif %}
+    {% if can_follow and not background %}<p class="sources-note">Stories are written when <code>daily-agent videos sync</code> and <code>daily-agent instagram sync</code> run.</p>{% endif %}
     {% for source in sources %}
     <section class="source">
       <div class="source-head">
@@ -36,8 +36,10 @@
           <button type="submit" class="act">Unfollow</button>
         </form>
       </div>
+      {% set instagram = source.platform == "instagram" %}
+      {% set noun = "post" if instagram else "video" %}
       <p class="source-status">
-        {%- if source.writing %}Writing a story now{% elif source.queued %}{{ source.queued }} video{{ "s" if source.queued != 1 }} queued{% elif not source.checked_at %}Its latest videos will appear once YouTube's feed answers{% elif source.stories %}Up to date{% else %}Waiting for new videos{% endif -%}
+        {{- "Instagram" if instagram else "YouTube" }} · {% if source.writing %}Writing a story now{% elif source.queued %}{{ source.queued }} {{ noun }}{{ "s" if source.queued != 1 }} queued{% elif not source.checked_at %}{% if instagram %}Its latest posts will appear after the first check{% else %}Its latest videos will appear once YouTube's feed answers{% endif %}{% elif source.stories %}Up to date{% else %}Waiting for new {{ noun }}s{% endif -%}
         {%- if source.stories %} · {{ source.stories }} stor{{ "ies" if source.stories != 1 else "y" }}{% endif -%}
         {%- if source.checked_at %} · checked {{ source.checked_at|ago_long }}{% endif -%}
       </p>

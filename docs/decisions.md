@@ -1,5 +1,39 @@
 # Decisions
 
+## 2026-11-12 — Follow Instagram creators with logged-out headless Chrome
+
+The maintainer wanted posts from Instagram creators they follow in the feed,
+like YouTube channels (#105). Their constraints were that their own Instagram
+account is private and stays private, and that they won't maintain a second
+account.
+
+- **Rejected: Meta's official API.** Business Discovery needs a public
+  Creator account linked to a Facebook Page.
+- **Rejected: logging in as the maintainer with Instaloader.** That breaks
+  Instagram's terms and risks the account. As of 2026-11-12, Instaloader's
+  login had also been broken since 2026-10-30.
+- **Chosen: logged-out headless Chrome via Playwright.** It uses the installed
+  Google Chrome. A profile page lists the latest ~12 posts behind a sign-up
+  popup. A post's page, when a browser navigates to it, carries the post as
+  JSON: caption, timestamp, type, creator, Instagram's image description and
+  image links. Plain HTTP gets a stripped page, which is why a browser is
+  needed. No account is involved, so the worst case is a login wall. That
+  pauses all Instagram checks for 3 hours instead of retrying every pass.
+  Pages load one at a time with 2–4.5 s pauses. A creator is checked every
+  6 hours, and only posts not seen before are opened.
+- **Following is instant.** Chrome runs only in the background loop, never in
+  a web request. That's why the Sources page can't tell right away that an
+  account doesn't exist.
+- **Story source.** Claude writes from the caption and image description. It
+  can't see the image or the video, so the prompt keeps short captions to one
+  sentence and bans remarks about the caption. Reels' spoken content would
+  need speech-to-text on the Mac; that's left for later.
+- **Images are stored locally** (`instagram_images`), because Instagram's
+  image links expire. The reader embeds the post from instagram.com, like the
+  YouTube embed.
+- **Shared queue.** The claim, retry and backoff logic from #99 moved to
+  `feed/story_queue.py`, so both sources share it.
+
 ## 2026-11-12 — Follow a YouTube channel even while YouTube's RSS server is down
 
 Following `@anthonywritescode` failed with "no public video feed". The link

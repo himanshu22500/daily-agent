@@ -21,17 +21,15 @@ by a crashed runner expires.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections import Counter
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import and_, or_, update
+from sqlalchemy import update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from sqlmodel import Field, SQLModel, func, select
+from sqlmodel import Field, SQLModel, select
 
 from ..db import create_tables, make_engine, session_scope
 from ..models import Insight, VideoStory
@@ -46,6 +44,20 @@ from ..sources.youtube import (
     YouTubeError,
 )
 from .insights_store import InsightStore
+from .story_queue import (
+    DONE,
+    FAILED,
+    PENDING,
+    SKIPPED,
+    WRITING,
+    SourceStatus,
+    StoryQueue,
+    SyncReport,
+    first_line,
+    now_utc,
+)
+from .story_queue import aware as _aware
+from .story_queue import iso as _iso
 
 _LOG = logging.getLogger(__name__)
 
@@ -63,18 +75,6 @@ PER_RUN = 5
 # video without captions waits instead of being written from its description.
 CAPTION_WAIT = timedelta(hours=6)
 CAPTION_RETRY = timedelta(hours=1)
-# Retries wait 1h, 2h, then 4h: long enough to outlast a Claude usage limit.
-MAX_ATTEMPTS = 4
-RETRY_BASE = timedelta(hours=1)
-CLAIM_TTL = timedelta(minutes=15)
-
-PENDING, WRITING, DONE, SKIPPED, FAILED = (
-    "pending",
-    "writing",
-    "done",
-    "skipped",
-    "failed",
-)
 
 
 def video_key(video_id: str) -> str:
@@ -87,19 +87,6 @@ def video_id_of(key: str) -> str:
         return ""
     candidate = key[len(KEY_PREFIX) :]
     return candidate if VIDEO_ID.fullmatch(candidate) else ""
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _iso(moment: datetime) -> str:
-    return moment.astimezone(timezone.utc).isoformat(timespec="microseconds")
-
-
-def _aware(value: str) -> datetime:
-    moment = datetime.fromisoformat(value)
-    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
 class VideoSourceRow(SQLModel, table=True):
@@ -133,28 +120,13 @@ class VideoRow(SQLModel, table=True):
     error: str = ""
 
 
-@dataclass(frozen=True)
-class SourceStatus:
-    """One followed source, as the Sources page and ``videos list`` show it."""
-
-    id: str
-    title: str
-    url: str
-    added_at: datetime
-    checked_at: datetime | None
-    check_error: str
-    stories: int
-    queued: int
-    writing: int
-    failed: list[tuple[str, str]]  # (video title, error)
-
-
 class VideoStore:
     """The ``video_sources`` and ``videos`` tables."""
 
     def __init__(self, db_path: str | Path) -> None:
         self._engine = make_engine(str(db_path))
         create_tables(self._engine, VideoSourceRow, VideoRow)
+        self._queue = StoryQueue(self._engine, VideoRow, "video_id")
 
     # --- sources ---------------------------------------------------------- #
     def follow(self, ref: SourceRef, title: str, *, now: datetime) -> None:
@@ -309,83 +281,25 @@ class VideoStore:
 
     def ready(self, *, now: datetime, limit: int) -> list[VideoRow]:
         """Queued videos that may be worked on now, newest upload first."""
-        stamp = _iso(now)
-        stmt = (
-            select(VideoRow)
-            .where(self._claimable(stamp, _iso(now - CLAIM_TTL)))
-            .order_by(VideoRow.published_at.desc())
-            .limit(limit)
-        )
-        with session_scope(self._engine) as session:
-            return list(session.exec(stmt).all())
+        return self._queue.ready(now=now, limit=limit)
 
     def ready_count(self, *, now: datetime) -> int:
-        stmt = (
-            select(func.count())
-            .select_from(VideoRow)
-            .where(self._claimable(_iso(now), _iso(now - CLAIM_TTL)))
-        )
-        with session_scope(self._engine) as session:
-            return session.scalar(stmt) or 0
-
-    @staticmethod
-    def _claimable(stamp: str, stale: str):
-        return or_(
-            and_(
-                VideoRow.state == PENDING,
-                or_(VideoRow.not_before.is_(None), VideoRow.not_before <= stamp),
-            ),
-            and_(VideoRow.state == WRITING, VideoRow.claimed_at < stale),
-        )
+        return self._queue.ready_count(now=now)
 
     def claim(self, video_id: str, *, now: datetime) -> bool:
         """Take a video to work on; False if another runner has it (or it's done)."""
-        stamp = _iso(now)
-        with session_scope(self._engine) as session:
-            result = session.execute(
-                update(VideoRow)
-                .where(VideoRow.video_id == video_id)
-                .where(self._claimable(stamp, _iso(now - CLAIM_TTL)))
-                .values(state=WRITING, claimed_at=stamp)
-            )
-            return result.rowcount == 1
+        return self._queue.claim(video_id, now=now)
 
     def finish(self, video_id: str) -> None:
-        self._set(video_id, state=DONE, error="", not_before=None, claimed_at=None)
+        self._queue.finish(video_id)
 
     def defer(self, video_id: str, until: datetime, *, error: str = "") -> None:
         """Back to the queue, not before ``until`` (no attempt counted)."""
-        self._set(
-            video_id,
-            state=PENDING,
-            not_before=_iso(until),
-            claimed_at=None,
-            error=error[:300],
-        )
+        self._queue.defer(video_id, until, error=error)
 
     def fail_attempt(self, video_id: str, error: str, *, now: datetime) -> bool:
         """Count a failed attempt; retry later or give up. True if given up."""
-        with session_scope(self._engine) as session:
-            row = session.get(VideoRow, video_id)
-            if row is None:
-                return True
-            row.attempts += 1
-            row.error = error[:300]
-            row.claimed_at = None
-            if row.attempts >= MAX_ATTEMPTS:
-                row.state = FAILED
-                row.not_before = None
-            else:
-                row.state = PENDING
-                row.not_before = _iso(now + RETRY_BASE * 2 ** (row.attempts - 1))
-            session.add(row)
-            return row.state == FAILED
-
-    def _set(self, video_id: str, **values) -> None:
-        with session_scope(self._engine) as session:
-            session.execute(
-                update(VideoRow).where(VideoRow.video_id == video_id).values(**values)
-            )
+        return self._queue.fail_attempt(video_id, error, now=now)
 
     def channel_names(self) -> dict[str, str]:
         """``{"yt:<channel id>": channel name}`` for every story's source label."""
@@ -402,18 +316,6 @@ class VideoStore:
 StoryWriter = Callable[[Video, "Transcript | None"], Awaitable[VideoStory]]
 
 
-@dataclass
-class SyncReport:
-    checked: int = 0
-    queued: int = 0
-    written: int = 0
-    waiting: int = 0  # no captions yet; retried later
-    failed: int = 0
-    # Videos ready to write that this pass left for the next one.
-    remaining: int = 0
-    errors: list[str] = field(default_factory=list)
-
-
 class VideoSync:
     """Follow sources and turn their new videos into feed stories."""
 
@@ -425,7 +327,7 @@ class VideoSync:
         *,
         check_every: timedelta = CHECK_EVERY,
         per_run: int = PER_RUN,
-        clock: Callable[[], datetime] = _now,
+        clock: Callable[[], datetime] = now_utc,
     ) -> None:
         self.store = VideoStore(db_path)
         self.insights = InsightStore(db_path)
@@ -523,7 +425,7 @@ class VideoSync:
         try:
             story = await self.write_story(video, transcript)
         except Exception as exc:  # noqa: BLE001 - one video never stops the rest
-            self._failed(row, f"writing: {_first_line(exc)}", report)
+            self._failed(row, f"writing: {first_line(exc)}", report)
             return
         self.insights.add(
             Insight(
@@ -547,32 +449,3 @@ class VideoSync:
         if gave_up:
             report.failed += 1
         _LOG.warning("Video %s: %s", row.video_id, error)
-
-
-async def sync_forever(
-    sync: VideoSync, wake: asyncio.Event, *, idle: float = 600.0
-) -> None:
-    """Run sync passes until cancelled (the web server's background loop).
-
-    After a pass that wrote something, the next starts right away while more
-    videos are ready; otherwise it waits ``idle`` seconds, or until ``wake`` is
-    set (a source was just followed).
-    """
-    while True:
-        wake.clear()
-        try:
-            report = await sync.run_once()
-        except Exception:  # noqa: BLE001 - the loop must outlive one bad pass
-            _LOG.exception("Video sync pass failed")
-            report = None
-        if report is not None and report.written and report.remaining:
-            continue
-        try:
-            await asyncio.wait_for(wake.wait(), idle)
-        except asyncio.TimeoutError:
-            pass
-
-
-def _first_line(exc: BaseException) -> str:
-    lines = [line.strip() for line in str(exc).splitlines() if line.strip()]
-    return (lines[0] if lines else type(exc).__name__)[:200]

@@ -29,6 +29,9 @@
     {% if entry.video_id %}
     <p class="byline">From <strong>{{ entry.source or "YouTube" }}</strong> on YouTube</p>
     <p class="dateline">Uploaded {{ entry.captured_at|longdate }} · Added {{ entry.published_at|ago }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
+    {% elif entry.instagram_code %}
+    <p class="byline">From <strong>{{ entry.source or "Instagram" }}</strong> on Instagram</p>
+    <p class="dateline">Posted {{ entry.captured_at|longdate }} · Added {{ entry.published_at|ago }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
     {% else %}
     <p class="byline">Learned in <strong>{{ entry.source or "a coding session" }}</strong>{% if branch %} on <code>{{ branch }}</code>{% endif %}</p>
     <p class="dateline">{{ entry.captured_at|longdate }} · Published {{ entry.published_at|ago }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
@@ -46,6 +49,11 @@
         <iframe src="{{ entry.embed_url }}" title="{{ entry.headline }}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
       </div>
       <figcaption><a href="{{ entry.video_url }}" target="_blank" rel="noopener noreferrer">Watch on YouTube</a>{% for tag in entry.tags %} · #{{ tag }}{% endfor %}</figcaption>
+      {% elif entry.instagram_code %}
+      <div class="instagram-embed">
+        <iframe src="{{ entry.embed_url }}" title="{{ entry.headline }}" loading="lazy" referrerpolicy="no-referrer" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowfullscreen></iframe>
+      </div>
+      <figcaption><a href="{{ entry.instagram_url }}" target="_blank" rel="noopener noreferrer">Open on Instagram</a>{% for tag in entry.tags %} · #{{ tag }}{% endfor %}</figcaption>
       {% else %}
       {% include "_cover.html" %}
       <figcaption>{{ entry.type|label }}{% for tag in entry.tags %} · #{{ tag }}{% endfor %}</figcaption>

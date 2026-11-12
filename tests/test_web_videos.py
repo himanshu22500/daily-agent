@@ -35,7 +35,7 @@ class FakeYouTube:
 
     async def resolve(self, link):
         if "example.com" in link:
-            raise BadSourceLink("Only YouTube links can be followed.")
+            raise BadSourceLink("Only YouTube and Instagram links can be followed.")
         if self.down:
             raise YouTubeError("YouTube answered 503")
         return channel_ref(CHANNEL)
@@ -134,7 +134,7 @@ def test_sources_page_follows_and_unfollows(client):
 def test_bad_links_and_outages_are_explained(client, youtube):
     bad = client.post("/sources", data={"link": 'https://example.com/"><b>x'})
     assert bad.status_code == 400
-    assert "Only YouTube links can be followed." in bad.text
+    assert "Only YouTube and Instagram links can be followed." in bad.text
     assert "&#34;&gt;&lt;b&gt;x" in bad.text  # the link is kept, escaped
     youtube.down = True
     down = client.post("/sources", data={"link": "@Fireship"})

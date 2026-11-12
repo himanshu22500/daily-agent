@@ -179,6 +179,42 @@ uv run daily-agent videos remove channel:UC...
 Set `DAILY_AGENT_WEB_VIDEO_SYNC=false` to stop the server from writing stories,
 and run `videos sync` yourself instead.
 
+If YouTube's RSS feed is down when you follow a channel (it has outages that
+last hours), the channel is still followed, and its videos appear once the feed
+answers again.
+
+### Instagram stories
+
+Follow an Instagram creator the same way: paste `instagram.com/name` on the
+Sources page. Following is instant. The server then checks the creator in the
+background with **headless Google Chrome, logged out**, so no Instagram account
+is used. Without Chrome installed, run `uv run playwright install chromium`
+once. Each check opens the creator's profile, then only the posts it hasn't
+seen. The first check queues the newest 5 posts, skipping old pinned ones.
+After that the creator is checked every 6 hours
+(`DAILY_AGENT_INSTAGRAM_CHECK_HOURS`) and each new post is queued.
+
+Claude Code (`DAILY_AGENT_INSTAGRAM_MODEL`, default `claude-code:sonnet`)
+writes each story from the post's caption and Instagram's automatic image
+description. It can't see the image or the video, so a one-line caption gives
+a one-line story. Each post's image is stored on this Mac, because Instagram's
+image links expire, and becomes the card's cover. The reader embeds the post or
+reel from Instagram. Stories show under an **Instagram** type chip and never go
+to Telegram.
+
+If Instagram shows a login wall, Instagram checks pause for 3 hours and the
+Sources page says so. A missing or private account is retried a day later.
+
+```bash
+uv run daily-agent instagram add instagram.com/name   # same as the Sources page
+uv run daily-agent instagram list
+uv run daily-agent instagram sync                     # one pass now (5 stories max)
+uv run daily-agent instagram remove instagram:name
+```
+
+Set `DAILY_AGENT_WEB_INSTAGRAM_SYNC=false` to stop the server from checking
+Instagram, and run `instagram sync` yourself instead.
+
 ### On your phone (Tailscale)
 
 Keep the server on loopback and let `tailscale serve` relay it to devices signed

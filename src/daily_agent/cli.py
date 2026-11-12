@@ -46,8 +46,10 @@ from .feed.insights_store import InsightStore
 from .feed.insights_sweep import pending_transcripts, sweep_insights, unread_messages
 from .feed.outbox import Channel, Outbox
 from .feed.pacer import Pacer
+from .feed.instagram_posts import InstagramSync
 from .feed.videos import VideoSync
 from .sources.telegram_provision import TelethonProvisioner
+from .sources.instagram import BadInstagramLink, Instagram
 from .sources.youtube import BadSourceLink, YouTube, YouTubeError
 
 app = typer.Typer(
@@ -60,6 +62,10 @@ videos_app = typer.Typer(
     no_args_is_help=True, help="Follow YouTube channels as feed stories."
 )
 app.add_typer(videos_app, name="videos")
+instagram_app = typer.Typer(
+    no_args_is_help=True, help="Follow Instagram creators as feed stories."
+)
+app.add_typer(instagram_app, name="instagram")
 console = Console()
 
 
@@ -593,6 +599,8 @@ def web(
             allowed_hosts=allowed,
             videos=_video_sync(settings),
             video_loop=settings.web_video_sync,
+            instagram=_instagram_sync(settings),
+            instagram_loop=settings.web_instagram_sync,
         ),
         host=bind,
         port=listen,
@@ -669,6 +677,83 @@ def videos_sync(
         f"Checked {report.checked} source(s), queued {report.queued} video(s), "
         f"wrote {report.written} story(ies)"
         + (f", {report.waiting} waiting for captions" if report.waiting else "")
+        + (f", {report.remaining} still queued" if report.remaining else "")
+        + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
+        + "."
+    )
+    for error in report.errors:
+        console.print(f"  [dim]{error}[/dim]", markup=False)
+
+
+def _instagram_sync(settings, model: str | None = None) -> InstagramSync:
+    from .agents.post_writer import write_post_story
+
+    chosen = model or settings.instagram_model
+    return InstagramSync(
+        settings.db_path,
+        Instagram(),
+        lambda post: write_post_story(chosen, post),
+        check_every=timedelta(hours=settings.instagram_check_hours),
+    )
+
+
+@instagram_app.command("add")
+def instagram_add(
+    link: str = typer.Argument(..., help="An Instagram profile link."),
+) -> None:
+    """Follow a creator: queue their latest 5 posts and every new one."""
+    try:
+        source = _instagram_sync(get_settings()).follow(link)
+    except BadInstagramLink as exc:
+        console.print(f"[red]{exc}[/red]", markup=False)
+        raise typer.Exit(1)
+    console.print(
+        f"Following @{source.username} ({source.id}). Their posts are checked "
+        "and written by the feed server, or by `daily-agent instagram sync`.",
+        markup=False,
+    )
+
+
+@instagram_app.command("list")
+def instagram_list() -> None:
+    """Followed creators and their story counts."""
+    statuses = _instagram_sync(get_settings()).store.statuses()
+    if not statuses:
+        console.print("Not following any Instagram creators.")
+    for status in statuses:
+        console.print(
+            f"{status.id}  {status.title}  stories={status.stories} "
+            f"queued={status.queued} failed={len(status.failed)}",
+            markup=False,
+        )
+        if status.check_error:
+            console.print(f"  last check failed: {status.check_error}", markup=False)
+
+
+@instagram_app.command("remove")
+def instagram_remove(
+    source_id: str = typer.Argument(..., help="Source id from `instagram list`."),
+) -> None:
+    """Stop following a creator (their stories stay in the feed)."""
+    if not _instagram_sync(get_settings()).unfollow(source_id):
+        console.print(f"[red]Not following {source_id}.[/red]", markup=False)
+        raise typer.Exit(1)
+    console.print(f"Stopped following {source_id}.", markup=False)
+
+
+@instagram_app.command("sync")
+def instagram_sync(
+    limit: int = typer.Option(None, help="Write at most N stories (default 5)."),
+    model: str = typer.Option(
+        None, help="Claude Code model (default: instagram_model)."
+    ),
+) -> None:
+    """Check followed creators now (headless Chrome) and write queued posts."""
+    settings = get_settings()
+    report = asyncio.run(_instagram_sync(settings, model).run_once(limit=limit))
+    console.print(
+        f"Checked {report.checked} creator(s), queued {report.queued} post(s), "
+        f"wrote {report.written} story(ies)"
         + (f", {report.remaining} still queued" if report.remaining else "")
         + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
         + "."

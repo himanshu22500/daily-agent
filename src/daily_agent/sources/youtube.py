@@ -167,7 +167,7 @@ def parse_link(raw: str) -> SourceRef | str:
             return f"video:{video_id}"
         raise BadSourceLink("That youtu.be link has no video id.")
     if host not in _HOSTS:
-        raise BadSourceLink("Only YouTube links can be followed.")
+        raise BadSourceLink("Only YouTube and Instagram links can be followed.")
     query = parse_qs(parts.query)
     segments = [s for s in parts.path.split("/") if s]
     head = segments[0] if segments else ""

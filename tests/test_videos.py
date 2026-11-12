@@ -13,14 +13,12 @@ from daily_agent.feed.covers import cover_slug
 from daily_agent.feed.insights_feed import enqueue_new_insights
 from daily_agent.feed.insights_store import InsightStore
 from daily_agent.feed.outbox import Outbox
+from daily_agent.feed.story_queue import CLAIM_TTL, MAX_ATTEMPTS, sync_forever
 from daily_agent.feed.videos import (
     CAPTION_WAIT,
     CHECK_EVERY,
-    CLAIM_TTL,
-    MAX_ATTEMPTS,
     VideoStore,
     VideoSync,
-    sync_forever,
     video_id_of,
     video_key,
 )

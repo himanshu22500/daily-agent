@@ -38,6 +38,15 @@ def _store(db: str, *texts: str, titled: dict[int, str] | None = None) -> Insigh
     return store
 
 
+def test_clean_headline_keeps_a_closing_quoted_phrase():
+    assert clean_headline('Marques posts a short "Power user PSA"') == (
+        'Marques posts a short "Power user PSA"'
+    )
+    assert clean_headline("“Whole headline in quotes.”") == "Whole headline in quotes"
+    assert clean_headline('"Mixed "quotes" inside"') == '"Mixed "quotes" inside"'
+    assert clean_headline("'It's fine'") == "It's fine"
+
+
 def test_clean_headline_strips_markup_quotes_and_period():
     assert clean_headline('  "`uv sync` prunes **pip-installed** tools."  ') == (
         "uv sync prunes pip-installed tools"
