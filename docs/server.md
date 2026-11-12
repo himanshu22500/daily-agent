@@ -58,7 +58,7 @@ cursors only advance after a successful write.
      --availability-zone ap-south-1a --blueprint-id ubuntu_24_04 \
      --bundle-id micro_3_1 --key-pair-name daily-agent-ssh
    aws lightsail enable-add-on --resource-name daily-agent \
-     --add-on-request 'addOnType=AutoSnapshot,autoSnapshotAddOnRequest={snapshotTimeOfDay=21:30}'
+     --add-on-request 'addOnType=AutoSnapshot,autoSnapshotAddOnRequest={snapshotTimeOfDay=21:00}'
    ```
 
 2. Install Postgres, Tailscale and uv, and create the databases (with the `C`

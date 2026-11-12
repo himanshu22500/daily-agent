@@ -20,7 +20,11 @@ sudo install -m 644 deploy/server/daily-agent-web.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable -q daily-agent-web
 sudo systemctl restart daily-agent-web
-sudo tailscale serve --bg --http=80 http://127.0.0.1:8765 >/dev/null
+if tailscale status >/dev/null 2>&1; then
+  sudo tailscale serve --bg --http=80 http://127.0.0.1:8765 >/dev/null
+else
+  echo "tailscale is not up yet: run 'sudo tailscale up --hostname daily-agent', then this again" >&2
+fi
 
 for _ in $(seq 1 30); do
   if curl -fsS -o /dev/null http://127.0.0.1:8765/; then
