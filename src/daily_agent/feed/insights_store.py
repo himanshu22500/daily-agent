@@ -119,7 +119,9 @@ class InsightStore:
         with session_scope(self._engine) as session:
             rows = session.exec(
                 select(InsightRow).order_by(
-                    InsightRow.score.desc(), InsightRow.captured_at.desc()
+                    InsightRow.score.desc(),
+                    InsightRow.captured_at.desc(),
+                    InsightRow.key,
                 )
             ).all()
             return [_to_insight(r) for r in rows]
@@ -129,7 +131,11 @@ class InsightStore:
             rows = session.exec(
                 select(InsightRow)
                 .where(InsightRow.status == status)
-                .order_by(InsightRow.score.desc(), InsightRow.captured_at.desc())
+                .order_by(
+                    InsightRow.score.desc(),
+                    InsightRow.captured_at.desc(),
+                    InsightRow.key,
+                )
             ).all()
             return [_to_insight(r) for r in rows]
 
@@ -150,6 +156,7 @@ class InsightStore:
             .order_by(
                 InsightRow.stored_at.desc().nulls_last(),
                 InsightRow.captured_at.desc(),
+                InsightRow.key,
             )
         )
         if limit is not None:

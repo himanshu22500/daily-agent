@@ -112,7 +112,9 @@ class ChannelRegistry:
     def all(self) -> list[ChannelRecord]:
         with session_scope(self._engine) as session:
             rows = session.exec(
-                select(ChannelRow).order_by(ChannelRow.created_at)
+                select(ChannelRow).order_by(
+                    ChannelRow.created_at, ChannelRow.stream_key
+                )
             ).all()
             return [_to_record(r) for r in rows]
 
