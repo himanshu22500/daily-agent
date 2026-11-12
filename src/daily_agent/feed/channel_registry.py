@@ -16,17 +16,18 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Protocol
 
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy import BigInteger
 from sqlmodel import Field, SQLModel, select
 
-from ..db import create_tables, make_engine, session_scope
+from ..db import conflict_insert, create_tables, make_engine, session_scope
 
 
 class ChannelRow(SQLModel, table=True):
     __tablename__ = "channels"
 
     stream_key: str = Field(primary_key=True)
-    channel_id: int
+    # Telegram channel ids (-100xxxxxxxxxx) need 64 bits; Postgres INTEGER is 32.
+    channel_id: int = Field(sa_type=BigInteger)
     title: str
     created_at: str
     last_used_at: str
@@ -76,7 +77,7 @@ class ChannelRegistry:
     ) -> None:
         stamp = (now or _now()).isoformat()
         with session_scope(self._engine) as session:
-            stmt = sqlite_insert(ChannelRow).values(
+            stmt = conflict_insert(self._engine, ChannelRow).values(
                 stream_key=stream_key,
                 channel_id=channel_id,
                 title=title,
@@ -111,7 +112,9 @@ class ChannelRegistry:
     def all(self) -> list[ChannelRecord]:
         with session_scope(self._engine) as session:
             rows = session.exec(
-                select(ChannelRow).order_by(ChannelRow.created_at)
+                select(ChannelRow).order_by(
+                    ChannelRow.created_at, ChannelRow.stream_key
+                )
             ).all()
             return [_to_record(r) for r in rows]
 

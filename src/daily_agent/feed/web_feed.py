@@ -31,10 +31,15 @@ from pathlib import Path
 from typing import Iterable
 
 from sqlalchemy import ColumnElement, and_, delete, or_, text
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Field, SQLModel, func, select
 
-from ..db import create_tables, make_engine, session_scope
+from ..db import (
+    column_names,
+    conflict_insert,
+    create_tables,
+    make_engine,
+    session_scope,
+)
 from ..sources.instagram import post_url
 from ..sources.youtube import embed_url, thumbnail_url, watch_url
 from .for_you import Candidate, build_edition, revisit_interval
@@ -192,12 +197,7 @@ class WebFeed:
         marks are reset once here, so from now on seen means actually viewed.
         """
         with session_scope(self._engine) as session:
-            cols = {
-                row[1]
-                for row in session.execute(
-                    text("PRAGMA table_info(web_feed_state)")
-                ).all()
-            }
+            cols = column_names(session, "web_feed_state")
             if "view_count" in cols:
                 return
             session.execute(
@@ -248,9 +248,9 @@ class WebFeed:
             q = query.strip()
             clauses.append(
                 or_(
-                    InsightRow.text.contains(q, autoescape=True),
-                    InsightRow.tags.contains(q, autoescape=True),
-                    InsightRow.git_branch.contains(q, autoescape=True),
+                    InsightRow.text.icontains(q, autoescape=True),
+                    InsightRow.tags.icontains(q, autoescape=True),
+                    InsightRow.git_branch.icontains(q, autoescape=True),
                 )
             )
         return clauses
@@ -497,7 +497,9 @@ class WebFeed:
     def _set(self, key: str, column: str, value: str | None) -> bool:
         if not self._exists(key):
             return False
-        stmt = sqlite_insert(WebFeedStateRow).values(key=key, **{column: value})
+        stmt = conflict_insert(self._engine, WebFeedStateRow).values(
+            key=key, **{column: value}
+        )
         stmt = stmt.on_conflict_do_update(
             index_elements=["key"], set_={column: getattr(stmt.excluded, column)}
         )

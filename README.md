@@ -233,6 +233,10 @@ for the tailnet, use `tailscale serve --bg 8765` for an `https://` URL instead.
 Remove the relay with `tailscale serve --http=80 off`. The Mac must be awake and
 connected to Tailscale.
 
+To read the feed while the Mac is asleep, run the feed on a small always-on
+server instead and point the Mac at the same Postgres database; see
+[docs/server.md](docs/server.md).
+
 Avoid binding `DAILY_AGENT_WEB_HOST` to the Tailscale IP or `0.0.0.0`. The Tailscale
 IP breaks `127.0.0.1` access and fails while Tailscale is down. `0.0.0.0` exposes
 the feed to your LAN. The Host allowlist only guards against DNS rebinding; it is

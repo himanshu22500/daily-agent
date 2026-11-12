@@ -6,6 +6,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 
+import pytest
 from typer.testing import CliRunner
 
 from daily_agent import cli
@@ -103,6 +104,7 @@ def test_apply_titles_cleans_validates_and_keeps_existing(tmp_path):
     assert store.get("insight:k2").title == "Replacement"
 
 
+@pytest.mark.sqlite_only
 def test_store_title_column_is_added_to_old_databases(tmp_path):
     db = str(tmp_path / "old.db")
     with sqlite3.connect(db) as conn:

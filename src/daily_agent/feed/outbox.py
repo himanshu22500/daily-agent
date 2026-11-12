@@ -7,10 +7,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Protocol
 
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Field, Session, SQLModel, func, select
 
-from ..db import create_tables, make_engine, session_scope
+from ..db import conflict_insert, create_tables, make_engine, session_scope
 from ..models import Bite
 
 
@@ -88,7 +87,7 @@ class Outbox:
             if session.get(DeliveredLedgerRow, bite.dedup_key) is not None:
                 return False
             stmt = (
-                sqlite_insert(OutboxRow)
+                conflict_insert(self._engine, OutboxRow)
                 .values(
                     dedup_key=bite.dedup_key,
                     subject=bite.subject,
@@ -97,8 +96,10 @@ class Outbox:
                     created_at=stamp,
                 )
                 .on_conflict_do_nothing(index_elements=["dedup_key"])
+                .returning(OutboxRow.id)
             )
-            return session.execute(stmt).rowcount > 0
+            # RETURNING, not rowcount: psycopg reports -1 for INSERTs (#111).
+            return session.execute(stmt).first() is not None
 
     def _due(
         self, session: Session, now: datetime, limit: int | None, *, kind: str | None
@@ -166,11 +167,11 @@ class Outbox:
             row.last_error = None
             session.add(row)
         session.execute(
-            sqlite_insert(DeliveredLedgerRow)
+            conflict_insert(self._engine, DeliveredLedgerRow)
             .values(item_key=item.dedup_key, sent_at=stamp)
             .on_conflict_do_nothing(index_elements=["item_key"])
         )
-        watermark = sqlite_insert(WatermarkRow).values(
+        watermark = conflict_insert(self._engine, WatermarkRow).values(
             subject=item.subject, last_sent_at=stamp
         )
         session.execute(

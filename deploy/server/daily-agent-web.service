@@ -1,0 +1,18 @@
+# The always-on feed (issue #111). Install with deploy/server/update.sh.
+# Reads ~/daily-agent/.env: DAILY_AGENT_DATABASE_URL points at the local
+# Postgres, DAILY_AGENT_WEB_VIDEO_SYNC=false (stories are written on the Mac,
+# which has Claude Code), DAILY_AGENT_WEB_ALLOWED_HOSTS has the tailnet names.
+[Unit]
+Description=daily-agent web feed
+After=network-online.target postgresql.service tailscaled.service
+Wants=network-online.target postgresql.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/daily-agent
+ExecStart=/home/ubuntu/.local/bin/uv run --frozen --no-dev daily-agent web
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

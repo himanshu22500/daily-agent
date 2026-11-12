@@ -128,7 +128,9 @@ class StoryQueue:
         with session_scope(self._engine) as session:
             return list(
                 session.exec(
-                    select(src).where(src.removed_at.is_(None)).order_by(src.added_at)
+                    select(src)
+                    .where(src.removed_at.is_(None))
+                    .order_by(src.added_at, *src.__table__.primary_key.columns)
                 ).all()
             )
 
@@ -196,7 +198,7 @@ class StoryQueue:
         stmt = (
             select(self.item_row)
             .where(self._claimable(iso(now), iso(now - CLAIM_TTL)))
-            .order_by(self.item_row.published_at.desc())
+            .order_by(self.item_row.published_at.desc(), self._id_col())
             .limit(limit)
         )
         with session_scope(self._engine) as session:

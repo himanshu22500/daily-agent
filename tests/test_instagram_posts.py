@@ -6,6 +6,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import text
 
 from daily_agent.feed.insights_feed import enqueue_new_insights
 from daily_agent.feed.insights_store import InsightStore
@@ -186,8 +187,9 @@ async def test_a_post_with_nothing_to_read_is_skipped(setup):
     report = await sync.run_once()
     assert report.written == 0 and written == []
     with sync.store._engine.connect() as conn:  # noqa: SLF001 - test peek
-        state = conn.exec_driver_sql(
-            "SELECT state FROM instagram_posts WHERE shortcode = ?", (code(1),)
+        state = conn.execute(
+            text("SELECT state FROM instagram_posts WHERE shortcode = :code"),
+            {"code": code(1)},
         ).scalar()
     assert state == SKIPPED
 

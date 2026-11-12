@@ -27,10 +27,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import Column, LargeBinary, delete
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Field, SQLModel, func, select
 
-from ..db import create_tables, make_engine, session_scope
+from ..db import conflict_insert, create_tables, make_engine, session_scope
 from ..models import Insight, VideoStory
 from ..sources.instagram import (
     SHORTCODE,
@@ -183,7 +182,7 @@ class InstagramStore(StoryQueue):
     def follow(self, username: str, title: str, *, now: datetime) -> str:
         """Add (or re-add) an account; a re-added one starts over as never checked."""
         source_id = f"instagram:{username}"
-        stmt = sqlite_insert(InstagramSourceRow).values(
+        stmt = conflict_insert(self._engine, InstagramSourceRow).values(
             id=source_id,
             username=username,
             url=profile_url(username),
