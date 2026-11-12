@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Protocol
 
+from sqlalchemy import BigInteger
 from sqlmodel import Field, SQLModel, select
 
 from ..db import conflict_insert, create_tables, make_engine, session_scope
@@ -25,7 +26,8 @@ class ChannelRow(SQLModel, table=True):
     __tablename__ = "channels"
 
     stream_key: str = Field(primary_key=True)
-    channel_id: int
+    # Telegram channel ids (-100xxxxxxxxxx) need 64 bits; Postgres INTEGER is 32.
+    channel_id: int = Field(sa_type=BigInteger)
     title: str
     created_at: str
     last_used_at: str

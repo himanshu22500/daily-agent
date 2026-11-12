@@ -27,7 +27,8 @@ else
 fi
 
 for _ in $(seq 1 30); do
-  if curl -fsS -o /dev/null http://127.0.0.1:8765/; then
+  # /new-count only reads; loading / would record a feed session.
+  if curl -fs -o /dev/null "http://127.0.0.1:8765/new-count?since=2000-01-01T00:00:00"; then
     echo "feed is up: $(git rev-parse --short HEAD) on $BRANCH"
     exit 0
   fi

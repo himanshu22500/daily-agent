@@ -42,6 +42,13 @@ def test_registry_roundtrip(tmp_path):
     assert r.get("insight:general") is None
 
 
+def test_real_telegram_channel_ids_fit(tmp_path):
+    # Telegram supergroup ids are about -1e12: past 32-bit INTEGER on Postgres.
+    r = ChannelRegistry(tmp_path / "c.db")
+    r.put("insight:gotcha", -1004496864700, "Gotcha", now=_at(1))
+    assert r.get("insight:gotcha").channel_id == -1004496864700
+
+
 def test_ensure_provisions_once_then_caches(tmp_path):
     r = ChannelRegistry(tmp_path / "c.db")
     p = _FakeProvisioner()
