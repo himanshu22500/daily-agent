@@ -16,6 +16,7 @@ dependencies = [
     "uvicorn>=0.30",
     "jinja2>=3.1",
     "youtube-transcript-api>=1.2",
+    "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +44,9 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "sqlite_only: builds a SQLite file by hand; skipped when DAILY_AGENT_TEST_DATABASE_URL runs the suite on Postgres",
+]
 
 [tool.ruff]
 target-version = "py311"

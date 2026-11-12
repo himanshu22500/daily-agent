@@ -63,6 +63,7 @@ def test_add_stamps_stored_at_when_unset(db):
     assert stored is not None and stored >= before - timedelta(seconds=1)
 
 
+@pytest.mark.sqlite_only
 def test_old_insights_table_gains_stored_at_and_sorts_by_captured(db):
     # A live DB created before `stored_at` existed.
     with sqlite3.connect(db) as conn:
@@ -213,6 +214,7 @@ def test_reader_state_leaves_telegram_delivery_untouched(db):
     assert Outbox(db).stats()["pending"] == 1
 
 
+@pytest.mark.sqlite_only
 def test_pre_80_state_gains_view_columns_and_render_seen_marks_reset(db):
     # A web_feed_state from #77, where seen_at meant "was rendered".
     InsightStore(db).add(_insight("a"))

@@ -1,5 +1,46 @@
 # Decisions
 
+## 2026-11-12 — One shared Postgres; the feed is served from an always-on server
+
+The phone could only read the feed while the Mac was awake, because the feed
+was served from the Mac through `tailscale serve` (issue #111). Decisions:
+
+- **Hosting off the Mac is now allowed.** The maintainer said data privacy is no
+  longer a blocker. This supersedes the 2026-11-11 decision to keep the feed on
+  the Mac.
+- **One database, read and written directly by both machines; no sync layer.**
+  The stores open `DAILY_AGENT_DATABASE_URL` when it is set and the SQLite file
+  otherwise. The Mac captures, extracts, writes stories and delivers to Telegram;
+  the server only serves the feed and records reader state. No table needs
+  merging because there is only one copy.
+- **Cheapest AWS setup: one Lightsail server running both Postgres and the
+  feed** (Mumbai, `micro_3_1`, 1 GB, about $7/month plus about $1 of daily
+  snapshots). Managed RDS was about $26–28/month for the same job. The cost of
+  self-hosting is doing our own OS updates (unattended-upgrades) and backups
+  (Lightsail daily automatic snapshots).
+- **Tailnet only.** Postgres and the feed are reachable only over Tailscale; the
+  Lightsail firewall has no public ports open. So the feed still needs no
+  login, and the database is never exposed to the internet.
+- **Stories are still written on the Mac.** The server runs with
+  `DAILY_AGENT_WEB_VIDEO_SYNC=false` because `claude -p` needs the Mac's signed-in
+  Claude Code. Following a channel on the phone stores and queues it in the
+  shared database; the Mac's feed job writes the stories within about 10 minutes
+  of waking.
+- **When the Mac is offline, nothing is lost.** Writes fail and the transcript
+  cursors don't advance, so the next sweep re-reads them. Stale connections are
+  replaced (`pool_pre_ping`).
+- **Postgres databases use the `C` collation.** The stores compare and sort ISO
+  timestamp strings and keys (feed cursors, watermarks). SQLite compares bytes;
+  Postgres's default `en_US` collation ignores punctuation and would reorder
+  them. `db copy` and the Postgres test run refuse other collations.
+- **Inserts report new rows through `RETURNING`, not `rowcount`.** psycopg's
+  `rowcount` is -1 for SQLAlchemy INSERTs, which made every insert look like a
+  duplicate.
+- **The whole offline suite also runs on Postgres** when
+  `DAILY_AGENT_TEST_DATABASE_URL` is set (CI job `tests (postgres)`). Each SQLite
+  path a test opens maps to its own schema, so tests didn't need rewriting; the
+  four that hand-build an old SQLite file are marked `sqlite_only`.
+
 ## 2026-11-12 — Follow Instagram accounts through the official Graph API
 
 The maintainer asked to follow Instagram accounts the same way as YouTube

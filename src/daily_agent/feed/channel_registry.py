@@ -16,10 +16,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Protocol
 
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Field, SQLModel, select
 
-from ..db import create_tables, make_engine, session_scope
+from ..db import conflict_insert, create_tables, make_engine, session_scope
 
 
 class ChannelRow(SQLModel, table=True):
@@ -76,7 +75,7 @@ class ChannelRegistry:
     ) -> None:
         stamp = (now or _now()).isoformat()
         with session_scope(self._engine) as session:
-            stmt = sqlite_insert(ChannelRow).values(
+            stmt = conflict_insert(self._engine, ChannelRow).values(
                 stream_key=stream_key,
                 channel_id=channel_id,
                 title=title,

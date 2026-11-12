@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     instagram_model: str = "claude-code:sonnet"
     instagram_check_hours: float = 3.0
     db_path: str = "daily_agent.db"
+    # Shared database (issue #111), e.g. postgresql://user:pass@daily-agent/db.
+    # When set, every store uses it instead of the SQLite file at db_path; lock
+    # and stamp files still live next to db_path because they are per-machine.
+    database_url: str = ""
 
     insights_marker: str = "insight:"
     insights_transcripts_dir: str = ""
@@ -63,6 +67,11 @@ class Settings(BaseSettings):
     # background while the feed server runs. Off: run `daily-agent videos sync`
     # and `daily-agent instagram sync` instead.
     web_video_sync: bool = True
+
+    @property
+    def db(self) -> str:
+        """What the stores open: the shared database URL, else the SQLite file."""
+        return self.database_url or self.db_path
 
     @property
     def instagram_enabled(self) -> bool:

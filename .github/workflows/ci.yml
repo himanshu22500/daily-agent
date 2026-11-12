@@ -35,3 +35,35 @@ jobs:
 
       - name: Run offline test suite
         run: uv run pytest -q
+
+  postgres:
+    # The same offline suite against Postgres (issue #111): the shared database
+    # the Mac and the feed server both use. Every SQLite path a test opens is
+    # mapped to its own schema (tests/conftest.py). "C" collation matches
+    # SQLite's byte-order string comparisons.
+    name: tests (postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: daily_agent
+          POSTGRES_PASSWORD: daily_agent
+          POSTGRES_DB: daily_agent_test
+          POSTGRES_INITDB_ARGS: --locale=C --encoding=UTF8
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U daily_agent -d daily_agent_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DAILY_AGENT_TEST_DATABASE_URL: postgresql://daily_agent:daily_agent@localhost:5432/daily_agent_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run offline test suite on Postgres
+        run: uv run pytest -q

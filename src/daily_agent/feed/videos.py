@@ -26,10 +26,9 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Field, SQLModel, select
 
-from ..db import create_tables, make_engine, session_scope
+from ..db import conflict_insert, create_tables, make_engine, session_scope
 from ..models import Insight, VideoStory
 from ..sources.youtube import (
     VIDEO_ID,
@@ -137,7 +136,7 @@ class VideoStore(StoryQueue):
     # --- sources ---------------------------------------------------------- #
     def follow(self, ref: SourceRef, title: str, *, now: datetime) -> None:
         """Add (or re-add) a source; a re-added one starts over as never checked."""
-        stmt = sqlite_insert(VideoSourceRow).values(
+        stmt = conflict_insert(self._engine, VideoSourceRow).values(
             id=ref.id,
             feed_url=ref.feed_url,
             url=ref.url,

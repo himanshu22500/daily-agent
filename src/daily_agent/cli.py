@@ -19,6 +19,8 @@ from .agents.claude_code import SPEND
 from .agents.headline_writer import write_headlines
 from .agents.insight_extractor import extract_insights, prompt_chars
 from .config import get_settings
+from .db import display_url
+from .db_copy import CopyError, copy_database, table_counts
 from .feed.channel_registry import ChannelRegistry, reap_stale
 from .feed.channels import (
     ConsoleChannel,
@@ -74,6 +76,10 @@ instagram_app = typer.Typer(
     no_args_is_help=True, help="Follow Instagram accounts as feed stories."
 )
 app.add_typer(instagram_app, name="instagram")
+db_app = typer.Typer(
+    no_args_is_help=True, help="Which database the stores use, and moving data."
+)
+app.add_typer(db_app, name="db")
 console = Console()
 
 
@@ -87,7 +93,7 @@ def _delivery_channel(store: InsightStore, *, to_telegram: bool, to_file: str | 
             )
             raise typer.Exit(1)
         channel: Channel = MultiStreamTelegramChannel(
-            ChannelRegistry(settings.db_path),
+            ChannelRegistry(settings.db),
             TelethonProvisioner(
                 api_id=settings.telegram_api_id,
                 api_hash=settings.telegram_api_hash,
@@ -115,7 +121,7 @@ def _drain(
     label: str,
 ) -> None:
     settings = get_settings()
-    outbox = Outbox(settings.db_path)
+    outbox = Outbox(settings.db)
     pacer = Pacer(
         settings.insights_feed_max_per_run,
         settings.feed_quiet_start,
@@ -168,7 +174,7 @@ def insights_collect(
             "DAILY_AGENT_INSIGHTS_TRANSCRIPTS_DIR if they live elsewhere."
         )
         raise typer.Exit(1)
-    store = InsightStore(settings.db_path)
+    store = InsightStore(settings.db)
     if extract:
         result = asyncio.run(
             collect_insights(
@@ -198,8 +204,8 @@ def insights_feed(
 ) -> None:
     """Queue captured insights and deliver a paced batch."""
     settings = get_settings()
-    store = InsightStore(settings.db_path)
-    queued = enqueue_new_insights(store, Outbox(settings.db_path))
+    store = InsightStore(settings.db)
+    queued = enqueue_new_insights(store, Outbox(settings.db))
     _drain(
         store,
         queued=queued,
@@ -239,7 +245,7 @@ def insights_flush(
             console.print("[yellow]Transcripts still changing[/yellow] — skipping.")
             return
 
-        store = InsightStore(settings.db_path)
+        store = InsightStore(settings.db)
         if extract:
             captured = asyncio.run(
                 collect_insights(
@@ -259,7 +265,7 @@ def insights_flush(
             label = (
                 f"Insight flush captured {new} marker insight(s) from {scanned} records"
             )
-        queued = enqueue_new_insights(store, Outbox(settings.db_path))
+        queued = enqueue_new_insights(store, Outbox(settings.db))
         _drain(
             store,
             queued=queued,
@@ -309,7 +315,7 @@ def insights_sweep(
     if not root.exists():
         console.print(f"{stamp} [yellow]No transcripts found[/yellow] at {root}.")
         raise typer.Exit(1)
-    store = InsightStore(settings.db_path)
+    store = InsightStore(settings.db)
     settle_seconds = max(0.0, settle_minutes * 60)
 
     if dry_run:
@@ -367,7 +373,7 @@ def insights_sweep(
 
             covered = await generate_covers(
                 store,
-                CoverStore(settings.db_path),
+                CoverStore(settings.db),
                 draw,
                 source=f"model:{settings.cover_model}",
                 limit=max_covers,
@@ -377,7 +383,7 @@ def insights_sweep(
 
     try:
         result, titled, covered = asyncio.run(background())
-        queued = enqueue_new_insights(store, Outbox(settings.db_path))
+        queued = enqueue_new_insights(store, Outbox(settings.db))
     finally:
         lock.release()
 
@@ -440,7 +446,7 @@ def insights_titles_generate(
     chosen = model or settings.headline_model
     run = asyncio.run(
         generate_headlines(
-            InsightStore(settings.db_path),
+            InsightStore(settings.db),
             lambda batch: write_headlines(chosen, batch),
             limit=limit,
         )
@@ -467,7 +473,7 @@ def insights_titles_export(
 ) -> None:
     """Export insights needing a web-feed headline as JSON ({key, text, type, tags})."""
     records = export_for_titling(
-        InsightStore(get_settings().db_path), include_titled=include_titled
+        InsightStore(get_settings().db), include_titled=include_titled
     )
     payload = json.dumps(records, indent=1, ensure_ascii=False)
     if out is None:
@@ -491,9 +497,7 @@ def insights_titles_import(
     if not isinstance(titles, dict):
         console.print('[red]Expected a JSON object: {"insight:key": "Headline"}.[/red]')
         raise typer.Exit(1)
-    result = apply_titles(
-        InsightStore(get_settings().db_path), titles, overwrite=overwrite
-    )
+    result = apply_titles(InsightStore(get_settings().db), titles, overwrite=overwrite)
     console.print(
         f"Stored [bold]{result.applied}[/bold] headline(s)"
         + (f"; kept {result.kept_existing} existing" if result.kept_existing else "")
@@ -516,8 +520,8 @@ def insights_covers_import(
 ) -> None:
     """Validate illustrated covers and store them in the database."""
     settings = get_settings()
-    known = {i.key for i in InsightStore(settings.db_path).all()}
-    result = import_covers(source, CoverStore(settings.db_path), known, source=label)
+    known = {i.key for i in InsightStore(settings.db).all()}
+    result = import_covers(source, CoverStore(settings.db), known, source=label)
     console.print(
         f"Imported [bold]{result.imported}[/bold] cover(s) into the database"
         + (
@@ -548,8 +552,8 @@ def insights_covers_generate(
 
     result = asyncio.run(
         generate_covers(
-            InsightStore(settings.db_path),
-            CoverStore(settings.db_path),
+            InsightStore(settings.db),
+            CoverStore(settings.db),
             draw,
             source=f"model:{chosen}",
             limit=limit,
@@ -570,8 +574,8 @@ def insights_covers_generate(
 def insights_status() -> None:
     """Show captured-insight and delivery-queue counts."""
     settings = get_settings()
-    store = InsightStore(settings.db_path)
-    outbox = Outbox(settings.db_path)
+    store = InsightStore(settings.db)
+    outbox = Outbox(settings.db)
     statuses: dict[str, int] = {}
     for insight in store.all():
         statuses[insight.status] = statuses.get(insight.status, 0) + 1
@@ -602,7 +606,7 @@ def web(
     console.print(f"Insight feed at [bold]http://{bind}:{listen}/[/bold]")
     uvicorn.run(
         create_app(
-            settings.db_path,
+            settings.db,
             page_size=settings.web_page_size,
             allowed_hosts=allowed,
             videos=_video_sync(settings),
@@ -620,7 +624,7 @@ def _video_sync(settings, model: str | None = None) -> VideoSync:
 
     chosen = model or settings.video_model
     return VideoSync(
-        settings.db_path,
+        settings.db,
         YouTube(),
         lambda video, transcript: write_story(chosen, video, transcript),
         check_every=timedelta(hours=settings.video_check_hours),
@@ -700,7 +704,7 @@ def _instagram_sync(settings, model: str | None = None) -> InstagramSync | None:
 
     chosen = model or settings.instagram_model
     return InstagramSync(
-        settings.db_path,
+        settings.db,
         Instagram(settings.instagram_token, settings.instagram_user_id),
         lambda post, name, images: write_post_story(chosen, post, name, images),
         check_every=timedelta(hours=settings.instagram_check_hours),
@@ -833,7 +837,7 @@ def instagram_list() -> None:
     settings = get_settings()
     if not settings.instagram_enabled:
         console.print("Instagram isn't connected (`daily-agent instagram connect`).")
-    statuses = InstagramStore(settings.db_path).statuses()
+    statuses = InstagramStore(settings.db).statuses()
     if not statuses:
         console.print("Not following any Instagram accounts.")
     for status in statuses:
@@ -853,7 +857,7 @@ def instagram_remove(
     """Stop following an account (its stories stay in the feed)."""
     from .feed.instagram_posts import InstagramStore
 
-    store = InstagramStore(get_settings().db_path)
+    store = InstagramStore(get_settings().db)
     if not store.unfollow(source_id, now=datetime.now().astimezone()):
         console.print(f"[red]Not following {source_id}.[/red]", markup=False)
         raise typer.Exit(1)
@@ -934,7 +938,7 @@ def telegram_reap(
         raise typer.Exit(1)
     days = idle_days if idle_days is not None else settings.channel_reap_idle_days
     reaped = reap_stale(
-        ChannelRegistry(settings.db_path),
+        ChannelRegistry(settings.db),
         TelethonProvisioner(
             api_id=settings.telegram_api_id,
             api_hash=settings.telegram_api_hash,
@@ -949,3 +953,51 @@ def telegram_reap(
         )
     else:
         console.print(f"No channels idle for {days}+ days.")
+
+
+@db_app.command("info")
+def db_info() -> None:
+    """Show which database the stores use and how many rows each table has."""
+    settings = get_settings()
+    console.print(f"Database: {display_url(settings.db)}")
+    for name, count in table_counts(settings.db).items():
+        console.print(f"  {name}: {'-' if count is None else count}")
+
+
+@db_app.command("copy")
+def db_copy(
+    source: str = typer.Argument(..., help="Database to copy from: a SQLite path."),
+    to: str = typer.Option(
+        "",
+        "--to",
+        help="Database URL to copy into (default: DAILY_AGENT_DATABASE_URL).",
+    ),
+    replace: bool = typer.Option(
+        False, "--replace", help="Empty the target's store tables first."
+    ),
+) -> None:
+    """Copy every store table into another database, e.g. SQLite into Postgres.
+
+    Copy a snapshot of the live file, not the file the sweep is writing to:
+    `cp daily_agent.db /tmp/` first.
+    """
+    target = to or get_settings().database_url
+    if not target:
+        console.print(
+            "[red]No target: pass --to or set DAILY_AGENT_DATABASE_URL.[/red]"
+        )
+        raise typer.Exit(1)
+    try:
+        report = copy_database(source, target, replace=replace)
+    except CopyError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(f"Copied into {display_url(target)}:")
+    for name, count in report.copied.items():
+        console.print(f"  {name}: {count}")
+    if report.missing_in_source:
+        console.print(
+            f"Not in the source (left empty): {', '.join(report.missing_in_source)}"
+        )
+    if report.left_behind:
+        console.print(f"Not store tables (not copied): {', '.join(report.left_behind)}")

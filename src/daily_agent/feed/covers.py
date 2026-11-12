@@ -20,10 +20,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Field, SQLModel, select
 
-from ..db import create_tables, make_engine, session_scope
+from ..db import conflict_insert, create_tables, make_engine, session_scope
 from ..models import Insight
 from .insights_store import InsightStore
 
@@ -112,7 +111,7 @@ class CoverStore:
         if problems:
             return problems
         stamp = _now_iso()
-        stmt = sqlite_insert(CoverRow).values(
+        stmt = conflict_insert(self._engine, CoverRow).values(
             key=key, svg=svg, source=source, updated_at=stamp
         )
         stmt = stmt.on_conflict_do_update(

@@ -17,10 +17,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import text
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Field, SQLModel, select
 
-from ..db import create_tables, make_engine, session_scope
+from ..db import (
+    column_names,
+    conflict_insert,
+    create_tables,
+    make_engine,
+    session_scope,
+)
 from ..models import Insight
 
 
@@ -72,10 +77,7 @@ class InsightStore:
         stay ``NULL``; readers fall back to ``captured_at`` for them.
         """
         with session_scope(self._engine) as session:
-            cols = {
-                row[1]
-                for row in session.execute(text("PRAGMA table_info(insights)")).all()
-            }
+            cols = column_names(session, "insights")
             for col in ("stored_at", "title"):
                 if col not in cols:
                     session.execute(text(f"ALTER TABLE insights ADD COLUMN {col} TEXT"))
@@ -88,7 +90,7 @@ class InsightStore:
         """
         with session_scope(self._engine) as session:
             stmt = (
-                sqlite_insert(InsightRow)
+                conflict_insert(self._engine, InsightRow)
                 .values(
                     key=insight.key,
                     text=insight.text,
@@ -103,8 +105,10 @@ class InsightStore:
                     title=insight.title or None,
                 )
                 .on_conflict_do_nothing(index_elements=["key"])
+                .returning(InsightRow.key)
             )
-            return session.execute(stmt).rowcount > 0
+            # RETURNING, not rowcount: psycopg reports -1 for INSERTs (#111).
+            return session.execute(stmt).first() is not None
 
     def get(self, key: str) -> Insight | None:
         with session_scope(self._engine) as session:
@@ -143,7 +147,10 @@ class InsightStore:
         stmt = (
             select(InsightRow)
             .where((InsightRow.title.is_(None)) | (InsightRow.title == ""))
-            .order_by(InsightRow.stored_at.desc(), InsightRow.captured_at.desc())
+            .order_by(
+                InsightRow.stored_at.desc().nulls_last(),
+                InsightRow.captured_at.desc(),
+            )
         )
         if limit is not None:
             stmt = stmt.limit(limit)
@@ -181,7 +188,7 @@ class InsightStore:
         stamp = read_at.isoformat() if read_at else _now_iso()
         with session_scope(self._engine) as session:
             stmt = (
-                sqlite_insert(InsightCursorRow)
+                conflict_insert(self._engine, InsightCursorRow)
                 .values(
                     file_path=file_path,
                     processed_lines=processed_lines,
