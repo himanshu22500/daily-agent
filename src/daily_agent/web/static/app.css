@@ -120,9 +120,7 @@ code {
   white-space: nowrap;
 }
 
-.chip .n { margin-left: 2px; color: var(--muted); font-size: 0.75rem; }
 .chip.on { background: var(--chip-on); color: var(--chip-on-text); }
-.chip.on .n { color: inherit; opacity: 0.7; }
 
 /* --- Feed stories (Discover-style cards) ------------------------------------- */
 

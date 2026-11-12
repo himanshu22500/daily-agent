@@ -102,6 +102,11 @@ def test_type_filter_and_search(client):
     assert "No insights match" in client.get("/?view=latest&q=nothing-here").text
 
 
+def test_type_chips_are_bare_labels_most_common_first(client):
+    chips = re.findall(r'<a class="chip[^"]*"[^>]*>(.*?)</a>', client.get("/").text)
+    assert chips == ["All types", "Gotcha", "Repo"]  # no per-type counts
+
+
 def test_for_you_is_a_new_edition_each_open(client):
     first, second = client.get("/").text, client.get("/").text
     assert _session(first) != _session(second)
