@@ -1,7 +1,8 @@
 """Cover illustrator for the web feed (issue #87).
 
 Draws one SVG illustration per insight from the same art brief the first 301
-covers were drawn with (by Claude subagents). The model's SVG is untrusted:
+covers were drawn with (by Claude subagents), through Claude Code
+(``claude-code:fable``) or a pydantic-ai model. The model's SVG is untrusted:
 callers must run it through ``feed.covers.validate_cover`` before storing it.
 """
 
@@ -11,6 +12,7 @@ import re
 
 from pydantic_ai import Agent
 
+from .claude_code import is_claude_code, run_claude
 from .model import build_model, cache_settings, run_with_backoff
 
 # An SVG is a few KB of output; allow for a slow provider, but never hang.
@@ -119,6 +121,11 @@ async def draw_cover(
     model: str, insight: dict, feedback: list[str] | None = None
 ) -> str:
     """One SVG illustration for ``insight`` (``{title, text, type, tags}``)."""
+    if is_claude_code(model):
+        drawn = await run_claude(
+            _render(insight, feedback), model=model, system_prompt=_SYSTEM_PROMPT
+        )
+        return extract_svg(drawn.text)
     result = await run_with_backoff(
         build_cover_illustrator(model), _render(insight, feedback), attempts=ATTEMPTS
     )

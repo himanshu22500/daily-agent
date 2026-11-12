@@ -11,6 +11,7 @@ from pydantic_ai import Agent
 
 from ..feed.transcripts import TranscriptMessage
 from ..models import InsightCandidate, InsightExtraction
+from .claude_code import ClaudeCodeError, is_claude_code, run_claude
 from .model import build_model, cache_settings, run_with_backoff
 
 # Unattended runs (the hook flush, the timed sweep) must never hang on a slow
@@ -85,6 +86,17 @@ async def extract_insights(
 ) -> list[InsightCandidate]:
     if not messages:
         return []
+    if is_claude_code(model):
+        result = await run_claude(
+            _render(messages),
+            model=model,
+            system_prompt=_SYSTEM_PROMPT,
+            json_schema=InsightExtraction.model_json_schema(),
+        )
+        try:
+            return InsightExtraction.model_validate(result.structured).candidates
+        except ValueError as exc:
+            raise ClaudeCodeError(f"unexpected extraction shape: {exc}") from exc
     agent = build_insight_extractor(model)
     result = await run_with_backoff(agent, _render(messages), attempts=ATTEMPTS)
     return result.output.candidates

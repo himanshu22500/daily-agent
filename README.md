@@ -1,8 +1,9 @@
 # daily-agent
 
 `daily-agent` is a private memory loop for lessons found while coding. It reads
-local Claude Code JSONL transcripts, captures explicit `insight:` notes, uses
-Gemini to extract other durable lessons, and stores them in SQLite. Every stored
+local Claude Code JSONL transcripts, captures explicit `insight:` notes, has
+Claude (through the local Claude Code CLI) extract other durable lessons, and
+stores them in SQLite. Every stored
 insight shows up immediately on a local, scrollable **web feed**. Telegram
 separately gets a small paced batch.
 
@@ -15,38 +16,32 @@ filtered out. Exact semantic keys prevent the same lesson from being queued twic
 ```bash
 uv sync
 cp .env.example .env
-# Add GEMINI_API_KEY to .env.
 uv run pytest
 ```
 
-The default model is `google:gemini-3.8-flash`. Transient provider failures use
-bounded exponential backoff; authentication and other permanent failures stop
-immediately.
+### Models: Claude Code in the background
 
-### Gemini on Vertex AI
+All model work runs through the Claude Code CLI already signed in on the Mac
+(`claude -p`), so there are no API keys or cloud credentials to expire:
 
-Instead of an API key, Gemini can run on a Google Cloud project you have
-Vertex AI access to (billing on, Vertex AI API enabled). daily-agent runs
-unattended after each session, so give it its own saved credentials in a
-separate gcloud config, leaving your default credentials untouched:
+| Work | Setting | Default |
+|---|---|---|
+| Insight extraction | `DAILY_AGENT_MODEL` | `claude-code:sonnet` |
+| Feed headlines | `DAILY_AGENT_HEADLINE_MODEL` | `claude-code:sonnet` |
+| Cover illustrations | `DAILY_AGENT_COVER_MODEL` | `claude-code:fable` |
 
-```bash
-CLOUDSDK_CONFIG="$HOME/.config/gcloud-daily-agent" gcloud auth application-default login
-CLOUDSDK_CONFIG="$HOME/.config/gcloud-daily-agent" \
-  gcloud auth application-default set-quota-project YOUR_PROJECT
-```
+`claude-code:<alias>` takes any model `claude --model` accepts (`haiku`,
+`sonnet`, `opus`, `fable`, or a full model name). Every call is locked down
+because prompts contain transcript text: no tools, no MCP servers, hooks off
+(so it can't trigger the `SessionEnd` flush again), no saved session (so the
+sweep never reads it back), Claude Code's agent prompt replaced by the task's,
+and run from an empty directory. Usage counts against the signed-in Claude
+plan. Set `DAILY_AGENT_CLAUDE_BIN` if `claude` isn't on `PATH`.
 
-Then in `.env` (and comment out `GEMINI_API_KEY`):
-
-```bash
-DAILY_AGENT_MODEL=google-cloud:gemini-3.8-flash
-GOOGLE_CLOUD_PROJECT=YOUR_PROJECT
-GOOGLE_CLOUD_LOCATION=global
-GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gcloud-daily-agent/application_default_credentials.json
-```
-
-`gemini-3.8-flash` is served from the `global` location; regional endpoints
-(e.g. `us-central1`) answered 404 when this was set up.
+Gemini still works for extraction and covers with a pydantic-ai model string
+(`google:gemini-3.8-flash` with `GEMINI_API_KEY`, or `google-cloud:...` on
+Vertex AI with `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION=global` and
+`GOOGLE_APPLICATION_CREDENTIALS`). Headlines are Claude-only.
 
 By default, transcripts are read from the Claude Code project directory matching
 this checkout. Set `DAILY_AGENT_INSIGHTS_TRANSCRIPTS_DIR` when the transcripts live
@@ -55,7 +50,7 @@ elsewhere.
 ## Use
 
 ```bash
-# Capture marker notes and Gemini-extracted lessons.
+# Capture marker notes and model-extracted lessons.
 uv run daily-agent insights collect
 
 # Capture marker notes without calling an LLM.
@@ -108,18 +103,20 @@ Covers are illustrations when an insight has one: an SVG per insight, stored
 in the main database (`insight_covers`). They are drawn outside capture, either
 by illustrator subagents and brought in with
 `uv run daily-agent insights covers-import <dir> --label subagent:fable`, or by
-the model with `uv run daily-agent insights covers-generate` (only insights
-without a cover; `--model` to choose). Every SVG must pass a strict validator
+the cover model with `uv run daily-agent insights covers-generate` (only
+insights without a cover; `--model` to choose). The sweep draws up to 10 missing
+covers per run (`--max-covers`). Every SVG must pass a strict validator
 first: static and self-contained, fixed 800×400 viewBox, no scripts, external
 references, embedded images, or event handlers. Insights without an
 illustration keep the generated gradient cover.
 
-Headlines aren't written at capture time, and no model call is made for them.
-`insights titles-export` lists the insights without one. Once a batch of
-headlines has been written for them (e.g. by Claude subagents),
-`insights titles-import` cleans and stores them: unknown keys are reported, and
-existing headlines are kept unless you pass `--overwrite`. Until an insight has
-a headline, its first sentence is shown.
+Headlines aren't written at capture time. The sweep writes them in batches for
+untitled insights (up to 100 per run, `--max-titles`) with the headline model,
+and `insights titles-generate` does the same on demand. By hand,
+`insights titles-export` lists the insights without one and
+`insights titles-import` cleans and stores a written batch: unknown keys are
+reported, and existing headlines are kept unless you pass `--overwrite`. Until
+an insight has a headline, its first sentence is shown.
 Sharing uses the phone's share sheet over HTTPS; on the plain-`http` tailnet URL
 it copies the text to the clipboard instead.
 
@@ -224,8 +221,9 @@ last read, skipping any written to in the last 10 minutes (`--settle-minutes`)
 so a live conversation is read once it pauses. It shares the flush's cursors and
 lock, so nothing is read twice and the two never run at once. New insights show
 on the web feed immediately and are queued for Telegram; only the flush delivers,
-so Telegram's pace is unchanged. Logs go to `digests/sweep.{out,err}.log`; a run
-missed while the Mac sleeps happens on wake.
+so Telegram's pace is unchanged. After capture it writes headlines and draws
+covers for insights that lack them. Logs go to `digests/sweep.{out,err}.log`; a
+run missed while the Mac sleeps happens on wake.
 
 Keep the web feed running with `scripts/install-web-launchd.sh`. Logs go to
 `digests/web.{out,err}.log`; uninstall with

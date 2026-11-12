@@ -14,6 +14,8 @@ load_dotenv()
 
 from rich.console import Console
 
+from .agents.claude_code import SPEND
+from .agents.headline_writer import write_headlines
 from .agents.insight_extractor import extract_insights, prompt_chars
 from .config import get_settings
 from .feed.channel_registry import ChannelRegistry, reap_stale
@@ -26,7 +28,7 @@ from .feed.channels import (
 )
 from .agents.cover_illustrator import draw_cover
 from .feed.covers import CoverStore, generate_covers, import_covers
-from .feed.headlines import apply_titles, export_for_titling
+from .feed.headlines import apply_titles, export_for_titling, generate_headlines
 from .feed.insights_capture import collect_insights, collect_marked
 from .feed.insights_feed import (
     INSIGHT_KIND,
@@ -267,12 +269,19 @@ def insights_sweep(
         3, help="Stop after this many transcripts fail in a row (provider outage)."
     ),
     lock_ttl_seconds: int = typer.Option(600),
+    max_titles: int = typer.Option(
+        100, help="Write at most N headlines for untitled insights (0 = none)."
+    ),
+    max_covers: int = typer.Option(
+        10, help="Draw at most N covers for insights without one (0 = none)."
+    ),
 ) -> None:
     """Capture insights from every project's transcripts, ended sessions or not.
 
     For sessions that rarely end, such as Claude inside Zed over ACP. New
     insights reach the web feed at once and are queued for Telegram, which
-    keeps its own pace (only `flush` delivers).
+    keeps its own pace (only `flush` delivers). Then headlines and covers are
+    written for insights that lack them, within per-run caps.
     """
     settings = get_settings()
     root = Path(settings.projects_path)
@@ -307,20 +316,47 @@ def insights_sweep(
             f"{stamp} [yellow]A flush or sweep is already running[/yellow] — skipping."
         )
         return
-    try:
-        result = asyncio.run(
-            sweep_insights(
+
+    async def background() -> tuple:
+        swept = await sweep_insights(
+            store,
+            root,
+            settings.insights_marker,
+            (lambda messages: extract_insights(settings.model, messages))
+            if extract
+            else None,
+            settle_seconds=settle_seconds,
+            max_consecutive_failures=max_failures,
+            on_progress=lock.refresh,
+        )
+        if swept.stopped_early:  # most likely the same outage; try next sweep
+            return swept, None, None
+        titled = covered = None
+        if max_titles > 0:
+            titled = await generate_headlines(
                 store,
-                root,
-                settings.insights_marker,
-                (lambda messages: extract_insights(settings.model, messages))
-                if extract
-                else None,
-                settle_seconds=settle_seconds,
-                max_consecutive_failures=max_failures,
+                lambda batch: write_headlines(settings.headline_model, batch),
+                limit=max_titles,
                 on_progress=lock.refresh,
             )
-        )
+        if max_covers > 0:
+
+            async def draw(record: dict, feedback: list[str] | None) -> str:
+                lock.refresh()
+                return await draw_cover(settings.cover_model, record, feedback)
+
+            covered = await generate_covers(
+                store,
+                CoverStore(settings.db_path),
+                draw,
+                source=f"model:{settings.cover_model}",
+                limit=max_covers,
+                concurrency=2,
+            )
+        return swept, titled, covered
+
+    try:
+        result, titled, covered = asyncio.run(background())
         queued = enqueue_new_insights(store, Outbox(settings.db_path))
     finally:
         lock.release()
@@ -337,6 +373,32 @@ def insights_sweep(
     )
     for path, reason in result.failed.items():
         console.print(f"  {path}: {reason}", soft_wrap=True, markup=False)
+    if titled is not None and (titled.written or titled.failed):
+        console.print(
+            f"  Headlines: wrote {titled.written}"
+            + (f"; {len(titled.failed)} batch(es) failed" if titled.failed else "")
+            + ".",
+            soft_wrap=True,
+        )
+        for reason in titled.failed:
+            console.print(f"    {reason}", soft_wrap=True, markup=False)
+    if covered is not None and (covered.written or covered.failed):
+        console.print(
+            f"  Covers: drew {covered.written}"
+            + (f"; {len(covered.failed)} failed" if covered.failed else "")
+            + ".",
+            soft_wrap=True,
+        )
+        for key, problems in covered.failed.items():
+            console.print(
+                f"    {key}: {'; '.join(problems)}", soft_wrap=True, markup=False
+            )
+    if SPEND.calls:
+        console.print(
+            f"  Claude Code: {SPEND.calls} call(s), about ${SPEND.cost_usd:.2f} "
+            "at API rates.",
+            soft_wrap=True,
+        )
     if result.stopped_early:
         console.print(
             "[red]Stopped after repeated failures[/red]; the rest wait for the "
@@ -344,6 +406,36 @@ def insights_sweep(
             soft_wrap=True,
         )
         raise typer.Exit(1)
+
+
+@insights_app.command("titles-generate")
+def insights_titles_generate(
+    limit: int = typer.Option(None, help="Write at most N headlines."),
+    model: str = typer.Option(
+        None, help="Claude Code model (default: headline_model)."
+    ),
+) -> None:
+    """Write feed headlines for untitled insights with Claude Code."""
+    settings = get_settings()
+    chosen = model or settings.headline_model
+    run = asyncio.run(
+        generate_headlines(
+            InsightStore(settings.db_path),
+            lambda batch: write_headlines(chosen, batch),
+            limit=limit,
+        )
+    )
+    console.print(
+        f"Wrote [bold]{run.written}[/bold] headline(s) with {chosen}"
+        + (
+            f"; [yellow]{len(run.failed)} batch(es) failed[/yellow]"
+            if run.failed
+            else ""
+        )
+        + "."
+    )
+    for reason in run.failed:
+        console.print(f"  [dim]{reason}[/dim]", markup=False)
 
 
 @insights_app.command("titles-export")
@@ -423,13 +515,13 @@ def insights_covers_import(
 @insights_app.command("covers-generate")
 def insights_covers_generate(
     limit: int = typer.Option(None, help="Draw at most N covers."),
-    concurrency: int = typer.Option(4, help="Drawings in flight at once."),
-    model: str = typer.Option(None, help="Model to draw with (default: model)."),
+    concurrency: int = typer.Option(2, help="Drawings in flight at once."),
+    model: str = typer.Option(None, help="Model to draw with (default: cover_model)."),
     overwrite: bool = typer.Option(False, help="Redraw insights that have a cover."),
 ) -> None:
     """Draw illustrated covers with the model for insights that lack one."""
     settings = get_settings()
-    chosen = model or settings.model
+    chosen = model or settings.cover_model
 
     async def draw(record: dict, feedback: list[str] | None) -> str:
         return await draw_cover(chosen, record, feedback)
