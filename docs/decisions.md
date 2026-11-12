@@ -11,8 +11,12 @@ default; Gemini remains available through pydantic-ai model strings.
 
 - **`claude-code:<alias>`** model strings run headless `claude -p` with JSON
   output: extraction uses `--json-schema` structured output, covers return SVG
-  text. Defaults: extraction and headlines `sonnet`, covers `fable` (the
-  subagent-drawn covers the maintainer liked were Fable's).
+  text. Defaults: `sonnet` for extraction, headlines, and covers. Covers
+  started on `fable` (the subagent-drawn covers the maintainer liked were
+  Fable's) but moved to `sonnet` the same day: Fable exhausts the plan's
+  limits, so it isn't used for anything (issue #100). The scheduled sweep on
+  the Mac currently runs with `--max-covers 0` (maintainer stopped image
+  generation).
 - **Locked down, because prompts carry transcript text:** `--tools ""` (no
   tools), `--strict-mcp-config` (no MCP), `disableAllHooks` (the `SessionEnd`
   hook would start another flush), `--no-session-persistence` (the sweep would
