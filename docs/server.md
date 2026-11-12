@@ -84,7 +84,10 @@ cursors only advance after a successful write.
 
    ```bash
    DAILY_AGENT_DATABASE_URL=postgresql://daily_agent:<password>@localhost/daily_agent
+   # Stories and prep explainers are written on the Mac (claude -p). The feed
+   # also skips them by itself when there's no claude CLI.
    DAILY_AGENT_WEB_VIDEO_SYNC=false
+   DAILY_AGENT_WEB_PREP_SYNC=false
    DAILY_AGENT_WEB_ALLOWED_HOSTS=daily-agent,daily-agent.<tailnet>.ts.net,<server tailscale ip>
    # Only if Instagram is connected: the Sources page looks accounts up with it.
    DAILY_AGENT_INSTAGRAM_TOKEN=...

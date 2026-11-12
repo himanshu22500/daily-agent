@@ -15,7 +15,7 @@ load_dotenv()
 
 from rich.console import Console
 
-from .agents.claude_code import SPEND
+from .agents.claude_code import SPEND, claude_available
 from .agents.headline_writer import write_headlines
 from .agents.insight_extractor import extract_insights, prompt_chars
 from .config import get_settings
@@ -610,6 +610,16 @@ def web(
     extra = [h.strip() for h in settings.web_allowed_hosts.split(",") if h.strip()]
     allowed = list(dict.fromkeys(["127.0.0.1", "localhost", bind, *extra]))
     console.print(f"Insight feed at [bold]http://{bind}:{listen}/[/bold]")
+    # Stories and explainers are written with `claude -p`. A host without it
+    # (the always-on feed server, #111) must not claim queued work from the
+    # shared database only to fail it.
+    writes = claude_available()
+    if not writes and (settings.web_video_sync or settings.web_prep_sync):
+        console.print(
+            "No claude CLI here: not writing stories or explainers in the "
+            "background (the Mac does that).",
+            markup=False,
+        )
     uvicorn.run(
         create_app(
             settings.db,
@@ -617,9 +627,9 @@ def web(
             allowed_hosts=allowed,
             videos=_video_sync(settings),
             instagram=_instagram_sync(settings),
-            video_loop=settings.web_video_sync,
+            video_loop=settings.web_video_sync and writes,
             prep=_prep_sync(settings),
-            prep_loop=settings.web_prep_sync,
+            prep_loop=settings.web_prep_sync and writes,
         ),
         host=bind,
         port=listen,
