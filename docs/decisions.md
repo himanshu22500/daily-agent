@@ -1,5 +1,20 @@
 # Decisions
 
+## 2026-11-13 — The Ask box is a chat (option C)
+
+The first Ask box (#119) looked plain on the phone. The maintainer compared
+three clickable mockups:
+- **A:** starter chips plus a sticky "Ask Claude" pill
+- **B:** a floating button that opens a bottom sheet
+- **C:** inline, just polished
+
+They chose **C** (#121). The box stays at the end of the item, with no chips and
+no floating button:
+- The reader's question is a right-aligned blue bubble.
+- Claude's answer is a soft card marked "✦ Claude". Open questions get the same
+  card with a shimmering placeholder.
+- The composer is a pill that grows as you type, with a round send button.
+
 ## 2026-11-13 — Ask Claude about an item; Telegram says when it's answered
 
 The maintainer asked for a way to question any article or interview card from

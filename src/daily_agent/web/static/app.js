@@ -226,7 +226,7 @@
     }
     const reader = overlay.querySelector("[data-reader]");
     markSeen(reader && reader.dataset.key, { now: true });
-    pollAsk();
+    askReady();
   }
 
   function hideReader() {
@@ -385,13 +385,37 @@
     if (!document.hidden) pollAsk();
   });
 
+  // The composer grows with its text; its send button is off while it's empty
+  // (without JS the button stays on and `required` guards the post).
+  function fitComposer(box) {
+    const send = box.form && box.form.querySelector(".send");
+    if (send && !box.form.dataset.sending) send.disabled = !box.value.trim();
+    box.style.height = "40px";
+    box.style.height = Math.min(box.scrollHeight, 160) + "px";
+  }
+  function askReady() {
+    document.querySelectorAll("[data-ask-box]").forEach(fitComposer);
+    pollAsk();
+  }
+  document.addEventListener("input", (event) => {
+    if (event.target.matches("[data-ask-box]")) fitComposer(event.target);
+  });
+  document.addEventListener("keydown", (event) => {
+    const box = event.target;
+    if (box.matches("[data-ask-box]") && event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      box.form.requestSubmit();
+    }
+  });
+
   document.addEventListener("submit", async (event) => {
     const form = event.target;
     if (!form.matches("form[data-ask-form]")) return;
     event.preventDefault();
     const section = form.closest("[data-ask]");
     const button = form.querySelector("button");
-    if (button.disabled) return;
+    if (form.dataset.sending || button.disabled) return;
+    form.dataset.sending = "1";
     button.disabled = true;
     try {
       const res = await fetch(form.action, {
@@ -402,13 +426,14 @@
       if (!res.ok && res.status !== 400 && res.status !== 429) throw new Error(String(res.status));
       section.outerHTML = await res.text(); // the thread with the new question, or the error
       if (res.ok) toast("Asked. Telegram will ping you when it's answered.");
-      pollAsk();
+      askReady();
     } catch {
-      button.disabled = false;
+      delete form.dataset.sending;
+      fitComposer(form.querySelector("[data-ask-box]"));
       toast("Couldn't send the question. Try again.");
     }
   });
-  pollAsk(); // a standalone reader page with an open question
+  askReady(); // a standalone reader page (maybe with an open question)
 
   // --- "N new insights" pill ----------------------------------------------------------
   const fresh = document.getElementById("fresh");
