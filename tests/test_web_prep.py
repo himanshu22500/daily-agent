@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from starlette.testclient import TestClient
@@ -13,7 +13,8 @@ from test_deep_dive import make_folder
 
 from daily_agent.agents.concept_writer import ConceptRequest
 from daily_agent.feed.insights_store import InsightStore
-from daily_agent.feed.prep import PrepSync, card_key, concept_key, position_in_point
+from daily_agent.feed.prep import PrepSync, card_key, concept_key
+from daily_agent.feed.web_feed import WebFeed
 from daily_agent.models import Insight, VideoStory
 from daily_agent.web.app import create_app
 
@@ -136,24 +137,20 @@ async def test_prep_lives_only_in_the_interview_tab(mixed, db):
     assert _keys(mixed.get("/?view=saved").text) == [card_key("T5", 4)]
 
 
-async def test_interview_tab_is_in_resume_point_order(mixed, db):
-    await PrepSync(db, _writer).run_once()
-    first = mixed.get("/?view=interview").text
-    chips = re.findall(r'class="chip[^"]*"[^>]*>([^<]+)</a>', first)
-    assert chips == [
-        "All points",
-        "T0 · Role overview",
-        "T5 · MySQL 8 → PostgreSQL 18 on AWS DMS + UUIDv7",
-        "S1 · Languages (Python, SQL)",
-    ]
-    seen, url = [], "/?view=interview"
-    while url:
-        page = mixed.get(url + ("&partial=1" if seen else "")).text
-        seen += _keys(page)
+def _deck(client: TestClient, url: str = "/?view=interview") -> list[str]:
+    """Every card of one Interview deck, following "Load more"."""
+    seen, page = [], client.get(url).text
+    while True:
+        seen += [k for k in _keys(page) if k not in seen]
         more = re.search(r'class="more" href="([^"]+)"', page)
-        url = more.group(1).replace("&amp;", "&") if more else None
-    # Questions in order, then the point's explainers; tracker order of points.
-    assert seen == [
+        if not more:
+            return seen
+        page = client.get(more.group(1).replace("&amp;", "&") + "&partial=1").text
+
+
+async def test_interview_tab_is_a_rotating_practice_deck(mixed, db):
+    await PrepSync(db, _writer).run_once()
+    everything = {
         concept_key("t0-c1"),
         card_key("T5", 1),
         card_key("T5", 2),
@@ -162,20 +159,53 @@ async def test_interview_tab_is_in_resume_point_order(mixed, db):
         concept_key("t5-c1"),
         concept_key("t5-c2"),
         card_key("S1", 1),
+    }
+    deck = _deck(mixed)
+    assert set(deck) == everything and len(deck) == len(everything)
+    # A new deck on every visit: the order changes.
+    orders = {tuple(_deck(mixed)) for _ in range(8)}
+    assert len(orders) > 1
+    # Chips still pick one resume point, in the tracker's order.
+    first = mixed.get("/?view=interview").text
+    chips = re.findall(r'class="chip[^"]*"[^>]*>([^<]+)</a>', first)
+    assert chips == [
+        "All points",
+        "T0 · Role overview",
+        "T5 · MySQL 8 → PostgreSQL 18 on AWS DMS + UUIDv7",
+        "S1 · Languages (Python, SQL)",
     ]
-    one = mixed.get("/?view=interview&point=s1").text
-    assert _keys(one) == [card_key("S1", 1)]
-    assert 'class="chip chip-point on"' in one
+    assert _deck(mixed, "/?view=interview&point=s1") == [card_key("S1", 1)]
 
 
-def test_questions_sort_by_number_then_explainers():
-    keys = ["prep:t5-c1", "prep:t5-q10", "prep:t5-q2", "prep:t5-q1"]
-    assert sorted(keys, key=position_in_point) == [
-        "prep:t5-q1",
-        "prep:t5-q2",
-        "prep:t5-q10",
-        "prep:t5-c1",
-    ]
+def test_seen_cards_leave_the_deck_until_they_are_due(mixed, db):
+    feed = WebFeed(db)
+    t0 = datetime.now(timezone.utc)
+    seen = [card_key("T5", 1), card_key("T5", 2)]
+    feed.record_views(seen, session_id="deck-1", now=t0)
+
+    def deck_at(moment) -> list[str]:
+        edition = feed.new_edition(interview=True, now=moment)
+        return [e.key for e in feed.edition_page(edition, limit=50).entries]
+
+    later = deck_at(t0 + timedelta(hours=1))
+    assert set(later) == {card_key("T5", 4), card_key("T5", 5), card_key("S1", 1)}
+    # After the first gap (1 day), they come back as revisits.
+    assert set(seen) <= set(deck_at(t0 + timedelta(days=1, minutes=1)))
+    # The end of the deck says when the next one is due; For you ignores prep.
+    assert feed.next_revisit_at(interview=True, now=t0) == t0 + timedelta(days=1)
+    assert feed.next_revisit_at(now=t0) is None
+
+
+def test_the_end_of_the_deck_says_what_comes_next(mixed, db):
+    page = mixed.get("/?view=interview&point=t5").text
+    assert "Load more" in page  # 4 cards, page size 3: there is a second page
+    WebFeed(db).record_views(
+        [card_key("T5", n) for n in (1, 2, 4, 5)], session_id="deck-0"
+    )
+    done = mixed.get("/?view=interview&point=t5").text
+    assert "You've been through every question that's due." in done
+    assert "The next one is due" in done
+    assert "No interview prep yet" not in done
 
 
 def test_read_next_keeps_prep_and_insights_apart(mixed):

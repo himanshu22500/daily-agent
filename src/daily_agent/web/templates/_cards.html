@@ -1,6 +1,13 @@
 {% for entry in entries %}{% include "_card.html" %}{% endfor %}
 {% if more_url %}
 <a class="more" href="{{ more_url }}" data-more>Load more</a>
+{% elif filters.view == "interview" and (entries or not first_page or next_revisit) %}
+<div class="end">
+  <p><strong>You've been through every question that's due.</strong></p>
+  <p>Seen questions come back after 1 day, then 3 days, a week, 3 weeks and 2 months (sooner if saved).
+    {% if next_revisit %}The next one is due {{ next_revisit|until }}.{% endif %}</p>
+  {% if entries or not first_page %}<p><a href="{{ feed_url(view='interview', point=filters.point) }}">Shuffle a new deck →</a></p>{% endif %}
+</div>
 {% elif filters.view == "for-you" %}
 <div class="end">
   <p><strong>You're all caught up.</strong></p>

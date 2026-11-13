@@ -47,14 +47,7 @@ from .headlines import fallback_headline, plain, split_first_sentence
 from .insights_store import InsightCursorRow, InsightRow, InsightStore
 from .instagram_posts import InstagramStore, shortcode_of
 from .projects import session_projects
-from .prep import (
-    CARD_TYPE,
-    CONCEPT_TYPE,
-    PrepStore,
-    level_label,
-    position_in_point,
-    source_of,
-)
+from .prep import CARD_TYPE, CONCEPT_TYPE, PrepStore, level_label, source_of
 from .videos import VideoStore, video_id_of
 
 FOR_YOU = "for-you"
@@ -325,14 +318,26 @@ class WebFeed:
         self,
         *,
         type: str | None = None,
+        interview: bool = False,
+        point: str | None = None,
         now: datetime | None = None,
         rng: random.Random | None = None,
     ) -> str:
-        """Build and store a fresh For you order; return its edition id."""
+        """Build and store a fresh deck; return its edition id.
+
+        For you by default (everything but interview prep). With ``interview``,
+        the Interview tab's practice deck (#117): prep only, optionally one
+        resume ``point``, with the same rotation. Unseen first, and seen cards
+        come back after their spaced-repetition gap.
+        """
         moment = now or _now()
-        stmt = (
-            self._base().where(WebFeedStateRow.dismissed_at.is_(None)).where(_NOT_PREP)
-        )
+        stmt = self._base().where(WebFeedStateRow.dismissed_at.is_(None))
+        if interview:
+            stmt = stmt.where(InsightRow.type.in_(PREP_TYPES))
+            if point:
+                stmt = stmt.where(InsightRow.source_session == source_of(point))
+        else:
+            stmt = stmt.where(_NOT_PREP)
         if type:
             stmt = stmt.where(InsightRow.type == type)
         with session_scope(self._engine) as session:
@@ -349,7 +354,7 @@ class WebFeed:
                 WebFeedSessionRow(
                     id=edition_id,
                     created_at=_iso(moment),
-                    type_filter=type or "",
+                    type_filter=f"interview:{point or ''}" if interview else type or "",
                     keys=json.dumps(keys),
                 )
             )
@@ -390,39 +395,7 @@ class WebFeed:
             entries=entries, next_offset=position if position < len(keys) else None
         )
 
-    # --- reading: the Interview tab ----------------------------------------- #
-    def interview_page(
-        self, *, point: str | None = None, offset: int = 0, limit: int = 20
-    ) -> EditionPage:
-        """Interview prep in study order: resume points as in the tracker, and
-        within each point its questions in order, then its explainers. Hidden
-        ones are left out. ``point`` (e.g. ``"t5"``) keeps just one point."""
-        stmt = (
-            self._base()
-            .where(InsightRow.type.in_(PREP_TYPES))
-            .where(WebFeedStateRow.dismissed_at.is_(None))
-        )
-        if point:
-            stmt = stmt.where(InsightRow.source_session == source_of(point))
-        with session_scope(self._engine) as session:
-            rows = list(session.exec(stmt).all())
-        rank = {source_of(p.id): n for n, p in enumerate(self._prep.points())}
-        rows.sort(
-            key=lambda row: (
-                rank.get(row[0].source_session, len(rank)),
-                row[0].source_session,
-                *position_in_point(row[0].key),
-                row[0].key,
-            )
-        )
-        start = max(offset, 0)
-        sources = self._sources()
-        entries = [_entry(*row, sources) for row in rows[start : start + limit]]
-        end = start + limit
-        return EditionPage(
-            entries=entries, next_offset=end if end < len(rows) else None
-        )
-
+    # --- reading: the Interview tab's point chips ----------------------------- #
     def interview_points(self) -> list[tuple[str, str, int]]:
         """``(point id, label, entries)`` for the Interview tab's chips, in the
         tracker's order; points with nothing visible are left out."""
@@ -441,14 +414,28 @@ class WebFeed:
             if counts.get(source_of(p.id))
         ]
 
-    def next_revisit_at(self, *, now: datetime | None = None) -> datetime | None:
-        """When the next seen insight becomes due again (``None`` if none pending)."""
+    def next_revisit_at(
+        self,
+        *,
+        interview: bool = False,
+        point: str | None = None,
+        now: datetime | None = None,
+    ) -> datetime | None:
+        """When the next seen item becomes due again (``None`` if none pending):
+        in For you, or with ``interview`` in the Interview deck (one ``point``)."""
         stamp = _iso(now or _now())
         stmt = (
             select(func.min(WebFeedStateRow.due_at))
+            .join(InsightRow, InsightRow.key == WebFeedStateRow.key)
             .where(WebFeedStateRow.dismissed_at.is_(None))
             .where(WebFeedStateRow.due_at > stamp)
         )
+        if interview:
+            stmt = stmt.where(InsightRow.type.in_(PREP_TYPES))
+            if point:
+                stmt = stmt.where(InsightRow.source_session == source_of(point))
+        else:
+            stmt = stmt.where(_NOT_PREP)
         with session_scope(self._engine) as session:
             value = session.scalar(stmt)
         return _aware(value) if value else None

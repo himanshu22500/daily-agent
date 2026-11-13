@@ -238,24 +238,48 @@ def create_app(
             ),
         }
 
-    def _interview(request: Request, point: str) -> Response | dict:
-        """The Interview tab (#115): prep in resume-point order, paged by offset."""
+    def _interview(request: Request, point: str, partial: bool) -> Response | dict:
+        """The Interview tab: a practice deck rebuilt on every visit (#117)."""
+        params = request.query_params
+        edition = params.get("session") or ""
         try:
-            offset = int(request.query_params.get("offset") or 0)
+            offset = int(params.get("offset") or 0)
         except ValueError:
             return PlainTextResponse("Invalid offset.", status_code=400)
-        page = feed.interview_page(point=point or None, offset=offset, limit=page_size)
+
+        def build() -> str:
+            return feed.new_edition(interview=True, point=point or None)
+
+        if not edition:
+            if partial:
+                return PlainTextResponse("Missing session.", status_code=400)
+            edition, offset = build(), 0
+        try:
+            page = feed.edition_page(edition, offset=offset, limit=page_size)
+        except KeyError:
+            if partial:
+                return templates.TemplateResponse(
+                    request, "_expired.html", {}, status_code=410
+                )
+            edition, offset = build(), 0
+            page = feed.edition_page(edition, offset=0, limit=page_size)
         return {
             "entries": page.entries,
-            # Views count once per page load, as in the chronological lists.
-            "session_id": request.query_params.get("pv")
-            or "p-" + secrets.token_urlsafe(6),
+            "session_id": edition,
             "first_page": offset == 0,
             "more_url": (
-                _feed_url(view=INTERVIEW, point=point, offset=str(page.next_offset))
+                _feed_url(
+                    view=INTERVIEW,
+                    point=point,
+                    session=edition,
+                    offset=str(page.next_offset),
+                )
                 if page.next_offset is not None
                 else None
             ),
+            "next_revisit": None
+            if page.next_offset is not None
+            else feed.next_revisit_at(interview=True, point=point or None),
         }
 
     def index(request: Request) -> Response:
@@ -275,7 +299,7 @@ def create_app(
         if view == FOR_YOU:
             result = _for_you(request, type_, partial)
         elif view == INTERVIEW:
-            result = _interview(request, point)
+            result = _interview(request, point, partial)
         else:
             result = _chronological(request, view, type_, q)
         if isinstance(result, Response):
@@ -286,10 +310,10 @@ def create_app(
         context = {
             **result,
             "filters": filters,
-            "show_revisit": view == FOR_YOU,
+            "show_revisit": view in (FOR_YOU, INTERVIEW),
             "next_url": _feed_url(**filters),
         }
-        if view != FOR_YOU and context["more_url"]:
+        if view not in (FOR_YOU, INTERVIEW) and context["more_url"]:
             # Keep one page-load id across this list's infinite scroll.
             context["more_url"] += "&pv=" + quote(context["session_id"], safe="")
         if partial:
@@ -370,7 +394,9 @@ def create_app(
                 "entry": entry,
                 "next_url": next_url,
                 "close_url": next_url,
-                "show_revisit": request.query_params.get("v") == FOR_YOU,
+                "show_revisit": request.query_params.get("v") in (FOR_YOU, INTERVIEW),
+                # Which deck the card belongs to, for its own action links.
+                "filters": {"view": request.query_params.get("v") or ""},
                 "related": feed.related(key) if reading else [],
             },
         )
@@ -386,7 +412,9 @@ def create_app(
             {
                 "entry": entry,
                 "next_url": _safe_next(request.query_params.get("next")),
-                "show_revisit": request.query_params.get("v") == FOR_YOU,
+                "show_revisit": request.query_params.get("v") in (FOR_YOU, INTERVIEW),
+                # Which deck the card belongs to, for its own action links.
+                "filters": {"view": request.query_params.get("v") or ""},
             },
         )
 

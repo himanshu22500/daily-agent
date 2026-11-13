@@ -1,5 +1,20 @@
 # Decisions
 
+## 2026-11-13 — The Interview tab is a rotating practice deck
+
+The fixed resume-point order from #115 never changed, so the same questions
+always came first. The maintainer asked for rotation (#117). They chose a
+practice deck over "seen ones go last" and over "fully random":
+
+- Every visit builds a fresh deck with the same builder and view tracking as
+  For you: unseen first (weighted shuffle), and seen questions come back after
+  1d, 3d, 1w, 3w, then 2mo (sooner if saved).
+- A question counts as seen once its card has been on screen, the same rule as
+  everywhere else.
+- Point chips build a deck for just that resume point.
+- The end of a deck says when the next question is due. For you's "next comes
+  back" no longer counts prep, and the Interview deck's counts only prep.
+
 ## 2026-11-12 — Interview prep gets its own tab, in resume-point order
 
 After the 269 flashcards were imported, they took over For you: 14 of the

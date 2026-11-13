@@ -303,7 +303,8 @@
     const card = feedCard(key);
     if (!card) return;
     const url = new URL(`/card/${encodeURIComponent(key)}`, location.href);
-    if (feed.dataset.view === "for-you") url.searchParams.set("v", "for-you");
+    const view = feed.dataset.view;
+    if (view === "for-you" || view === "interview") url.searchParams.set("v", view);
     url.searchParams.set("next", feed.dataset.next || "/");
     try {
       const res = await fetch(url);

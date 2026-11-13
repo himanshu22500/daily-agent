@@ -229,9 +229,10 @@ uv run daily-agent prep write                         # write queued explainers 
   `--all` to include skills and general points.
 - **The Interview tab:** all of it lives in its own tab, next to For you and
   Latest, and never mixes into those two (Saved, Hidden and search still
-  include it). It runs in study order: resume points as in the tracker, and
-  within each point its questions in order, then its explainers. Chips at the
-  top pick one point.
+  include it). It's a practice deck: every visit shuffles a fresh deck with
+  unseen questions first. A question you've seen leaves the deck and comes
+  back after 1 day, then 3 days, a week, 3 weeks and 2 months (sooner if
+  saved). Chips at the top narrow the deck to one resume point.
 - **Flashcards:** each answered question becomes a card. The question is the
   headline, and the card shows only its level ("Deep dive question · tap to
   answer"), with no cover. The reader keeps the answer behind **Show answer**.
