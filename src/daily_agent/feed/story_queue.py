@@ -86,6 +86,8 @@ class SourceStatus:
 class SyncReport:
     checked: int = 0
     queued: int = 0
+    # Of those, older videos taken from a quiet source's backlog (#124).
+    older: int = 0
     written: int = 0
     waiting: int = 0  # not ready yet (e.g. no captions); retried later
     failed: int = 0

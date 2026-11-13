@@ -19,7 +19,7 @@
   </header>
   <main class="sources">
     <h1>Sources</h1>
-    <p class="sources-intro">Follow a YouTube channel or playlist, or an Instagram Business or Creator account. Its latest 5 videos or posts become stories in your feed, and so does each new one. Claude writes each story from the video's captions, or from the post's caption and images.</p>
+    <p class="sources-intro">Follow a YouTube channel or playlist, or an Instagram Business or Creator account. Its latest 5 videos or posts become stories in your feed, and so does each new one. On a day a YouTube channel posts nothing new, one of its older videos comes instead, going back a video a day. Claude writes each story from the video's captions, or from the post's caption and images.</p>
     <form class="follow" method="post" action="/sources">
       <input type="text" name="link" value="{{ link }}" placeholder="YouTube or Instagram link" aria-label="YouTube channel, playlist, or Instagram profile link" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" required>
       <button type="submit" class="act"{% if not can_follow %} disabled{% endif %}>Follow</button>

@@ -2,7 +2,10 @@
 
 Following a channel (or playlist) records it in ``video_sources``. Its 5 most
 recent uploads are queued in ``videos`` right away; after that the source is
-re-checked every few hours and each new upload is queued. A queued video is
+re-checked every few hours and each new upload is queued. On a day a source
+brings nothing new, it brings one older video instead: the newest one not yet
+taken, so the 6th, then the 7th, and so on back through the channel (issue
+#124; see ``VideoSync._backfill``). A queued video is
 written up by Claude from its captions (``agents.video_writer``) and stored as
 an ordinary ``insights`` row, so it shows in For you, Latest, search, Saved,
 and Read next like everything else:
@@ -23,10 +26,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta
+from contextlib import aclosing
+from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 
-from sqlmodel import Field, SQLModel, select
+from sqlalchemy import update
+from sqlmodel import Field, SQLModel, func, select
 
 from ..db import conflict_insert, create_tables, make_engine, session_scope
 from ..models import Insight, VideoStory
@@ -38,7 +43,9 @@ from ..sources.youtube import (
     SourceRef,
     Transcript,
     Video,
+    VideoUnavailable,
     YouTubeError,
+    uploads_list,
 )
 from .insights_store import InsightStore
 from .story_queue import (  # noqa: F401 - re-exported for callers and tests
@@ -76,6 +83,11 @@ PER_RUN = 5
 # video without captions waits instead of being written from its description.
 CAPTION_WAIT = timedelta(hours=6)
 CAPTION_RETRY = timedelta(hours=1)
+# Going back (issue #124): older videos tried in one check when the ones found
+# are private or removed; the next check goes on from there.
+BACKFILL_TRIES = 3
+# A skipped video with this error is never taken from the backlog.
+UNAVAILABLE = "unavailable: "
 
 
 def video_key(video_id: str) -> str:
@@ -113,6 +125,7 @@ class VideoRow(SQLModel, table=True):
     title: str = ""
     description: str = ""
     published_at: str
+    # When the video was found, or taken from the backlog (issue #124).
     found_at: str
     state: str = PENDING
     attempts: int = 0
@@ -208,6 +221,96 @@ class VideoStore(FollowedSources):
                 queued += int(take)
         return queued
 
+    # --- going back (issue #124) ------------------------------------------- #
+    def queued_since(self, source_id: str, since: datetime) -> bool:
+        """Whether the source queued anything (new, initial, or older) since then."""
+        stmt = (
+            select(func.count())
+            .select_from(VideoRow)
+            .where(VideoRow.source_id == source_id)
+            .where(VideoRow.state != SKIPPED)
+            .where(VideoRow.found_at >= _iso(since))
+        )
+        with session_scope(self._engine) as session:
+            return bool(session.scalar(stmt))
+
+    def backlog(self, video_ids: list[str]) -> list[tuple[str, VideoRow | None]]:
+        """The ids not taken yet, in order, with their row if one exists.
+
+        Not taken: never seen, or skipped (older than a source's first five, or
+        dropped on unfollow), unless it was found to be unavailable.
+        """
+        with session_scope(self._engine) as session:
+            known = {
+                row.video_id: row
+                for row in session.exec(
+                    select(VideoRow).where(VideoRow.video_id.in_(video_ids))
+                ).all()
+            }
+        out = []
+        for video_id in video_ids:
+            row = known.get(video_id)
+            if row is None or (
+                row.state == SKIPPED and not row.error.startswith(UNAVAILABLE)
+            ):
+                out.append((video_id, row))
+        return out
+
+    def take(
+        self,
+        source: VideoSourceRow,
+        video: Video | None,
+        video_id: str,
+        *,
+        now: datetime,
+    ) -> None:
+        """Queue an older video: a skipped row, or ``video`` read from its page."""
+        if video is None:
+            with session_scope(self._engine) as session:
+                session.execute(
+                    update(VideoRow)
+                    .where(VideoRow.video_id == video_id)
+                    .where(VideoRow.state == SKIPPED)
+                    .values(
+                        state=PENDING,
+                        attempts=0,
+                        error="",
+                        not_before=None,
+                        source_id=source.id,
+                        found_at=_iso(now),
+                    )
+                )
+            return
+        self._insert(
+            video_id=video.video_id,
+            source_id=source.id,
+            channel_id=video.channel_id,
+            channel=video.channel or source.title,
+            title=video.title,
+            description=video.description,
+            published_at=_iso(video.published_at),
+            found_at=_iso(now),
+            state=PENDING,
+        )
+
+    def skip_unavailable(
+        self, source: VideoSourceRow, video_id: str, reason: str, *, now: datetime
+    ) -> None:
+        """Remember a private or removed video so it's never tried again."""
+        self._insert(
+            video_id=video_id,
+            source_id=source.id,
+            published_at=_iso(now),
+            found_at=_iso(now),
+            state=SKIPPED,
+            error=(UNAVAILABLE + reason)[:300],
+        )
+
+    def _insert(self, **values) -> None:
+        stmt = conflict_insert(self._engine, VideoRow).values(**values)
+        with session_scope(self._engine) as session:
+            session.execute(stmt.on_conflict_do_nothing(index_elements=["video_id"]))
+
     def channel_names(self) -> dict[str, str]:
         """``{"yt:<channel id>": channel name}`` for every story's source label."""
         with session_scope(self._engine) as session:
@@ -234,6 +337,8 @@ class VideoSync:
         *,
         check_every: timedelta = CHECK_EVERY,
         per_run: int = PER_RUN,
+        backfill: bool = True,
+        tz: tzinfo | None = None,
         clock: Callable[[], datetime] = _now,
     ) -> None:
         self.store = VideoStore(db_path)
@@ -242,7 +347,13 @@ class VideoSync:
         self.write_story = write_story
         self.check_every = check_every
         self.per_run = max(1, per_run)
+        self.backfill = backfill
+        # Days for going back start at local midnight (this machine's zone).
+        self.tz = tz or datetime.now().astimezone().tzinfo
         self.clock = clock
+        # Sources whose backlog ran out, and the day it did (tried again the
+        # next day; the list may have grown).
+        self._backlog_done: dict[str, date] = {}
 
     async def follow(self, link: str) -> VideoSourceRow:
         """Follow a pasted link and queue its latest videos.
@@ -284,25 +395,90 @@ class VideoSync:
         for source in self.store.active_sources():
             if source.checked_at and now - _aware(source.checked_at) < self.check_every:
                 continue
-            await self._check(source, report)
+            checked = await self._check(source, report)
+            if self.backfill and (checked or source.checked_at):
+                await self._backfill(source, report)
         budget = limit or self.per_run
         for video in self.store.ready(now=self.clock(), limit=budget):
             await self._write(video, report)
         report.remaining = self.store.ready_count(now=self.clock())
         return report
 
-    async def _check(self, source: VideoSourceRow, report: SyncReport) -> None:
+    async def _check(self, source: VideoSourceRow, report: SyncReport) -> bool:
         try:
             feed = await self.youtube.feed(source.feed_url)
         except (BadSourceLink, YouTubeError) as exc:
             self.store.mark_checked(source.id, now=self.clock(), error=str(exc))
             report.errors.append(f"{source.title or source.id}: {exc}")
-            return
+            return False
         report.checked += 1
         report.queued += self.store.record(
             source, feed, first=source.checked_at is None, now=self.clock()
         )
         self.store.mark_checked(source.id, now=self.clock(), title=feed.title)
+        return True
+
+    async def _backfill(self, source: VideoSourceRow, report: SyncReport) -> None:
+        """On a day the source queued nothing, queue its next older video.
+
+        "Next older" is the first video in the source's list (a channel's
+        long-form uploads, newest first, or the playlist) that hasn't been
+        taken: the 6th after the first five, then the 7th, and so on. Runs
+        after each check, so at most once every few hours, and only while
+        nothing from the source was queued today (local time): a day with a new
+        upload brings no older video. A source never checked successfully
+        waits, so its first check can queue the latest five first.
+        """
+        now = self.clock()
+        today = now.astimezone(self.tz).date()
+        midnight = now.astimezone(self.tz).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        if self._backlog_done.get(source.id) == today:
+            return
+        if self.store.queued_since(source.id, midnight):
+            return
+        try:
+            list_id = uploads_list(source.id)
+        except ValueError:
+            return
+        tries = 0
+        try:
+            async with aclosing(self.youtube.list_pages(list_id)) as pages:
+                async for page in pages:
+                    for video_id, row in self.store.backlog(page):
+                        if tries == BACKFILL_TRIES:
+                            return
+                        tries += 1
+                        if await self._take(source, video_id, row, report):
+                            return
+        except (BadSourceLink, YouTubeError) as exc:
+            report.errors.append(f"{source.title or source.id}: older videos: {exc}")
+            _LOG.warning("Older videos of %s: %s", source.id, exc)
+            return
+        self._backlog_done[source.id] = today
+
+    async def _take(
+        self,
+        source: VideoSourceRow,
+        video_id: str,
+        row: VideoRow | None,
+        report: SyncReport,
+    ) -> bool:
+        """Queue one older video; False if it turned out to be unavailable."""
+        video = None
+        if row is None:  # older than the RSS feed reaches: read its page
+            try:
+                video = await self.youtube.video(video_id)
+            except VideoUnavailable as exc:
+                self.store.skip_unavailable(
+                    source, video_id, str(exc), now=self.clock()
+                )
+                return False
+        self.store.take(source, video, video_id, now=self.clock())
+        report.queued += 1
+        report.older += 1
+        return True
 
     async def _write(self, row: VideoRow, report: SyncReport) -> None:
         now = self.clock()
