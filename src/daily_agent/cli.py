@@ -51,6 +51,7 @@ from .feed.outbox import Channel, Outbox
 from .feed.pacer import Pacer
 from .feed.instagram_posts import InstagramSync
 from .feed.prep import PrepSync
+from .feed.questions import QuestionSync
 from .feed.videos import VideoSync
 from .sources.instagram import (
     SCOPES,
@@ -86,6 +87,11 @@ prep_app = typer.Typer(
     no_args_is_help=True, help="Interview prep from a resume deep dive, as feed cards."
 )
 app.add_typer(prep_app, name="prep")
+questions_app = typer.Typer(
+    no_args_is_help=True,
+    help="Questions asked under feed items, answered by Claude.",
+)
+app.add_typer(questions_app, name="questions")
 console = Console()
 
 
@@ -614,10 +620,12 @@ def web(
     # (the always-on feed server, #111) must not claim queued work from the
     # shared database only to fail it.
     writes = claude_available()
-    if not writes and (settings.web_video_sync or settings.web_prep_sync):
+    if not writes and (
+        settings.web_video_sync or settings.web_prep_sync or settings.web_ask_sync
+    ):
         console.print(
-            "No claude CLI here: not writing stories or explainers in the "
-            "background (the Mac does that).",
+            "No claude CLI here: not writing stories, explainers or answers in "
+            "the background (the Mac does that).",
             markup=False,
         )
     uvicorn.run(
@@ -630,6 +638,9 @@ def web(
             video_loop=settings.web_video_sync and writes,
             prep=_prep_sync(settings),
             prep_loop=settings.web_prep_sync and writes,
+            questions=_question_sync(settings),
+            question_loop=settings.web_ask_sync and writes,
+            question_poll_seconds=settings.web_ask_poll_seconds,
         ),
         host=bind,
         port=listen,
@@ -969,6 +980,76 @@ def prep_write(
         + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
         + "."
     )
+    for error in report.errors:
+        console.print(f"  [dim]{error}[/dim]", markup=False)
+
+
+def _telegram_notifier(settings):
+    """Sends one message to the bot chat (``None`` without Telegram)."""
+    if not settings.telegram_enabled:
+        return None
+
+    def send(text: str) -> None:
+        channel = TelegramChannel(
+            settings.telegram_bot_token, settings.telegram_chat_id
+        )
+        try:
+            channel.send_text(text)
+        finally:
+            channel.close()
+
+    return send
+
+
+def _question_sync(settings, model: str | None = None) -> QuestionSync:
+    from .agents.question_answerer import answer_question
+
+    chosen = model or settings.ask_model
+    return QuestionSync(
+        settings.db,
+        lambda request: answer_question(chosen, request),
+        notify=_telegram_notifier(settings),
+        feed_url=settings.feed_url,
+    )
+
+
+@questions_app.command("list")
+def questions_list(
+    limit: int = typer.Option(20, help="Show the N most recent questions."),
+) -> None:
+    """Recent questions and whether Claude has answered them."""
+    questions = _question_sync(get_settings()).store.recent(limit)
+    if not questions:
+        console.print("No questions asked yet.")
+    for q in questions:
+        state = "answered" if q.answered else q.state
+        if q.retrying:
+            state = f"retrying ({q.error})"
+        elif q.failed:
+            state = f"failed ({q.error})"
+        console.print(
+            f"{q.asked_at:%Y-%m-%d %H:%M}  {state:<9}  {q.key}  "
+            f"{' '.join(q.question.split())[:80]}",
+            markup=False,
+        )
+
+
+@questions_app.command("answer")
+def questions_answer(
+    limit: int = typer.Option(None, help="Answer at most N questions (default 3)."),
+    model: str = typer.Option(None, help="Claude Code model (default: ask_model)."),
+) -> None:
+    """Answer waiting questions now (and send their Telegram messages)."""
+    settings = get_settings()
+    report = asyncio.run(_question_sync(settings, model).run_once(limit=limit))
+    console.print(
+        f"Answered {report.written} question(s)"
+        + (f", {report.remaining} still waiting" if report.remaining else "")
+        + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
+        + "."
+    )
+    if not settings.telegram_enabled:
+        console.print("Telegram isn't configured, so no message was sent.")
     for error in report.errors:
         console.print(f"  [dim]{error}[/dim]", markup=False)
 

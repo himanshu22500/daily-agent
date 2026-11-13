@@ -226,6 +226,7 @@
     }
     const reader = overlay.querySelector("[data-reader]");
     markSeen(reader && reader.dataset.key, { now: true });
+    pollAsk();
   }
 
   function hideReader() {
@@ -345,6 +346,69 @@
       form.submit(); // actions are idempotent, so a plain post is a safe fallback
     }
   });
+
+  // --- Ask about this: post a question, then refresh the thread until answered ------
+  // Claude answers on the Mac (maybe much later; Telegram says when). While a
+  // question is open, the thread is re-fetched every ASK_POLL_MS. Only the
+  // thread is replaced, so a question being typed is never lost.
+  const ASK_POLL_MS = 10_000;
+  let askTimer = null;
+
+  function swapThread(section, html) {
+    const tpl = document.createElement("template");
+    tpl.innerHTML = html;
+    const fresh = tpl.content.querySelector("[data-ask]");
+    if (!fresh || !section.isConnected) return;
+    section.querySelector("[data-ask-thread]").replaceWith(fresh.querySelector("[data-ask-thread]"));
+    if (fresh.dataset.askPoll) section.dataset.askPoll = fresh.dataset.askPoll;
+    else delete section.dataset.askPoll;
+  }
+
+  function pollAsk() {
+    clearTimeout(askTimer);
+    if (!document.querySelector("[data-ask][data-ask-poll]")) return;
+    askTimer = setTimeout(async () => {
+      const section = document.querySelector("[data-ask][data-ask-poll]");
+      if (!section) return;
+      if (!document.hidden) {
+        try {
+          const res = await fetch(section.dataset.askPoll, { headers: { "X-Requested-With": "fetch" } });
+          if (res.ok) swapThread(section, await res.text());
+        } catch {
+          /* offline or server restarting; try again next tick */
+        }
+      }
+      pollAsk();
+    }, ASK_POLL_MS);
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) pollAsk();
+  });
+
+  document.addEventListener("submit", async (event) => {
+    const form = event.target;
+    if (!form.matches("form[data-ask-form]")) return;
+    event.preventDefault();
+    const section = form.closest("[data-ask]");
+    const button = form.querySelector("button");
+    if (button.disabled) return;
+    button.disabled = true;
+    try {
+      const res = await fetch(form.action, {
+        method: "POST",
+        body: new URLSearchParams(new FormData(form)),
+        headers: { "X-Requested-With": "fetch" },
+      });
+      if (!res.ok && res.status !== 400 && res.status !== 429) throw new Error(String(res.status));
+      section.outerHTML = await res.text(); // the thread with the new question, or the error
+      if (res.ok) toast("Asked. Telegram will ping you when it's answered.");
+      pollAsk();
+    } catch {
+      button.disabled = false;
+      toast("Couldn't send the question. Try again.");
+    }
+  });
+  pollAsk(); // a standalone reader page with an open question
 
   // --- "N new insights" pill ----------------------------------------------------------
   const fresh = document.getElementById("fresh");

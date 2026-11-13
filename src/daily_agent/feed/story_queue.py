@@ -99,6 +99,9 @@ class StoryQueue:
 
     item_row: ClassVar[Any]
     item_id: ClassVar[str]  # primary-key column of ``item_row``
+    # Stories are written newest first; questions (#119) are answered in the
+    # order they were asked, so a follow-up sees the earlier answer.
+    newest_first: ClassVar[bool] = True
     _engine: Engine
 
     def _claimable(self, stamp: str, stale: str):
@@ -112,11 +115,15 @@ class StoryQueue:
         )
 
     def ready(self, *, now: datetime, limit: int) -> list:
-        """Queued items that may be worked on now, newest first."""
+        """Queued items that may be worked on now (newest first by default)."""
+        published = self.item_row.published_at
         stmt = (
             select(self.item_row)
             .where(self._claimable(iso(now), iso(now - CLAIM_TTL)))
-            .order_by(self.item_row.published_at.desc(), self._id_col())
+            .order_by(
+                published.desc() if self.newest_first else published.asc(),
+                self._id_col(),
+            )
             .limit(limit)
         )
         with session_scope(self._engine) as session:

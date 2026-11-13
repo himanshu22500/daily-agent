@@ -272,6 +272,16 @@ def test_inline_markdown_subset():
     )
 
 
+def test_bold_may_contain_code():
+    out = str(inline_markdown("• **Why `LOWER()` and not `citext`?** Because.\x00"))
+    assert out == (
+        "<p>• <strong>Why <code>LOWER()</code> and not <code>citext</code>?</strong>"
+        " Because.</p>"
+    )
+    # An unpaired marker stays literal, and code never turns bold.
+    assert str(inline_markdown("a ** b `**c**`")) == "<p>a ** b <code>**c**</code></p>"
+
+
 def test_ago_buckets():
     now = T0
     assert ago(now - timedelta(seconds=5), now) == "just now"

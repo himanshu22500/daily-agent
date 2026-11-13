@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     instagram_check_hours: float = 3.0
     # Concept explainers for interview prep (`daily-agent prep import`).
     prep_model: str = "claude-code:sonnet"
+    # Answers to questions asked under a feed item (issue #119).
+    ask_model: str = "claude-code:sonnet"
+    # The feed's address on the phone, for links in Telegram messages, e.g.
+    # http://daily-agent.<tailnet>.ts.net (a name with a dot, so Telegram
+    # makes it a link).
+    feed_url: str = ""
     db_path: str = "daily_agent.db"
     # Shared database (issue #111), e.g. postgresql://user:pass@daily-agent/db.
     # When set, every store uses it instead of the SQLite file at db_path; lock
@@ -72,6 +78,11 @@ class Settings(BaseSettings):
     # Write queued interview-prep explainers in the background (else:
     # `daily-agent prep write`).
     web_prep_sync: bool = True
+    # Answer questions asked in the feed in the background (else: `daily-agent
+    # questions answer`), checking for new ones this often. They are usually
+    # asked on the feed server, so the Mac has to look for them.
+    web_ask_sync: bool = True
+    web_ask_poll_seconds: float = 15.0
 
     @property
     def db(self) -> str:

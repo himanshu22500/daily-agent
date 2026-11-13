@@ -38,6 +38,7 @@ from starlette.templating import Jinja2Templates
 from ..feed.covers import CoverStore, cover_slug
 from ..feed.instagram_posts import InstagramStore, InstagramSync, shortcode_of
 from ..feed.prep import PrepStore, PrepSync
+from ..feed.questions import QuestionError, QuestionStore, QuestionSync
 from ..feed.story_queue import sync_forever
 from ..feed.videos import VideoStore, VideoSync
 from ..feed.web_feed import FOR_YOU, INTERVIEW, PREP_TYPES, VIEWS, WebFeed
@@ -124,6 +125,9 @@ def create_app(
     video_idle_seconds: float = 600.0,
     prep: PrepSync | None = None,
     prep_loop: bool = False,
+    questions: QuestionSync | None = None,
+    question_loop: bool = False,
+    question_poll_seconds: float = 15.0,
 ) -> Starlette:
     """Build the feed app.
 
@@ -136,15 +140,21 @@ def create_app(
     ``instagram`` Instagram accounts (issue #107; ``None`` until connected).
     With ``video_loop`` the server also writes their stories in the background.
     With ``prep`` and ``prep_loop`` it writes queued interview-prep concept
-    explainers (issue #108).
+    explainers (issue #108). Questions asked under an item are always stored;
+    with ``questions`` and ``question_loop`` the server also answers them,
+    checking for new ones every ``question_poll_seconds`` (issue #119).
     """
     feed = WebFeed(db_path)
     covers = CoverStore(db_path)
     video_store = videos.store if videos is not None else VideoStore(db_path)
     ig_store = instagram.store if instagram is not None else InstagramStore(db_path)
     prep_store = prep.store if prep is not None else PrepStore(db_path)
+    question_store = (
+        questions.store if questions is not None else QuestionStore(db_path)
+    )
     wake = asyncio.Event()
     ig_wake = asyncio.Event()
+    ask_wake = asyncio.Event()
 
     def post_media(key: str):
         """What to show for an Instagram story (None for anything else)."""
@@ -175,6 +185,7 @@ def create_app(
         cover_style=cover_style,
         cover_url=cover_url,
         post_media=post_media,
+        questions_for=question_store.thread,
         source_hue=source_hue,
         asset_version=_asset_version(),
     )
@@ -418,20 +429,59 @@ def create_app(
             },
         )
 
-    def reader(request: Request) -> Response:
-        """An insight opened like an article: overlay fragment or standalone page."""
-        entry = feed.entry(request.path_params["key"])
-        if entry is None:
-            return PlainTextResponse("No such insight.", status_code=404)
-        context = {
+    def _reader_context(request: Request, entry) -> dict:
+        return {
             "entry": entry,
             "close_url": _safe_next(request.query_params.get("from")),
             "session_id": "r-" + secrets.token_urlsafe(6),
             "related": feed.related(entry.key),
         }
+
+    def reader(request: Request) -> Response:
+        """An insight opened like an article: overlay fragment or standalone page."""
+        entry = feed.entry(request.path_params["key"])
+        if entry is None:
+            return PlainTextResponse("No such insight.", status_code=404)
+        context = _reader_context(request, entry)
         if request.query_params.get("partial") == "1":
             return templates.TemplateResponse(request, "_reader.html", context)
         return templates.TemplateResponse(request, "reader_page.html", context)
+
+    async def ask(request: Request) -> Response:
+        """The "Ask about this" box under an item: GET its thread, POST a
+        question (Claude answers it on the Mac; issue #119)."""
+        entry = feed.entry(request.path_params["key"])
+        if entry is None:
+            return PlainTextResponse("No such insight.", status_code=404)
+        fetched = request.headers.get("x-requested-with") == "fetch"
+        if request.method == "GET":
+            return templates.TemplateResponse(request, "_ask.html", {"entry": entry})
+        if not _same_origin(request):
+            return PlainTextResponse("Cross-site request refused.", status_code=403)
+        text = (await _form(request)).get("question", "")
+        try:
+            question = await run_in_threadpool(
+                question_store.ask, entry.key, text, now=datetime.now(timezone.utc)
+            )
+        except QuestionError as exc:
+            # Shown again with the question kept, so nothing typed is lost.
+            context = {"entry": entry, "ask_error": str(exc), "ask_text": text}
+            if fetched:
+                return templates.TemplateResponse(
+                    request, "_ask.html", context, status_code=exc.status
+                )
+            return templates.TemplateResponse(
+                request,
+                "reader_page.html",
+                {**_reader_context(request, entry), **context},
+                status_code=exc.status,
+            )
+        ask_wake.set()  # answered right away when this server is the Mac's
+        if fetched:
+            return templates.TemplateResponse(request, "_ask.html", {"entry": entry})
+        return RedirectResponse(
+            f"/i/{quote(entry.key, safe='')}#ask-{question.id}", status_code=303
+        )
 
     def post_image(request: Request) -> Response:
         """A stored Instagram image (downloaded once; Instagram's URLs expire)."""
@@ -567,6 +617,12 @@ def create_app(
                     sync_forever(prep, asyncio.Event(), idle=video_idle_seconds)
                 )
             )
+        if questions is not None and question_loop:
+            tasks.append(
+                asyncio.create_task(
+                    sync_forever(questions, ask_wake, idle=question_poll_seconds)
+                )
+            )
         try:
             yield
         finally:
@@ -589,6 +645,7 @@ def create_app(
             Route("/sources/unfollow", unfollow, methods=["POST"]),
             Route("/new-count", new_count),
             Route("/seen", seen, methods=["POST"]),
+            Route("/items/{key:path}/ask", ask, methods=["GET", "POST"]),
             Route("/items/{key:path}/{action}", act, methods=["POST"]),
             Route("/card/{key:path}", card),
             Route("/covers/{name}.svg", cover),
