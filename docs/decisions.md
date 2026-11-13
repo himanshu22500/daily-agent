@@ -1,5 +1,29 @@
 # Decisions
 
+## 2026-11-14 — A quiet YouTube channel brings one older video a day
+
+The maintainer asked that a followed channel with no new videos go back one
+video a day: the 6th, then the 7th, and so on (#124).
+
+- **Per source, per local day.** After each check (every 3 hours), a source
+  that has queued nothing today, whether new, initial, or older, queues the
+  newest video it hasn't taken. A day with a new upload brings no older one.
+  "Today" starts at local midnight on the Mac, so the pace stays at one a day.
+  A rolling 24 hours would drift later at every 3-hour check.
+- **Where older videos come from.** The RSS feed lists only about 15 videos.
+  Beyond that, the channel's public long-form uploads list (`UULF…`, newest
+  first, no Shorts) is read 100 at a time through YouTube's own continuation
+  requests, up to 10 pages. A playlist source walks the playlist. A video
+  older than the feed is read from its watch page, for its exact upload date
+  and description. There is still no API key. If YouTube changes these pages,
+  going back stops and reports the error. New uploads are unaffected.
+- **No schema change.** `videos.found_at` now means "found, or taken from the
+  backlog", which is all the "queued today?" test needs. A private or removed
+  video stays `skipped` with an `unavailable:` error, so it's never tried
+  again. At most 3 are tried per check.
+- **Mac only**, like all story writing. `DAILY_AGENT_VIDEO_BACKFILL=false`
+  turns it off.
+
 ## 2026-11-14 — Every model task runs on Opus 5.5
 
 The maintainer asked for Opus 5.5 for every task. All seven settings now

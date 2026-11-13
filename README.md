@@ -156,6 +156,14 @@ The latest 5 videos are queued at once. After that the channel is checked every
 3 hours (`DAILY_AGENT_VIDEO_CHECK_HOURS`) and each new upload is queued. Shorts
 are skipped.
 
+On a day a channel brings nothing new, it brings one older video instead: the
+6th, then the 7th, and so on, one a day, back through the channel's uploads
+(for a playlist, further down the playlist). A day with a new upload brings no
+older video. Days start at local midnight on the machine that writes the
+stories. Videos older than YouTube's feed reaches (about 15) are read from the
+channel's public uploads list, up to about 1,000 back. Private or removed
+videos are skipped. Set `DAILY_AGENT_VIDEO_BACKFILL=false` to turn this off.
+
 While `daily-agent web` runs, it writes queued videos in the background, one
 at a time: it fetches the video's captions (no API key) and has Claude Code
 (`DAILY_AGENT_VIDEO_MODEL`, default `claude-code:claude-opus-5-5`) write a headline and

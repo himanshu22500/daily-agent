@@ -9,6 +9,10 @@ Everything here reads public YouTube pages; there is no API key:
 - ``YouTube.page_title``: a channel's or playlist's own page -> its name; this
   checks a source exists while the RSS server is down (issue #103).
 - ``YouTube.transcript``: a video's captions, via ``youtube-transcript-api``.
+- ``YouTube.list_pages``: a channel's long-form uploads (or a playlist), from
+  its public playlist page, 100 videos a page, newest first (issue #124).
+- ``YouTube.video``: one video's title, upload date, and description, from its
+  watch page (for videos older than the RSS feed reaches).
 
 Only YouTube is ever fetched. Pasted links are parsed and rebuilt on
 ``https://www.youtube.com``, so a link can't make the server fetch an arbitrary
@@ -19,9 +23,10 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 import re
 import xml.etree.ElementTree as ET
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, quote, urlsplit
@@ -66,6 +71,13 @@ _HEADERS = {
 _COOKIES = {"SOCS": "CAI"}
 TIMEOUT_SECONDS = 20.0
 TRANSCRIPT_TIMEOUT_SECONDS = 60.0
+# Where a YouTube page embeds its data as JSON.
+_INITIAL_DATA = "var ytInitialData = "
+_PLAYER_RESPONSE = "var ytInitialPlayerResponse = "
+_CLIENT_VERSION = re.compile(r'"INNERTUBE_CLIENT_VERSION":"([0-9.]+)"')
+BROWSE_URL = BASE + "/youtubei/v1/browse?prettyPrint=false"
+# How far back a list is read: 10 pages of about 100 videos.
+LIST_PAGES = 10
 
 
 class BadSourceLink(ValueError):
@@ -83,6 +95,10 @@ class FeedUnavailable(YouTubeError):
 
 class NoCaptions(Exception):
     """The video has no captions to read (disabled, none yet, or unplayable)."""
+
+
+class VideoUnavailable(Exception):
+    """The video is private or removed (this won't pass)."""
 
 
 @dataclass(frozen=True)
@@ -134,6 +150,20 @@ def channel_ref(channel_id: str) -> SourceRef:
         feed_url=f"{FEED_URL}?channel_id={channel_id}",
         url=f"{BASE}/channel/{channel_id}",
     )
+
+
+def uploads_list(source_id: str) -> str:
+    """The list a followed source is walked back through (issue #124).
+
+    A channel's long-form uploads ("UULF" + its id, newest first, no Shorts),
+    or a followed playlist itself. Raises ``ValueError`` for anything else.
+    """
+    kind, _, ident = source_id.partition(":")
+    if kind == "channel" and CHANNEL_ID.fullmatch(ident):
+        return "UULF" + ident[2:]
+    if kind == "playlist" and _PLAYLIST_ID.fullmatch(ident):
+        return ident
+    raise ValueError(f"not a followed source id: {source_id!r}")
 
 
 def playlist_ref(playlist_id: str) -> SourceRef:
@@ -258,6 +288,116 @@ def parse_feed(data: bytes) -> ChannelFeed:
             )
         )
     return ChannelFeed(title=feed_title, videos=videos)
+
+
+# --- older videos (issue #124) ------------------------------------------------ #
+
+
+def embedded_json(page: str, marker: str) -> dict | None:
+    """The JSON object a YouTube page assigns after ``marker`` (None if absent)."""
+    start = page.find(marker)
+    if start < 0:
+        return None
+    try:
+        data, _ = json.JSONDecoder().raw_decode(page, start + len(marker))
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _dig(data, *keys) -> dict:
+    for key in keys:
+        data = data.get(key) if isinstance(data, dict) else None
+    return data if isinstance(data, dict) else {}
+
+
+def _listed_video(item: dict, legacy: bool) -> str:
+    """A list item's video id ("" for Shorts, playlists, and anything else)."""
+    if legacy:  # the playlist page's older layout
+        video_id = item.get("videoId")
+        command = _dig(item, "navigationEndpoint")
+    else:
+        if item.get("contentType") != "LOCKUP_CONTENT_TYPE_VIDEO":
+            return ""
+        video_id = item.get("contentId")
+        command = _dig(item, "rendererContext", "commandContext", "onTap")
+        command = _dig(command, "innertubeCommand")
+    if not isinstance(video_id, str) or not VIDEO_ID.fullmatch(video_id):
+        return ""
+    url = _dig(command, "commandMetadata", "webCommandMetadata").get("url")
+    if "reelWatchEndpoint" in command or str(url or "").startswith("/shorts/"):
+        return ""
+    return video_id
+
+
+def parse_list(data: dict) -> tuple[list[str], str]:
+    """A playlist page's videos (in list order) and the next page's token.
+
+    ``data`` is the page's ``ytInitialData`` or a ``browse`` continuation reply;
+    the token is "" at the end of the list.
+    """
+    videos: list[str] = []
+    token = ""
+    stack: list = [data]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, list):
+            stack.extend(reversed(node))
+            continue
+        if not isinstance(node, dict):
+            continue
+        for name, legacy in (
+            ("lockupViewModel", False),
+            ("playlistVideoRenderer", True),
+        ):
+            if isinstance(node.get(name), dict):
+                video_id = _listed_video(node[name], legacy)
+                if video_id:
+                    videos.append(video_id)
+                break
+        else:
+            command = node.get("continuationCommand")
+            if not token and isinstance(command, dict):
+                if isinstance(command.get("token"), str):
+                    token = command["token"]
+            stack.extend(reversed(list(node.values())))
+    return list(dict.fromkeys(videos)), token
+
+
+def parse_watch_page(page: str, video_id: str) -> Video:
+    """A watch page -> the video's title, upload date, description, channel.
+
+    Raises ``VideoUnavailable`` when YouTube says the video is gone or private,
+    and ``YouTubeError`` when the page can't be read (that may pass).
+    """
+    player = embedded_json(page, _PLAYER_RESPONSE)
+    if player is None:
+        raise YouTubeError("couldn't read the video's page")
+    status = _dig(player, "playabilityStatus")
+    if status.get("status") == "ERROR":
+        raise VideoUnavailable(str(status.get("reason") or "unavailable")[:200])
+    details = _dig(player, "videoDetails")
+    micro = _dig(player, "microformat", "playerMicroformatRenderer")
+    stamp = str(micro.get("publishDate") or micro.get("uploadDate") or "")
+    if details.get("videoId") != video_id or not stamp:
+        raise YouTubeError(
+            str(status.get("reason") or "the video's page has no upload date")[:200]
+        )
+    try:
+        published = datetime.fromisoformat(stamp)
+    except ValueError as exc:
+        raise YouTubeError(f"unreadable upload date {stamp[:40]!r}") from exc
+    if not published.tzinfo:
+        published = published.replace(tzinfo=timezone.utc)
+    channel_id = str(details.get("channelId") or "")
+    return Video(
+        video_id=video_id,
+        title=" ".join(str(details.get("title") or "").split()),
+        published_at=published,
+        description=str(details.get("shortDescription") or "").strip(),
+        channel_id=channel_id if CHANNEL_ID.fullmatch(channel_id) else "",
+        channel=str(details.get("author") or micro.get("ownerChannelName") or ""),
+    )
 
 
 # --- captions ---------------------------------------------------------------- #
@@ -418,6 +558,71 @@ class YouTube:
                 "YouTube has no public channel or playlist at that link."
             )
         return title
+
+    async def list_pages(
+        self, list_id: str, *, pages: int = LIST_PAGES
+    ) -> AsyncIterator[list[str]]:
+        """A public list's video ids, a page (about 100) at a time, from the top.
+
+        Stops after ``pages`` pages or at the end of the list. Raises
+        ``BadSourceLink`` when the list doesn't exist and ``YouTubeError`` when
+        YouTube can't be reached or read. Close it (``contextlib.aclosing``)
+        when stopping early.
+        """
+        if not _PLAYLIST_ID.fullmatch(list_id):
+            raise ValueError(f"not a playlist id: {list_id!r}")
+        async with self._client() as client:
+            reply = await self._get(client, f"{BASE}/playlist?list={list_id}")
+            if reply.status_code != 200:
+                raise YouTubeError(f"YouTube answered {reply.status_code}")
+            data = embedded_json(reply.text, _INITIAL_DATA)
+            if data is None:
+                raise YouTubeError("couldn't read the video list")
+            videos, token = parse_list(data)
+            if not videos and _MISSING.search(reply.text):
+                raise BadSourceLink("YouTube has no public list of these videos.")
+            version = _CLIENT_VERSION.search(reply.text)
+            yield videos
+            for _ in range(pages - 1):
+                if not token or version is None:
+                    return
+                body = {
+                    "context": {
+                        "client": {
+                            "clientName": "WEB",
+                            "clientVersion": version.group(1),
+                            "hl": "en",
+                            "gl": "US",
+                        }
+                    },
+                    "continuation": token,
+                }
+                try:
+                    reply = await client.post(BROWSE_URL, json=body)
+                except httpx.HTTPError as exc:
+                    raise YouTubeError(
+                        f"couldn't reach YouTube: {_first_line(exc)}"
+                    ) from exc
+                if reply.status_code != 200:
+                    raise YouTubeError(f"YouTube answered {reply.status_code}")
+                try:
+                    data = reply.json()
+                except ValueError as exc:
+                    raise YouTubeError("unreadable video list page") from exc
+                if not isinstance(data, dict):
+                    raise YouTubeError("unreadable video list page")
+                videos, token = parse_list(data)
+                yield videos
+
+    async def video(self, video_id: str) -> Video:
+        """One video's details from its watch page (see ``parse_watch_page``)."""
+        if not VIDEO_ID.fullmatch(video_id):
+            raise VideoUnavailable("not a video id")
+        async with self._client() as client:
+            reply = await self._get(client, watch_url(video_id))
+        if reply.status_code != 200:
+            raise YouTubeError(f"YouTube answered {reply.status_code}")
+        return parse_watch_page(reply.text, video_id)
 
     async def transcript(self, video_id: str) -> Transcript:
         if not VIDEO_ID.fullmatch(video_id):

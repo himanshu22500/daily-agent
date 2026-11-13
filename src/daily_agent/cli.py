@@ -657,6 +657,7 @@ def _video_sync(settings, model: str | None = None) -> VideoSync:
         YouTube(),
         lambda video, transcript: write_story(chosen, video, transcript),
         check_every=timedelta(hours=settings.video_check_hours),
+        backfill=settings.video_backfill,
     )
 
 
@@ -664,7 +665,7 @@ def _video_sync(settings, model: str | None = None) -> VideoSync:
 def videos_add(
     link: str = typer.Argument(..., help="A YouTube channel or playlist link."),
 ) -> None:
-    """Follow a channel: queue its latest 5 videos and every new upload."""
+    """Follow a channel: its latest 5 videos, new uploads, and one older a day."""
     sync = _video_sync(get_settings())
     try:
         source = asyncio.run(sync.follow(link))
@@ -714,8 +715,9 @@ def videos_sync(
     settings = get_settings()
     report = asyncio.run(_video_sync(settings, model).run_once(limit=limit))
     console.print(
-        f"Checked {report.checked} source(s), queued {report.queued} video(s), "
-        f"wrote {report.written} story(ies)"
+        f"Checked {report.checked} source(s), queued {report.queued} video(s)"
+        + (f" ({report.older} older)" if report.older else "")
+        + f", wrote {report.written} story(ies)"
         + (f", {report.waiting} waiting for captions" if report.waiting else "")
         + (f", {report.remaining} still queued" if report.remaining else "")
         + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
