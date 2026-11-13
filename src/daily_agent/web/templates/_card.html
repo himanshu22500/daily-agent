@@ -1,6 +1,6 @@
 {% from "_icons.html" import icon %}
 {% set base = "/items/" ~ quote(entry.key) %}
-{% set back = "&next=" ~ quote(next_url) ~ ("&v=for-you" if show_revisit else "") %}
+{% set back = "&next=" ~ quote(next_url) ~ ("&v=" ~ filters.view if show_revisit and filters else "") %}
 <article class="story t-{{ entry.type|type_class }}{% if entry.new %} is-new{% endif %}{% if entry.flashcard %} is-flashcard{% endif %}" data-card data-swap data-key="{{ entry.key }}">
   <a class="story-open" href="/i/{{ quote(entry.key) }}" data-open>
     {% if not entry.flashcard %}{% include "_cover.html" %}{% endif %}

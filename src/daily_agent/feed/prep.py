@@ -22,7 +22,6 @@ point, e.g. "T5 · MySQL 8 → PostgreSQL 18 on AWS DMS + UUIDv7".
 from __future__ import annotations
 
 import logging
-import re
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -79,18 +78,6 @@ def source_of(point_id: str) -> str:
 def level_label(tags: list[str]) -> str:
     """ "Deep dive" for a flashcard tagged ``deep-dive`` ("" if none)."""
     return next((LEVELS[t] for t in tags if t in LEVELS), "")
-
-
-_POSITION = re.compile(r"-(q|c)(\d+)$")
-
-
-def position_in_point(key: str) -> tuple[int, int]:
-    """Study order within a point: questions (``-q<n>``) in order, then
-    concept explainers (``-c<n>``)."""
-    match = _POSITION.search(key)
-    if not match:
-        return (2, 0)
-    return (0 if match.group(1) == "q" else 1, int(match.group(2)))
 
 
 def card_text(card: Flashcard) -> str:
