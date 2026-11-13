@@ -18,25 +18,25 @@ class Settings(BaseSettings):
 
     # Insight extraction. `claude-code:<alias>` runs the local Claude Code CLI
     # (`claude -p`); other strings are pydantic-ai models (e.g. google:...).
-    model: str = "claude-code:sonnet"
+    model: str = "claude-code:claude-opus-5-5"
     # Feed headlines (Claude Code only) and cover illustrations.
-    headline_model: str = "claude-code:sonnet"
-    cover_model: str = "claude-code:sonnet"
+    headline_model: str = "claude-code:claude-opus-5-5"
+    cover_model: str = "claude-code:claude-opus-5-5"
     # Stories from followed YouTube channels (Claude Code only), and how often
     # each followed channel is checked for new uploads.
-    video_model: str = "claude-code:sonnet"
+    video_model: str = "claude-code:claude-opus-5-5"
     video_check_hours: float = 3.0
     # Instagram (issue #107), set by `daily-agent instagram connect`: a Facebook
     # Page token (doesn't expire) and the id of your own Instagram professional
     # account, which Business Discovery reads other accounts through.
     instagram_token: str = ""
     instagram_user_id: str = ""
-    instagram_model: str = "claude-code:sonnet"
+    instagram_model: str = "claude-code:claude-opus-5-5"
     instagram_check_hours: float = 3.0
     # Concept explainers for interview prep (`daily-agent prep import`).
-    prep_model: str = "claude-code:sonnet"
+    prep_model: str = "claude-code:claude-opus-5-5"
     # Answers to questions asked under a feed item (issue #119).
-    ask_model: str = "claude-code:sonnet"
+    ask_model: str = "claude-code:claude-opus-5-5"
     # The feed's address on the phone, for links in Telegram messages, e.g.
     # http://daily-agent.<tailnet>.ts.net (a name with a dot, so Telegram
     # makes it a link).
