@@ -2,7 +2,7 @@
 
 Draws one SVG illustration per insight from the same art brief the first 301
 covers were drawn with (by Claude subagents), through Claude Code
-(``claude-code:sonnet``) or a pydantic-ai model. The model's SVG is untrusted:
+(``claude-code:claude-opus-5-5``) or a pydantic-ai model. The model's SVG is untrusted:
 callers must run it through ``feed.covers.validate_cover`` before storing it.
 """
 

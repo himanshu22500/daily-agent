@@ -26,9 +26,9 @@ All model work runs through the Claude Code CLI already signed in on the Mac
 
 | Work | Setting | Default |
 |---|---|---|
-| Insight extraction | `DAILY_AGENT_MODEL` | `claude-code:sonnet` |
-| Feed headlines | `DAILY_AGENT_HEADLINE_MODEL` | `claude-code:sonnet` |
-| Cover illustrations | `DAILY_AGENT_COVER_MODEL` | `claude-code:sonnet` |
+| Insight extraction | `DAILY_AGENT_MODEL` | `claude-code:claude-opus-5-5` |
+| Feed headlines | `DAILY_AGENT_HEADLINE_MODEL` | `claude-code:claude-opus-5-5` |
+| Cover illustrations | `DAILY_AGENT_COVER_MODEL` | `claude-code:claude-opus-5-5` |
 
 `claude-code:<alias>` takes any model `claude --model` accepts (`haiku`,
 `sonnet`, `opus`, or a full model name). Fable isn't used by default: it uses up the
@@ -158,7 +158,7 @@ are skipped.
 
 While `daily-agent web` runs, it writes queued videos in the background, one
 at a time: it fetches the video's captions (no API key) and has Claude Code
-(`DAILY_AGENT_VIDEO_MODEL`, default `claude-code:sonnet`) write a headline and
+(`DAILY_AGENT_VIDEO_MODEL`, default `claude-code:claude-opus-5-5`) write a headline and
 a short article from them. A new video without captions waits up to 6 hours for
 YouTube's auto-captions, then is written from its title and description.
 Failures are retried after 1, 2, and 4 hours. After 4 tries the video is shown
@@ -188,7 +188,7 @@ personal and private accounts can't be followed. It works like video stories:
 the latest 5 posts are queued at once, then each account is checked every 3
 hours (`DAILY_AGENT_INSTAGRAM_CHECK_HOURS`).
 
-Claude Code (`DAILY_AGENT_INSTAGRAM_MODEL`, default `claude-code:sonnet`) writes
+Claude Code (`DAILY_AGENT_INSTAGRAM_MODEL`, default `claude-code:claude-opus-5-5`) writes
 each story from the caption and the post's images. It reads a carousel's slides,
 where these posts usually put their content. A reel's audio isn't available, so
 a reel's story only covers its caption and cover frame. The images (up to 4 per

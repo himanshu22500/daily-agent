@@ -1,5 +1,14 @@
 # Decisions
 
+## 2026-11-14 — Every model task runs on Opus 5.5
+
+The maintainer asked for Opus 5.5 for every task. All seven settings now
+default to `claude-code:claude-opus-5-5`: extraction, headlines, covers,
+YouTube and Instagram stories, prep explainers, and Ask answers. The full
+model name is pinned rather than the `opus` alias, so a new Opus release can't
+change the model silently. Opus uses the Claude plan faster than Sonnet did.
+Fable stays unused.
+
 ## 2026-11-13 — The Ask box is a chat (option C)
 
 The first Ask box (#119) looked plain on the phone. The maintainer compared
