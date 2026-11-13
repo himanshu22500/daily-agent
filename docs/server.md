@@ -40,7 +40,8 @@ uv run daily-agent db info     # on the Mac, in the live install: which DB and r
 ```
 
 The Mac keeps running its launchd jobs unchanged (sweep, SessionEnd hook, and
-`com.daily-agent.web`, which also writes the YouTube/Instagram stories). Its
+`com.daily-agent.web`, which also writes the YouTube/Instagram stories and
+answers questions asked in the feed, then sends their Telegram messages). Its
 `.env` has `DAILY_AGENT_DATABASE_URL`, so they all write to the server. When
 the Mac is offline their writes fail and are retried on the next run; transcript
 cursors only advance after a successful write.

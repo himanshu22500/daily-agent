@@ -253,6 +253,34 @@ uv run daily-agent prep write                         # write queued explainers 
 Everything stays in the web feed; none of it goes to Telegram. The Sources page
 shows how many explainers are left to write.
 
+### Ask Claude about an item
+
+Every article and interview card ends with an **Ask about this** box. Type a
+question ("why does this matter?", "what would they ask next?") and Claude
+answers it below the item. When the answer is ready, Telegram sends you the
+question, the start of the answer, and a link that opens the item at the
+answer.
+
+- **Where it's answered:** on the Mac, by `daily-agent web` (Claude Code,
+  `DAILY_AGENT_ASK_MODEL`). The feed server has no `claude`, so it only stores the
+  question. The Mac checks for new ones every 15 seconds
+  (`DAILY_AGENT_WEB_ASK_POLL_SECONDS`), and while it's asleep they wait.
+  `uv run daily-agent questions answer` answers them by hand, and
+  `questions list` shows them. Set `DAILY_AGENT_WEB_ASK_SYNC=false` to answer
+  only by hand.
+- **What Claude sees:** the item's headline and text and any earlier questions
+  about it, with their answers. For interview cards and concept explainers it
+  also sees that resume point's notes. Facts about your own work come only from
+  those; general knowledge fills in the rest.
+- **Telegram:** the message goes to the bot chat (`DAILY_AGENT_TELEGRAM_CHAT_ID`)
+  from the Mac. Set `DAILY_AGENT_FEED_URL` to the feed's address on the phone,
+  e.g. `http://daily-agent.<tailnet>.ts.net`, for the link. Use the full name
+  with dots, since Telegram doesn't link a bare `http://daily-agent/`. A message
+  that fails to send is tried again a few times; the answer is in the feed
+  either way.
+- **Limits:** a question can be up to 1,000 characters, and at most 20 can be
+  waiting at once.
+
 ### On your phone (Tailscale)
 
 Keep the server on loopback and let `tailscale serve` relay it to devices signed

@@ -1,5 +1,35 @@
 # Decisions
 
+## 2026-11-13 — Ask Claude about an item; Telegram says when it's answered
+
+The maintainer asked for a way to question any article or interview card from
+the feed, with a Telegram message and a feed link once the answer is ready
+(#119).
+
+- **Asynchronous by necessity.** The phone reads the feed server, which has no
+  `claude` (#111, #114). Asking only stores the question in `feed_questions`,
+  in the shared Postgres. The Mac's `daily-agent web` polls for it every 15s
+  (gated on `claude_available()` like the other writers), answers with
+  `claude -p` (Sonnet), and sends the Telegram message. Questions wait while
+  the Mac sleeps. The 15s poll is a single indexed query, so it's cheap.
+- **Same queue as stories.** Questions reuse `StoryQueue` (claim, 1h/2h/4h
+  retries, give up after 4). It now has an oldest-first option, so questions
+  are answered in the order asked and a follow-up sees the earlier answer.
+- **Context.** Claude gets the item, the earlier Q&A on it, and, for interview
+  prep, that resume point's deep-dive notes. It never invents facts about the
+  reader's work. The answer uses the reader's small markdown subset, plus "• "
+  lines.
+- **Telegram:** a plain-text message to the bot chat (`TELEGRAM_CHAT_ID`), not
+  the per-type insight channels. It carries the question, up to 1,200
+  characters of the answer, and `DAILY_AGENT_FEED_URL/i/<key>#ask-<id>`. A
+  failed send is retried 3 times, 5 minutes apart and growing, and dropped
+  after a day.
+- **Reader UX:** the box sits under the text, after a flashcard's folded answer.
+  While a question is open, the page re-fetches only the thread every 10s, so
+  text being typed is kept. Everything works without JS too.
+- **Limits:** 1,000 characters per question, 20 waiting at once, and 50 per
+  item.
+
 ## 2026-11-13 — The Interview tab is a rotating practice deck
 
 The fixed resume-point order from #115 never changed, so the same questions

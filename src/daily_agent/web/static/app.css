@@ -531,6 +531,52 @@ html.reading, html.reading body { overflow: hidden; }
 [data-reader-size="lg"] .reader-text { font-size: 1.28rem; }
 [data-reader-size="xl"] .reader-text { font-size: 1.45rem; }
 
+/* Ask about this: questions to Claude under an item (issue #119) */
+
+.ask { margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--line); }
+.ask h2 { margin: 0 0 14px; font-size: 1.1rem; font-weight: 600; }
+.qa { margin: 0 0 22px; scroll-margin-top: 72px; }
+
+.qa-q {
+  margin: 0 0 10px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: var(--chip);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.qa-a { font-size: 1.05rem; }
+.qa-a p:last-child { margin-bottom: 4px; }
+.qa-meta, .qa-status { margin: 0; color: var(--muted); font-size: 0.88rem; }
+.qa-status.is-error { color: var(--love); }
+
+.ask-form { display: flex; gap: 8px; align-items: flex-end; }
+
+.ask-form textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 20px;
+  background: var(--chip);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+  resize: vertical;
+}
+
+.ask-form .act {
+  min-height: 44px;
+  padding: 0 20px;
+  background: var(--chip-on);
+  color: var(--chip-on-text);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
 /* Suggested topics + Read next (end of the reader) */
 
 .topics { margin-top: 32px; }

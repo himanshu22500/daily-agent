@@ -13,25 +13,28 @@ _BOLD = re.compile(r"\*\*([^*\n]+)\*\*")
 _PARAGRAPH = re.compile(r"\n\s*\n")
 
 
-def _inline(segment: str) -> str:
-    """Escape one non-code segment and apply bold."""
-    return _BOLD.sub(r"<strong>\1</strong>", str(escape(segment)))
+_SLOT = re.compile(r"\x00(\d+)\x00")
 
 
 def inline_markdown(text: str) -> Markup:
     """Render the tiny markdown subset insights use: paragraphs, `code`, **bold**.
 
     Everything is HTML-escaped first; only the tags generated here are emitted,
-    so insight text (which is model output) can never inject markup.
+    so insight text (which is model output) can never inject markup. Code spans
+    are set aside first, so ``**`` inside code stays literal and a bold phrase
+    may contain code (``**Why `LOWER()`?**``).
     """
     paragraphs = []
-    for block in _PARAGRAPH.split(text.strip()):
+    for block in _PARAGRAPH.split(text.strip().replace("\x00", "")):
         parts = _CODE.split(block)
         # re.split with one group alternates: text, code, text, code, ...
+        codes = [f"<code>{escape(part)}</code>" for part in parts[1::2]]
         html = "".join(
-            f"<code>{escape(part)}</code>" if i % 2 else _inline(part)
+            f"\x00{i // 2}\x00" if i % 2 else str(escape(part))
             for i, part in enumerate(parts)
         )
+        html = _BOLD.sub(r"<strong>\1</strong>", html)
+        html = _SLOT.sub(lambda m: codes[int(m.group(1))], html)
         paragraphs.append("<p>" + html.replace("\n", "<br>") + "</p>")
     return Markup("".join(paragraphs))
 

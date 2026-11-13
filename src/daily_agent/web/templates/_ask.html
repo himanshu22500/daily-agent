@@ -1,0 +1,30 @@
+{# "Ask about this" under an item (issue #119): its questions, then the box. #}
+{% set thread = questions_for(entry.key) %}
+{% set ask_url = "/items/" ~ quote(entry.key) ~ "/ask" %}
+<section class="ask" id="ask" data-ask{% if thread|selectattr("is_open")|list %} data-ask-poll="{{ ask_url }}"{% endif %} aria-label="Ask about this">
+  <h2>Ask about this</h2>
+  <div class="qa-thread" data-ask-thread>
+    {% for q in thread %}
+    <div class="qa" id="ask-{{ q.id }}">
+      <p class="qa-q">{{ q.question }}</p>
+      {% if q.answered %}
+      <div class="reader-text qa-a">{{ q.answer|md }}</div>
+      <p class="qa-meta">Claude · {{ q.answered_at|ago }}</p>
+      {% elif q.failed %}
+      <p class="qa-status is-error" role="status">Claude couldn't answer this ({{ q.error }}). Try asking again.</p>
+      {% elif q.writing %}
+      <p class="qa-status" role="status">Claude is writing the answer…</p>
+      {% elif q.retrying %}
+      <p class="qa-status" role="status">Claude couldn't answer yet ({{ q.error }}). Trying again {{ q.retry_at|until }}.</p>
+      {% else %}
+      <p class="qa-status" role="status">Waiting for Claude. Your Mac answers when it's awake, and Telegram tells you when it's ready.</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <form class="ask-form" method="post" action="{{ ask_url }}" data-ask-form>
+    <textarea name="question" rows="2" maxlength="1000" placeholder="{{ 'Ask Claude about this question…' if entry.flashcard else 'Ask Claude about this…' }}" aria-label="Your question" required>{{ ask_text or "" }}</textarea>
+    <button type="submit" class="act">Ask</button>
+  </form>
+  {% if ask_error %}<p class="form-error" role="alert">{{ ask_error }}</p>{% endif %}
+</section>
