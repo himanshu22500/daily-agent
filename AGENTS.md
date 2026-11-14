@@ -10,7 +10,13 @@ groomed Issue ─▶ agent claims it ─▶ branch + code + offline tests
    ─▶ PR (links the issue) ─▶ CI runs pytest ─▶ 🟢
    ─▶ maintainer live-verifies on the main computer ─▶ merge.
    main stays protected the whole time.
+   merge ─▶ CI passes on main ─▶ the server, then the Mac, deploy themselves
+   (backup first, rollback if the feed doesn't come up; docs/server.md).
 ```
+
+A merge to `main` ships within minutes, so a PR must be safe to deploy as is.
+Schema changes must work for the old and the new code at once: add columns and
+tables, don't rename or drop them in the same PR.
 
 There are two execution environments, and the split is real — it's baked into
 the test suite (everything is mocked, so it runs anywhere):

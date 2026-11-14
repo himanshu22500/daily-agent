@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -90,6 +91,11 @@ prep_app = typer.Typer(
     no_args_is_help=True, help="Interview prep from a resume deep dive, as feed cards."
 )
 app.add_typer(prep_app, name="prep")
+autodeploy_app = typer.Typer(
+    no_args_is_help=True,
+    help="Deploy on merge: this machine updates itself once CI passes (issue #128).",
+)
+app.add_typer(autodeploy_app, name="autodeploy")
 questions_app = typer.Typer(
     no_args_is_help=True,
     help="Questions asked under feed items, answered by Claude.",
@@ -1193,3 +1199,85 @@ def db_copy(
         )
     if report.left_behind:
         console.print(f"Not store tables (not copied): {', '.join(report.left_behind)}")
+
+
+# --- deploy on merge (issue #128) ------------------------------------------------ #
+
+AUTODEPLOY_STATE = Path.home() / ".local" / "state" / "daily-agent"
+
+
+def _autodeploy(settings, role: str):
+    import shutil
+
+    import httpx
+
+    from .autodeploy import AutoDeploy
+
+    uv = shutil.which("uv") or str(Path.home() / ".local" / "bin" / "uv")
+    return AutoDeploy(
+        role,
+        Path(__file__).resolve().parents[2],  # the checkout this code runs from
+        state_dir=AUTODEPLOY_STATE,
+        http=httpx.Client(timeout=20.0, follow_redirects=True),
+        notify=_telegram_notifier(settings),
+        server_url=settings.feed_url,
+        database_url=settings.database_url,
+        uv=uv,
+    )
+
+
+ROLE_OPTION = typer.Option(..., "--role", help="server (the feed server) or mac.")
+
+
+@autodeploy_app.command("run")
+def autodeploy_run(role: str = ROLE_OPTION) -> None:
+    """One pass: deploy main here if it's new and both CI checks passed."""
+    from .autodeploy import QUIET, DeployError
+
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        outcome = _autodeploy(get_settings(), role).once()
+    except (DeployError, ValueError) as exc:
+        console.print(f"{stamp} error: {exc}", markup=False)
+        raise typer.Exit(1)
+    if outcome not in QUIET:
+        console.print(f"{stamp} {outcome}", markup=False)
+
+
+@autodeploy_app.command("pause")
+def autodeploy_pause() -> None:
+    """Stop deploying on merge on this machine until `autodeploy resume`."""
+    AUTODEPLOY_STATE.mkdir(parents=True, exist_ok=True)
+    (AUTODEPLOY_STATE / "autodeploy.paused").touch()
+    console.print("Deploy on merge is paused on this machine.")
+
+
+@autodeploy_app.command("resume")
+def autodeploy_resume() -> None:
+    """Deploy on merge again (the next pass catches up with main)."""
+    (AUTODEPLOY_STATE / "autodeploy.paused").unlink(missing_ok=True)
+    console.print("Deploy on merge is on.")
+
+
+@autodeploy_app.command("status")
+def autodeploy_status() -> None:
+    """Paused or not, the commit running here, and commits never to deploy."""
+    from .autodeploy import State
+
+    paused = (AUTODEPLOY_STATE / "autodeploy.paused").exists()
+    here = subprocess.run(
+        ["git", "log", "-1", "--format=%h %s"],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    console.print(f"Deploy on merge: {'paused' if paused else 'on'}", markup=False)
+    console.print(f"  running: {here or 'unknown'}", markup=False)
+    state = State.load(AUTODEPLOY_STATE / "autodeploy.json")
+    for sha, why in state.bad.items():
+        console.print(f"  never deploying {sha[:7]}: {why}", markup=False)
+    backups = sorted((AUTODEPLOY_STATE / "backups").glob("daily_agent-*.sql.gz"))
+    if backups:
+        console.print(
+            f"  latest backup: {backups[-1]} ({len(backups)} kept)", markup=False
+        )
