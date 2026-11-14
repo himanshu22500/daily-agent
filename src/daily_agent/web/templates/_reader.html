@@ -82,6 +82,7 @@
     {% else %}
     <div class="reader-text">{{ entry.text|md }}</div>
     {% endif %}
+    {% include "_rate.html" %}
     {% include "_ask.html" %}
     {% if entry.tags %}
     <section class="topics">

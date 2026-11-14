@@ -51,6 +51,9 @@ from .feed.outbox import Channel, Outbox
 from .feed.pacer import Pacer
 from .feed.instagram_posts import InstagramSync
 from .feed.prep import PrepSync
+from .feed.projects import session_projects
+from .feed.ratings import extraction_feedback
+from .feed.transcripts import all_session_files, session_files
 from .feed.questions import QuestionSync
 from .feed.videos import VideoSync
 from .sources.instagram import (
@@ -193,7 +196,7 @@ def insights_collect(
                 store,
                 path,
                 settings.insights_marker,
-                lambda messages: extract_insights(settings.model, messages),
+                _extractor(settings, session_files(path)),
             )
         )
         console.print(
@@ -264,7 +267,7 @@ def insights_flush(
                     store,
                     path,
                     settings.insights_marker,
-                    lambda messages: extract_insights(settings.model, messages),
+                    _extractor(settings, session_files(path)),
                 )
             )
             label = (
@@ -360,9 +363,7 @@ def insights_sweep(
             store,
             root,
             settings.insights_marker,
-            (lambda messages: extract_insights(settings.model, messages))
-            if extract
-            else None,
+            _extractor(settings, all_session_files(root)) if extract else None,
             settle_seconds=settle_seconds,
             max_consecutive_failures=max_failures,
             on_progress=lock.refresh,
@@ -646,6 +647,26 @@ def web(
         port=listen,
         log_level="warning",
     )
+
+
+def _extractor(settings, transcript_files):
+    """The extraction lane, told the reader's ratings (issue #126) and each
+    session's project. Ratings are read once per run; if they can't be read,
+    extraction goes ahead without them."""
+    try:
+        feedback = extraction_feedback(settings.db)
+    except Exception as exc:  # noqa: BLE001 - feedback is a hint, never a blocker
+        console.print(f"Ratings unavailable: {exc}", style="yellow", markup=False)
+        feedback = ""
+    projects = session_projects(str(f) for f in transcript_files)
+
+    def extract(messages):
+        project = projects.get(messages[0].session_id, "") if messages else ""
+        return extract_insights(
+            settings.model, messages, feedback=feedback, project=project
+        )
+
+    return extract
 
 
 def _video_sync(settings, model: str | None = None) -> VideoSync:

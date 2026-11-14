@@ -1,5 +1,35 @@
 # Decisions
 
+## 2026-11-14 — Rate items 👍 / 👎, and the extractor learns from it
+
+The maintainer found some generated items useless. They compared four
+clickable mockups:
+- **A:** swipe
+- **B:** ✕ plus reasons
+- **C:** rate it
+- **D:** a tidy-up mode
+
+They chose **C** (#126).
+
+- **Where it shows.** A 👎 on every card, and "Was this worth reading?
+  👍 / 👎" at the end of every item, where the judgment is fresh.
+- **👎 is a hide plus a rating.** It reuses `web_feed_state.dismissed_at`, so
+  the item leaves For you, Latest and Interview and lands in Hidden. Undo
+  clears both. A short sheet asks why. It's optional and multi-select, with
+  four fixed reasons plus "Fewer from <source>" and "Fewer <type>". 👍 on a
+  hidden item brings it back.
+- **A new table, no migration.** One row per item in `feed_ratings` (latest
+  rating wins), created with `create_all`. Existing tables are untouched.
+- **Teaching the extractor.** `extraction_feedback` turns the latest 20 👎 and
+  10 👍 *coding insights* into a note: headline, type, project and reasons,
+  plus the projects and types the reader wants fewer of. The note goes into
+  the extraction prompt, together with the session's project, so "fewer from
+  daily-agent" can apply. The system prompt explains how to use it.
+  - Feedback is read once per run, and a failure to read it never blocks
+    extraction.
+  - Ratings of videos, posts and prep cards don't steer the extractor, which
+    doesn't write those.
+
 ## 2026-11-14 — A quiet YouTube channel brings one older video a day
 
 The maintainer asked that a followed channel with no new videos go back one
