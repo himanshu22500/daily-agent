@@ -1,0 +1,10 @@
+# Runs deploy-on-merge every 2 minutes (issue #128).
+[Unit]
+Description=daily-agent deploy-on-merge, every 2 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target
