@@ -21,6 +21,11 @@
       <button type="submit" class="icon-btn{% if entry.saved %} on{% endif %}" aria-pressed="{{ 'true' if entry.saved else 'false' }}" aria-label="{{ 'Unsave' if entry.saved else 'Save' }}">{{ icon("heart", entry.saved) }}</button>
     </form>
     <button type="button" class="icon-btn" data-share data-title="{{ entry.headline }}" data-text="{{ entry.text }}" aria-label="Share">{{ icon("share") }}</button>
+    {% if not entry.hidden %}
+    <form method="post" action="{{ base }}/down?as=card{{ back }}" data-rate="down" data-source="{{ entry.source }}" data-kinds="{{ entry.type|kinds }}">
+      <button type="submit" class="icon-btn" aria-label="Not useful">{{ icon("thumb-down") }}</button>
+    </form>
+    {% endif %}
     <details class="menu">
       <summary class="icon-btn" aria-label="More">{{ icon("more") }}</summary>
       <div class="menu-pop">

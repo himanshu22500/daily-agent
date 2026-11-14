@@ -435,6 +435,122 @@
   });
   askReady(); // a standalone reader page (maybe with an open question)
 
+  // --- Rate it: 👍 / 👎, then "why?" (issue #126) -------------------------------------
+  // 👎 on a card folds it into an undo note; 👎 at the end of an item in the
+  // overlay does the same to its card and closes the reader. Either way a sheet
+  // then asks why (optional), which Claude sees when writing new items.
+  const REASONS = [
+    ["basic", "Too basic"],
+    ["irrelevant", "Not relevant to me"],
+    ["wrong", "Wrong or outdated"],
+    ["repeat", "Repeats another"],
+  ];
+  let whySheet = null;
+
+  function closeWhy() {
+    if (!whySheet) return;
+    const { sheet, backdrop } = whySheet;
+    whySheet = null;
+    sheet.classList.remove("open");
+    backdrop.remove();
+    setTimeout(() => sheet.remove(), 250);
+  }
+
+  function askWhy(key, source, kinds) {
+    closeWhy();
+    const backdrop = document.createElement("div");
+    backdrop.className = "sheet-backdrop";
+    const sheet = document.createElement("div");
+    sheet.className = "sheet";
+    sheet.setAttribute("role", "dialog");
+    sheet.setAttribute("aria-label", "Why wasn't it useful?");
+    sheet.innerHTML =
+      '<div class="sheet-grab"></div><h2>Why wasn’t it useful?</h2>' +
+      '<p class="sheet-sub">Optional. Claude uses this to write better items.</p>' +
+      '<div class="why-chips"></div><div class="sheet-row">' +
+      '<button type="button" class="sheet-skip">Skip</button>' +
+      '<button type="button" class="sheet-done">Done</button></div>';
+    const chips = sheet.querySelector(".why-chips");
+    const add = (code, text, wide) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "why-chip" + (wide ? " is-wide" : "");
+      chip.dataset.code = code;
+      chip.setAttribute("aria-pressed", "false");
+      chip.textContent = text;
+      chips.append(chip);
+    };
+    REASONS.forEach(([code, text]) => add(code, text));
+    if (source) add("source", `Fewer from ${source}`, true);
+    if (kinds) add("type", `Fewer ${kinds}`, true);
+    chips.addEventListener("click", (event) => {
+      const chip = event.target.closest(".why-chip");
+      if (!chip) return;
+      chip.setAttribute("aria-pressed", chip.getAttribute("aria-pressed") === "true" ? "false" : "true");
+    });
+    backdrop.addEventListener("click", closeWhy);
+    sheet.querySelector(".sheet-skip").addEventListener("click", closeWhy);
+    sheet.querySelector(".sheet-done").addEventListener("click", async () => {
+      const codes = [...chips.querySelectorAll('[aria-pressed="true"]')].map((c) => c.dataset.code);
+      closeWhy();
+      if (!codes.length) return;
+      try {
+        const res = await fetch(`/items/${encodeURIComponent(key)}/reasons`, {
+          method: "POST",
+          body: new URLSearchParams({ reasons: codes.join(",") }),
+          headers: { "X-Requested-With": "fetch" },
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        toast("Thanks. Claude will write fewer like this.");
+      } catch {
+        toast("Couldn't save that. Try again.");
+      }
+    });
+    document.body.append(backdrop, sheet);
+    whySheet = { sheet, backdrop };
+    requestAnimationFrame(() => requestAnimationFrame(() => sheet.classList.add("open")));
+  }
+  addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && whySheet) closeWhy();
+  });
+
+  document.addEventListener("submit", async (event) => {
+    const form = event.target;
+    if (!form.matches("form[data-rate]")) return;
+    event.preventDefault();
+    if (form.dataset.busy) return;
+    form.dataset.busy = "1";
+    const kind = form.dataset.rate; // up | down | undo
+    const owner = form.closest("[data-key]");
+    const key = owner && owner.dataset.key;
+    const box = form.closest("[data-rate-box]");
+    const fromOverlay = Boolean(box && overlay && !overlay.hidden && overlay.contains(form));
+    const removeFromOverlay = kind === "down" && fromOverlay;
+    const url = new URL(form.action, location.href);
+    if (removeFromOverlay) url.searchParams.set("as", "card");
+    try {
+      const res = await fetch(url, { method: "POST", headers: { "X-Requested-With": "fetch" } });
+      if (!res.ok) throw new Error(String(res.status));
+      const html = await res.text();
+      if (removeFromOverlay) {
+        const card = feedCard(key);
+        if (card) card.outerHTML = html;
+        closeReader();
+      } else if (box) {
+        box.outerHTML = html;
+      } else {
+        const card = form.closest("[data-swap]");
+        if (card) card.outerHTML = html;
+      }
+      if (kind === "down") askWhy(key, form.dataset.source, form.dataset.kinds);
+      watch();
+    } catch {
+      delete form.dataset.busy;
+      form.submit(); // rating is idempotent, so a plain post is a safe fallback
+    }
+  });
+
+
   // --- "N new insights" pill ----------------------------------------------------------
   const fresh = document.getElementById("fresh");
   const opened = feed && feed.dataset.opened;

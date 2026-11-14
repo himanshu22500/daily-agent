@@ -279,7 +279,7 @@ def test_sweep_publishes_and_queues_but_never_delivers(monkeypatch, tmp_path):
     titled: list[list[str]] = []
     drawn: list[str] = []
 
-    async def fake_extract(model, messages):
+    async def fake_extract(model, messages, **_):
         models.append(model)
         return await _extractor([])(messages)
 
@@ -316,7 +316,7 @@ def test_sweep_publishes_and_queues_but_never_delivers(monkeypatch, tmp_path):
 def test_sweep_caps_of_zero_skip_headlines_and_covers(monkeypatch, tmp_path):
     _real_transcripts(tmp_path)
 
-    async def fake_extract(model, messages):
+    async def fake_extract(model, messages, **_):
         return await _extractor([])(messages)
 
     async def never(*_args, **_kwargs):

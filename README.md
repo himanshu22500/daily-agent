@@ -95,7 +95,7 @@ key and tags. Telegram delivery creates one private channel per type on demand.
 Read every insight like a news feed, laid out like Google Discover. Each card
 has a generated cover (colored by type, showing the main topic and the project
 it came from), a headline, a two-line teaser, and a source row: project, time,
-♡ save, share, and ⋮ (hide, copy). Tap a card to open it like an article. It
+♡ save, share, 👎 not useful, and ⋮ (hide, copy). Tap a card to open it like an article. It
 shows the full text, the project and branch it was learned on, and the date,
 with bookmark, text size (Aa), and share. ✕ or Back returns to the same spot in
 the feed. An insight appears the moment it is stored. It doesn't wait for the
@@ -260,6 +260,24 @@ uv run daily-agent prep write                         # write queued explainers 
 
 Everything stays in the web feed; none of it goes to Telegram. The Sources page
 shows how many explainers are left to write.
+
+### Rate items: 👍 / 👎
+
+Every card has a 👎, and every item ends with "Was this worth reading? 👍
+Useful / 👎 Not useful".
+
+- **👎 removes the item.** It moves to Hidden, with an Undo. A sheet then asks
+  why. The answer is optional: too basic, not relevant, wrong or outdated,
+  repeats another, fewer from this project or channel, or fewer of this type.
+- **👍 marks it useful.** It also brings back an item hidden earlier.
+- **Claude learns from both.** Each extraction run reads the latest 20 👎 and
+  10 👍 coding insights, with their reasons, into the prompt. It also tells
+  Claude which project the session is from. So Claude writes fewer items like
+  the 👎 ones and more like the 👍 ones, and is stricter for projects you asked
+  for fewer of. Ratings on videos, Instagram posts and interview cards only
+  hide or keep them; those items aren't written by the extractor.
+
+Ratings live in `feed_ratings`.
 
 ### Ask Claude about an item
 

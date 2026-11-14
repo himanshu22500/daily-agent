@@ -45,6 +45,25 @@ def label(value: str) -> str:
     return " ".join(words).capitalize() or "General"
 
 
+# "Fewer <kinds>" on the 👎 sheet (issue #126).
+_KINDS = {
+    "gotcha": "gotchas",
+    "repo": "repo notes",
+    "architecture": "architecture notes",
+    "technique": "techniques",
+    "general": "general notes",
+    "video": "videos",
+    "instagram": "Instagram posts",
+    "interview": "interview questions",
+    "concept": "concept explainers",
+}
+
+
+def kinds(value: str) -> str:
+    """``"gotcha"`` -> ``"gotchas"``: an item type, plural, for display."""
+    return _KINDS.get(value or "", label(value).lower() + " items")
+
+
 def type_class(value: str) -> str:
     """CSS-safe class suffix for an insight type."""
     return re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-") or "general"

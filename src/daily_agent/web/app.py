@@ -39,6 +39,7 @@ from ..feed.covers import CoverStore, cover_slug
 from ..feed.instagram_posts import InstagramStore, InstagramSync, shortcode_of
 from ..feed.prep import PrepStore, PrepSync
 from ..feed.questions import QuestionError, QuestionStore, QuestionSync
+from ..feed.ratings import DOWN, UP, Ratings
 from ..feed.story_queue import sync_forever
 from ..feed.videos import VideoStore, VideoSync
 from ..feed.web_feed import FOR_YOU, INTERVIEW, PREP_TYPES, VIEWS, WebFeed
@@ -49,6 +50,7 @@ from .render import (
     ago_long,
     cover_style,
     inline_markdown,
+    kinds,
     label,
     longdate,
     source_hue,
@@ -65,6 +67,8 @@ _ACTIONS = {
     "hide": ("set_hidden", True),
     "unhide": ("set_hidden", False),
 }
+# 👍 / 👎 / Undo (issue #126): rate an item; 👎 also hides it.
+_RATE_ACTIONS = (UP, DOWN, "unrate")
 # Old bookmarks: the chronological view used to be called "all".
 _VIEW_ALIASES = {"all": "latest"}
 MAX_SEEN_BATCH = 500
@@ -152,6 +156,7 @@ def create_app(
     question_store = (
         questions.store if questions is not None else QuestionStore(db_path)
     )
+    ratings = Ratings(db_path)
     wake = asyncio.Event()
     ig_wake = asyncio.Event()
     ask_wake = asyncio.Event()
@@ -178,6 +183,7 @@ def create_app(
         type_class=type_class,
         longdate=longdate,
         ago_long=ago_long,
+        kinds=kinds,
     )
     templates.env.globals.update(
         quote=lambda s: quote(s, safe=""),
@@ -186,6 +192,7 @@ def create_app(
         cover_url=cover_url,
         post_media=post_media,
         questions_for=question_store.thread,
+        rating_of=ratings.get,
         source_hue=source_hue,
         asset_version=_asset_version(),
     )
@@ -379,6 +386,8 @@ def create_app(
         if not _same_origin(request):
             return PlainTextResponse("Cross-site request refused.", status_code=403)
         key = request.path_params["key"]
+        if request.path_params["action"] in _RATE_ACTIONS:
+            return rate(request, key, request.path_params["action"])
         action = _ACTIONS.get(request.path_params["action"])
         if action is None:
             return PlainTextResponse("Unknown action.", status_code=404)
@@ -411,6 +420,60 @@ def create_app(
                 "related": feed.related(key) if reading else [],
             },
         )
+
+    def rate(request: Request, key: str, action: str) -> Response:
+        """👍, 👎 (also hides the item) or Undo (issue #126).
+
+        Answers a fetch with what the page swaps in: the card (``as=card``; a
+        👎 folds it into an undo note), the reader's rate box (``as=rate``),
+        or the whole reader (``as=reader``).
+        """
+        if feed.entry(key) is None:
+            return PlainTextResponse("No such insight.", status_code=404)
+        if action == "unrate":
+            gone = ratings.clear(key)
+            if gone is not None and gone.down:
+                feed.set_hidden(key, False)
+        else:
+            ratings.rate(key, action)
+            # 👎 removes it; 👍 brings back an item hidden earlier.
+            feed.set_hidden(key, action == DOWN)
+        next_url = _safe_next(request.query_params.get("next"))
+        if request.headers.get("x-requested-with") != "fetch":
+            return RedirectResponse(next_url, status_code=303)
+        entry = feed.entry(key)
+        shown_as = request.query_params.get("as")
+        if shown_as == "rate":
+            fragment = "_rate.html"
+        elif shown_as == "reader":
+            fragment = "_reader.html"
+        elif action == DOWN:
+            fragment = "_rated.html"
+        else:
+            fragment = "_card.html"
+        return templates.TemplateResponse(
+            request,
+            fragment,
+            {
+                "entry": entry,
+                "next_url": next_url,
+                "close_url": next_url,
+                "show_revisit": request.query_params.get("v") in (FOR_YOU, INTERVIEW),
+                "filters": {"view": request.query_params.get("v") or ""},
+                "related": feed.related(key) if shown_as == "reader" else [],
+            },
+        )
+
+    async def rate_reasons(request: Request) -> Response:
+        """Why a 👎 (optional; the sheet after it). Body: ``reasons=a,b``."""
+        if not _same_origin(request):
+            return PlainTextResponse("Cross-site request refused.", status_code=403)
+        key = request.path_params["key"]
+        codes = (await _form(request)).get("reasons", "").split(",")
+        saved = await run_in_threadpool(ratings.set_reasons, key, codes)
+        if not saved:
+            return PlainTextResponse("Rate it 👎 first.", status_code=409)
+        return JSONResponse({"reasons": list(ratings.get(key).reasons)})
 
     def card(request: Request) -> Response:
         """One feed card, to refresh it after acting on it in the reader."""
@@ -646,6 +709,7 @@ def create_app(
             Route("/new-count", new_count),
             Route("/seen", seen, methods=["POST"]),
             Route("/items/{key:path}/ask", ask, methods=["GET", "POST"]),
+            Route("/items/{key:path}/reasons", rate_reasons, methods=["POST"]),
             Route("/items/{key:path}/{action}", act, methods=["POST"]),
             Route("/card/{key:path}", card),
             Route("/covers/{name}.svg", cover),
