@@ -14,6 +14,7 @@ import asyncio
 import hashlib
 import json
 import secrets
+import subprocess
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,9 +38,12 @@ from starlette.templating import Jinja2Templates
 
 from ..feed.covers import CoverStore, cover_slug
 from ..feed.instagram_posts import InstagramStore, InstagramSync, shortcode_of
+from ..feed.prep import PrepStore, PrepSync
+from ..feed.questions import QuestionError, QuestionStore, QuestionSync
+from ..feed.ratings import DOWN, UP, Ratings
 from ..feed.story_queue import sync_forever
 from ..feed.videos import VideoStore, VideoSync
-from ..feed.web_feed import FOR_YOU, VIEWS, WebFeed
+from ..feed.web_feed import FOR_YOU, INTERVIEW, PREP_TYPES, VIEWS, WebFeed
 from ..sources.instagram import InstagramAuthError, InstagramError, is_instagram_link
 from ..sources.youtube import BadSourceLink, YouTubeError
 from .render import (
@@ -47,6 +51,7 @@ from .render import (
     ago_long,
     cover_style,
     inline_markdown,
+    kinds,
     label,
     longdate,
     source_hue,
@@ -63,6 +68,8 @@ _ACTIONS = {
     "hide": ("set_hidden", True),
     "unhide": ("set_hidden", False),
 }
+# 👍 / 👎 / Undo (issue #126): rate an item; 👎 also hides it.
+_RATE_ACTIONS = (UP, DOWN, "unrate")
 # Old bookmarks: the chronological view used to be called "all".
 _VIEW_ALIASES = {"all": "latest"}
 MAX_SEEN_BATCH = 500
@@ -103,6 +110,22 @@ def _asset_version() -> str:
     return digest.hexdigest()[:10]
 
 
+def _running_commit() -> str:
+    """The git commit this server runs ("" outside a checkout), for /version:
+    deploy-on-merge waits for it after a restart (issue #128)."""
+    try:
+        done = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=HERE,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
 async def _form(request: Request) -> dict[str, str]:
     """A small urlencoded form body (first value per field)."""
     body = await request.body()
@@ -121,6 +144,11 @@ def create_app(
     instagram: InstagramSync | None = None,
     video_loop: bool = False,
     video_idle_seconds: float = 600.0,
+    prep: PrepSync | None = None,
+    prep_loop: bool = False,
+    questions: QuestionSync | None = None,
+    question_loop: bool = False,
+    question_poll_seconds: float = 15.0,
 ) -> Starlette:
     """Build the feed app.
 
@@ -132,13 +160,24 @@ def create_app(
     ``videos`` lets the Sources page follow YouTube channels (issue #99), and
     ``instagram`` Instagram accounts (issue #107; ``None`` until connected).
     With ``video_loop`` the server also writes their stories in the background.
+    With ``prep`` and ``prep_loop`` it writes queued interview-prep concept
+    explainers (issue #108). Questions asked under an item are always stored;
+    with ``questions`` and ``question_loop`` the server also answers them,
+    checking for new ones every ``question_poll_seconds`` (issue #119).
     """
     feed = WebFeed(db_path)
     covers = CoverStore(db_path)
     video_store = videos.store if videos is not None else VideoStore(db_path)
     ig_store = instagram.store if instagram is not None else InstagramStore(db_path)
+    prep_store = prep.store if prep is not None else PrepStore(db_path)
+    question_store = (
+        questions.store if questions is not None else QuestionStore(db_path)
+    )
+    ratings = Ratings(db_path)
+    commit = _running_commit()
     wake = asyncio.Event()
     ig_wake = asyncio.Event()
+    ask_wake = asyncio.Event()
 
     def post_media(key: str):
         """What to show for an Instagram story (None for anything else)."""
@@ -162,6 +201,7 @@ def create_app(
         type_class=type_class,
         longdate=longdate,
         ago_long=ago_long,
+        kinds=kinds,
     )
     templates.env.globals.update(
         quote=lambda s: quote(s, safe=""),
@@ -169,6 +209,8 @@ def create_app(
         cover_style=cover_style,
         cover_url=cover_url,
         post_media=post_media,
+        questions_for=question_store.thread,
+        rating_of=ratings.get,
         source_hue=source_hue,
         asset_version=_asset_version(),
     )
@@ -232,6 +274,50 @@ def create_app(
             ),
         }
 
+    def _interview(request: Request, point: str, partial: bool) -> Response | dict:
+        """The Interview tab: a practice deck rebuilt on every visit (#117)."""
+        params = request.query_params
+        edition = params.get("session") or ""
+        try:
+            offset = int(params.get("offset") or 0)
+        except ValueError:
+            return PlainTextResponse("Invalid offset.", status_code=400)
+
+        def build() -> str:
+            return feed.new_edition(interview=True, point=point or None)
+
+        if not edition:
+            if partial:
+                return PlainTextResponse("Missing session.", status_code=400)
+            edition, offset = build(), 0
+        try:
+            page = feed.edition_page(edition, offset=offset, limit=page_size)
+        except KeyError:
+            if partial:
+                return templates.TemplateResponse(
+                    request, "_expired.html", {}, status_code=410
+                )
+            edition, offset = build(), 0
+            page = feed.edition_page(edition, offset=0, limit=page_size)
+        return {
+            "entries": page.entries,
+            "session_id": edition,
+            "first_page": offset == 0,
+            "more_url": (
+                _feed_url(
+                    view=INTERVIEW,
+                    point=point,
+                    session=edition,
+                    offset=str(page.next_offset),
+                )
+                if page.next_offset is not None
+                else None
+            ),
+            "next_revisit": None
+            if page.next_offset is not None
+            else feed.next_revisit_at(interview=True, point=point or None),
+        }
+
     def index(request: Request) -> Response:
         params = request.query_params
         view = params.get("view") or FOR_YOU
@@ -240,23 +326,30 @@ def create_app(
             return PlainTextResponse(f"Unknown view: {view}", status_code=400)
         type_ = params.get("type") or ""
         q = params.get("q") or ""
+        point = (params.get("point") or "").strip().lower()[:20]
         partial = params.get("partial") == "1"
+        if view in (FOR_YOU, "latest") and type_ in PREP_TYPES and not partial:
+            # Old links to the Interview/Concept chips: prep has its own tab now.
+            return RedirectResponse(_feed_url(view=INTERVIEW), status_code=303)
 
-        result = (
-            _for_you(request, type_, partial)
-            if view == FOR_YOU
-            else _chronological(request, view, type_, q)
-        )
+        if view == FOR_YOU:
+            result = _for_you(request, type_, partial)
+        elif view == INTERVIEW:
+            result = _interview(request, point, partial)
+        else:
+            result = _chronological(request, view, type_, q)
         if isinstance(result, Response):
             return result
         filters = {"view": view, "type": type_, "q": q}
+        if view == INTERVIEW:
+            filters = {"view": view, "point": point}
         context = {
             **result,
             "filters": filters,
-            "show_revisit": view == FOR_YOU,
+            "show_revisit": view in (FOR_YOU, INTERVIEW),
             "next_url": _feed_url(**filters),
         }
-        if view != FOR_YOU and context["more_url"]:
+        if view not in (FOR_YOU, INTERVIEW) and context["more_url"]:
             # Keep one page-load id across this list's infinite scroll.
             context["more_url"] += "&pv=" + quote(context["session_id"], safe="")
         if partial:
@@ -264,10 +357,15 @@ def create_app(
         context.update(
             views=VIEWS,
             types=feed.types(),
+            points=feed.interview_points() if view == INTERVIEW else [],
             unseen=feed.unseen_count(),
             opened_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         )
         return templates.TemplateResponse(request, "index.html", context)
+
+    def version(request: Request) -> Response:
+        """The commit this server runs (deploy-on-merge's health check)."""
+        return JSONResponse({"commit": commit})
 
     def new_count(request: Request) -> Response:
         try:
@@ -310,6 +408,8 @@ def create_app(
         if not _same_origin(request):
             return PlainTextResponse("Cross-site request refused.", status_code=403)
         key = request.path_params["key"]
+        if request.path_params["action"] in _RATE_ACTIONS:
+            return rate(request, key, request.path_params["action"])
         action = _ACTIONS.get(request.path_params["action"])
         if action is None:
             return PlainTextResponse("Unknown action.", status_code=404)
@@ -336,10 +436,66 @@ def create_app(
                 "entry": entry,
                 "next_url": next_url,
                 "close_url": next_url,
-                "show_revisit": request.query_params.get("v") == FOR_YOU,
+                "show_revisit": request.query_params.get("v") in (FOR_YOU, INTERVIEW),
+                # Which deck the card belongs to, for its own action links.
+                "filters": {"view": request.query_params.get("v") or ""},
                 "related": feed.related(key) if reading else [],
             },
         )
+
+    def rate(request: Request, key: str, action: str) -> Response:
+        """👍, 👎 (also hides the item) or Undo (issue #126).
+
+        Answers a fetch with what the page swaps in: the card (``as=card``; a
+        👎 folds it into an undo note), the reader's rate box (``as=rate``),
+        or the whole reader (``as=reader``).
+        """
+        if feed.entry(key) is None:
+            return PlainTextResponse("No such insight.", status_code=404)
+        if action == "unrate":
+            gone = ratings.clear(key)
+            if gone is not None and gone.down:
+                feed.set_hidden(key, False)
+        else:
+            ratings.rate(key, action)
+            # 👎 removes it; 👍 brings back an item hidden earlier.
+            feed.set_hidden(key, action == DOWN)
+        next_url = _safe_next(request.query_params.get("next"))
+        if request.headers.get("x-requested-with") != "fetch":
+            return RedirectResponse(next_url, status_code=303)
+        entry = feed.entry(key)
+        shown_as = request.query_params.get("as")
+        if shown_as == "rate":
+            fragment = "_rate.html"
+        elif shown_as == "reader":
+            fragment = "_reader.html"
+        elif action == DOWN:
+            fragment = "_rated.html"
+        else:
+            fragment = "_card.html"
+        return templates.TemplateResponse(
+            request,
+            fragment,
+            {
+                "entry": entry,
+                "next_url": next_url,
+                "close_url": next_url,
+                "show_revisit": request.query_params.get("v") in (FOR_YOU, INTERVIEW),
+                "filters": {"view": request.query_params.get("v") or ""},
+                "related": feed.related(key) if shown_as == "reader" else [],
+            },
+        )
+
+    async def rate_reasons(request: Request) -> Response:
+        """Why a 👎 (optional; the sheet after it). Body: ``reasons=a,b``."""
+        if not _same_origin(request):
+            return PlainTextResponse("Cross-site request refused.", status_code=403)
+        key = request.path_params["key"]
+        codes = (await _form(request)).get("reasons", "").split(",")
+        saved = await run_in_threadpool(ratings.set_reasons, key, codes)
+        if not saved:
+            return PlainTextResponse("Rate it 👎 first.", status_code=409)
+        return JSONResponse({"reasons": list(ratings.get(key).reasons)})
 
     def card(request: Request) -> Response:
         """One feed card, to refresh it after acting on it in the reader."""
@@ -352,24 +508,65 @@ def create_app(
             {
                 "entry": entry,
                 "next_url": _safe_next(request.query_params.get("next")),
-                "show_revisit": request.query_params.get("v") == FOR_YOU,
+                "show_revisit": request.query_params.get("v") in (FOR_YOU, INTERVIEW),
+                # Which deck the card belongs to, for its own action links.
+                "filters": {"view": request.query_params.get("v") or ""},
             },
         )
+
+    def _reader_context(request: Request, entry) -> dict:
+        return {
+            "entry": entry,
+            "close_url": _safe_next(request.query_params.get("from")),
+            "session_id": "r-" + secrets.token_urlsafe(6),
+            "related": feed.related(entry.key),
+        }
 
     def reader(request: Request) -> Response:
         """An insight opened like an article: overlay fragment or standalone page."""
         entry = feed.entry(request.path_params["key"])
         if entry is None:
             return PlainTextResponse("No such insight.", status_code=404)
-        context = {
-            "entry": entry,
-            "close_url": _safe_next(request.query_params.get("from")),
-            "session_id": "r-" + secrets.token_urlsafe(6),
-            "related": feed.related(entry.key),
-        }
+        context = _reader_context(request, entry)
         if request.query_params.get("partial") == "1":
             return templates.TemplateResponse(request, "_reader.html", context)
         return templates.TemplateResponse(request, "reader_page.html", context)
+
+    async def ask(request: Request) -> Response:
+        """The "Ask about this" box under an item: GET its thread, POST a
+        question (Claude answers it on the Mac; issue #119)."""
+        entry = feed.entry(request.path_params["key"])
+        if entry is None:
+            return PlainTextResponse("No such insight.", status_code=404)
+        fetched = request.headers.get("x-requested-with") == "fetch"
+        if request.method == "GET":
+            return templates.TemplateResponse(request, "_ask.html", {"entry": entry})
+        if not _same_origin(request):
+            return PlainTextResponse("Cross-site request refused.", status_code=403)
+        text = (await _form(request)).get("question", "")
+        try:
+            question = await run_in_threadpool(
+                question_store.ask, entry.key, text, now=datetime.now(timezone.utc)
+            )
+        except QuestionError as exc:
+            # Shown again with the question kept, so nothing typed is lost.
+            context = {"entry": entry, "ask_error": str(exc), "ask_text": text}
+            if fetched:
+                return templates.TemplateResponse(
+                    request, "_ask.html", context, status_code=exc.status
+                )
+            return templates.TemplateResponse(
+                request,
+                "reader_page.html",
+                {**_reader_context(request, entry), **context},
+                status_code=exc.status,
+            )
+        ask_wake.set()  # answered right away when this server is the Mac's
+        if fetched:
+            return templates.TemplateResponse(request, "_ask.html", {"entry": entry})
+        return RedirectResponse(
+            f"/i/{quote(entry.key, safe='')}#ask-{question.id}", status_code=303
+        )
 
     def post_image(request: Request) -> Response:
         """A stored Instagram image (downloaded once; Instagram's URLs expire)."""
@@ -413,6 +610,7 @@ def create_app(
             "sources.html",
             {
                 "sources": video_store.statuses() + ig_store.statuses(),
+                "prep": prep_store.progress(),
                 "error": error,
                 "link": link,
                 "can_follow": videos is not None or instagram is not None,
@@ -498,6 +696,18 @@ def create_app(
                             sync_forever(sync, event, idle=video_idle_seconds)
                         )
                     )
+        if prep is not None and prep_loop:
+            tasks.append(
+                asyncio.create_task(
+                    sync_forever(prep, asyncio.Event(), idle=video_idle_seconds)
+                )
+            )
+        if questions is not None and question_loop:
+            tasks.append(
+                asyncio.create_task(
+                    sync_forever(questions, ask_wake, idle=question_poll_seconds)
+                )
+            )
         try:
             yield
         finally:
@@ -519,7 +729,10 @@ def create_app(
             Route("/sources", sources, methods=["GET", "POST"]),
             Route("/sources/unfollow", unfollow, methods=["POST"]),
             Route("/new-count", new_count),
+            Route("/version", version),
             Route("/seen", seen, methods=["POST"]),
+            Route("/items/{key:path}/ask", ask, methods=["GET", "POST"]),
+            Route("/items/{key:path}/reasons", rate_reasons, methods=["POST"]),
             Route("/items/{key:path}/{action}", act, methods=["POST"]),
             Route("/card/{key:path}", card),
             Route("/covers/{name}.svg", cover),

@@ -47,10 +47,17 @@ from .headlines import fallback_headline, plain, split_first_sentence
 from .insights_store import InsightCursorRow, InsightRow, InsightStore
 from .instagram_posts import InstagramStore, shortcode_of
 from .projects import session_projects
+from .prep import CARD_TYPE, CONCEPT_TYPE, PrepStore, level_label, source_of
 from .videos import VideoStore, video_id_of
 
 FOR_YOU = "for-you"
-VIEWS = (FOR_YOU, "latest", "saved", "hidden")
+INTERVIEW = "interview"
+VIEWS = (FOR_YOU, "latest", INTERVIEW, "saved", "hidden")
+# Interview prep (#108) has its own tab (#115) and stays out of For you and
+# Latest (and their chips, unseen count and "new stories" banner). Saved,
+# Hidden and search still include it.
+PREP_TYPES = (CARD_TYPE, CONCEPT_TYPE)
+_NOT_PREP = InsightRow.type.not_in(PREP_TYPES)
 # Editions older than this are pruned; their infinite scroll asks for a refresh.
 EDITION_TTL = timedelta(days=3)
 
@@ -113,6 +120,16 @@ class FeedEntry:
         return video_id_of(self.key)
 
     @property
+    def flashcard(self) -> bool:
+        """An interview question whose answer stays hidden until tapped."""
+        return self.type == CARD_TYPE
+
+    @property
+    def prep_level(self) -> str:
+        """ "Deep dive" etc. for a flashcard ("" otherwise)."""
+        return level_label(self.tags) if self.flashcard else ""
+
+    @property
     def thumbnail(self) -> str:
         return thumbnail_url(self.video_id) if self.video_id else ""
 
@@ -136,6 +153,9 @@ class FeedEntry:
     @property
     def snippet(self) -> str:
         """Plain-text teaser under the headline (never repeats it)."""
+        if self.flashcard:  # never give the answer away on the card
+            level = self.prep_level
+            return f"{level} question · tap to answer" if level else "Tap to answer"
         if self.title:
             return plain(self.text)
         return split_first_sentence(self.text)[1]
@@ -187,6 +207,7 @@ class WebFeed:
         create_tables(self._engine, WebFeedStateRow, WebFeedSessionRow)
         self._videos = VideoStore(self.db_path)
         self._instagram = InstagramStore(self.db_path)
+        self._prep = PrepStore(self.db_path)
         self._migrate()
 
     def _migrate(self) -> None:
@@ -214,13 +235,14 @@ class WebFeed:
 
     def _sources(self) -> dict[str, str]:
         """``{source_session: label}``: projects for insights, channels for
-        videos, accounts for Instagram posts."""
+        videos, accounts for Instagram posts, resume points for prep."""
         with session_scope(self._engine) as session:
             paths = session.exec(select(InsightCursorRow.file_path)).all()
         return {
             **session_projects(paths),
             **self._videos.channel_names(),
             **self._instagram.account_names(),
+            **self._prep.labels(),
         }
 
     # --- reading: chronological views -------------------------------------- #
@@ -233,11 +255,14 @@ class WebFeed:
     def _filters(
         view: str, type: str | None, query: str | None
     ) -> list[ColumnElement[bool]]:
-        if view not in VIEWS or view == FOR_YOU:
+        if view not in VIEWS or view in (FOR_YOU, INTERVIEW):
             raise ValueError(f"not a chronological view: {view!r}")
         clauses: list[ColumnElement[bool]] = []
+        searching = bool(query and query.strip())
         if view == "latest":
             clauses.append(WebFeedStateRow.dismissed_at.is_(None))
+            if not searching:
+                clauses.append(_NOT_PREP)
         elif view == "saved":
             clauses.append(WebFeedStateRow.saved_at.is_not(None))
         else:
@@ -248,6 +273,7 @@ class WebFeed:
             q = query.strip()
             clauses.append(
                 or_(
+                    InsightRow.title.icontains(q, autoescape=True),
                     InsightRow.text.icontains(q, autoescape=True),
                     InsightRow.tags.icontains(q, autoescape=True),
                     InsightRow.git_branch.icontains(q, autoescape=True),
@@ -292,12 +318,26 @@ class WebFeed:
         self,
         *,
         type: str | None = None,
+        interview: bool = False,
+        point: str | None = None,
         now: datetime | None = None,
         rng: random.Random | None = None,
     ) -> str:
-        """Build and store a fresh For you order; return its edition id."""
+        """Build and store a fresh deck; return its edition id.
+
+        For you by default (everything but interview prep). With ``interview``,
+        the Interview tab's practice deck (#117): prep only, optionally one
+        resume ``point``, with the same rotation. Unseen first, and seen cards
+        come back after their spaced-repetition gap.
+        """
         moment = now or _now()
         stmt = self._base().where(WebFeedStateRow.dismissed_at.is_(None))
+        if interview:
+            stmt = stmt.where(InsightRow.type.in_(PREP_TYPES))
+            if point:
+                stmt = stmt.where(InsightRow.source_session == source_of(point))
+        else:
+            stmt = stmt.where(_NOT_PREP)
         if type:
             stmt = stmt.where(InsightRow.type == type)
         with session_scope(self._engine) as session:
@@ -314,7 +354,7 @@ class WebFeed:
                 WebFeedSessionRow(
                     id=edition_id,
                     created_at=_iso(moment),
-                    type_filter=type or "",
+                    type_filter=f"interview:{point or ''}" if interview else type or "",
                     keys=json.dumps(keys),
                 )
             )
@@ -355,14 +395,47 @@ class WebFeed:
             entries=entries, next_offset=position if position < len(keys) else None
         )
 
-    def next_revisit_at(self, *, now: datetime | None = None) -> datetime | None:
-        """When the next seen insight becomes due again (``None`` if none pending)."""
+    # --- reading: the Interview tab's point chips ----------------------------- #
+    def interview_points(self) -> list[tuple[str, str, int]]:
+        """``(point id, label, entries)`` for the Interview tab's chips, in the
+        tracker's order; points with nothing visible are left out."""
+        stmt = (
+            select(InsightRow.source_session, func.count())
+            .outerjoin(WebFeedStateRow, WebFeedStateRow.key == InsightRow.key)
+            .where(InsightRow.type.in_(PREP_TYPES))
+            .where(WebFeedStateRow.dismissed_at.is_(None))
+            .group_by(InsightRow.source_session)
+        )
+        with session_scope(self._engine) as session:
+            counts = dict(session.exec(stmt).all())
+        return [
+            (p.id, f"{p.label_id} · {p.name}", counts[source_of(p.id)])
+            for p in self._prep.points()
+            if counts.get(source_of(p.id))
+        ]
+
+    def next_revisit_at(
+        self,
+        *,
+        interview: bool = False,
+        point: str | None = None,
+        now: datetime | None = None,
+    ) -> datetime | None:
+        """When the next seen item becomes due again (``None`` if none pending):
+        in For you, or with ``interview`` in the Interview deck (one ``point``)."""
         stamp = _iso(now or _now())
         stmt = (
             select(func.min(WebFeedStateRow.due_at))
+            .join(InsightRow, InsightRow.key == WebFeedStateRow.key)
             .where(WebFeedStateRow.dismissed_at.is_(None))
             .where(WebFeedStateRow.due_at > stamp)
         )
+        if interview:
+            stmt = stmt.where(InsightRow.type.in_(PREP_TYPES))
+            if point:
+                stmt = stmt.where(InsightRow.source_session == source_of(point))
+        else:
+            stmt = stmt.where(_NOT_PREP)
         with session_scope(self._engine) as session:
             value = session.scalar(stmt)
         return _aware(value) if value else None
@@ -389,11 +462,16 @@ class WebFeed:
             return []
         moment = now or _now()
         sources = self._sources()
+        # Prep suggests prep, everything else suggests everything else.
+        same_kind = (
+            InsightRow.type.in_(PREP_TYPES) if current.type in PREP_TYPES else _NOT_PREP
+        )
         with session_scope(self._engine) as session:
             rows = session.exec(
                 self._base()
                 .where(WebFeedStateRow.dismissed_at.is_(None))
                 .where(InsightRow.key != key)
+                .where(same_kind)
             ).all()
         tags = set(current.tags)
         scored = []
@@ -427,6 +505,7 @@ class WebFeed:
             select(InsightRow.type, func.count())
             .outerjoin(WebFeedStateRow, WebFeedStateRow.key == InsightRow.key)
             .where(WebFeedStateRow.dismissed_at.is_(None))
+            .where(_NOT_PREP)
             .group_by(InsightRow.type)
             .order_by(func.count().desc(), InsightRow.type)
         )
@@ -440,6 +519,7 @@ class WebFeed:
             .outerjoin(WebFeedStateRow, WebFeedStateRow.key == InsightRow.key)
             .where(WebFeedStateRow.seen_at.is_(None))
             .where(WebFeedStateRow.dismissed_at.is_(None))
+            .where(_NOT_PREP)
         )
         with session_scope(self._engine) as session:
             return session.scalar(stmt) or 0
@@ -451,6 +531,7 @@ class WebFeed:
             .select_from(InsightRow)
             .outerjoin(WebFeedStateRow, WebFeedStateRow.key == InsightRow.key)
             .where(WebFeedStateRow.dismissed_at.is_(None))
+            .where(_NOT_PREP)
             .where(_PUBLISHED > _iso(since))
         )
         with session_scope(self._engine) as session:

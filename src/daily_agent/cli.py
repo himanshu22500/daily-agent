@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -15,7 +16,7 @@ load_dotenv()
 
 from rich.console import Console
 
-from .agents.claude_code import SPEND
+from .agents.claude_code import SPEND, claude_available
 from .agents.headline_writer import write_headlines
 from .agents.insight_extractor import extract_insights, prompt_chars
 from .config import get_settings
@@ -50,6 +51,11 @@ from .feed.insights_sweep import pending_transcripts, sweep_insights, unread_mes
 from .feed.outbox import Channel, Outbox
 from .feed.pacer import Pacer
 from .feed.instagram_posts import InstagramSync
+from .feed.prep import PrepSync
+from .feed.projects import session_projects
+from .feed.ratings import extraction_feedback
+from .feed.transcripts import all_session_files, session_files
+from .feed.questions import QuestionSync
 from .feed.videos import VideoSync
 from .sources.instagram import (
     SCOPES,
@@ -60,6 +66,7 @@ from .sources.instagram import (
     linked_accounts,
 )
 from .sources.telegram_provision import TelethonProvisioner
+from .sources.deep_dive import DeepDiveError
 from .sources.youtube import BadSourceLink, YouTube, YouTubeError
 
 app = typer.Typer(
@@ -80,6 +87,20 @@ db_app = typer.Typer(
     no_args_is_help=True, help="Which database the stores use, and moving data."
 )
 app.add_typer(db_app, name="db")
+prep_app = typer.Typer(
+    no_args_is_help=True, help="Interview prep from a resume deep dive, as feed cards."
+)
+app.add_typer(prep_app, name="prep")
+autodeploy_app = typer.Typer(
+    no_args_is_help=True,
+    help="Deploy on merge: this machine updates itself once CI passes (issue #128).",
+)
+app.add_typer(autodeploy_app, name="autodeploy")
+questions_app = typer.Typer(
+    no_args_is_help=True,
+    help="Questions asked under feed items, answered by Claude.",
+)
+app.add_typer(questions_app, name="questions")
 console = Console()
 
 
@@ -181,7 +202,7 @@ def insights_collect(
                 store,
                 path,
                 settings.insights_marker,
-                lambda messages: extract_insights(settings.model, messages),
+                _extractor(settings, session_files(path)),
             )
         )
         console.print(
@@ -252,7 +273,7 @@ def insights_flush(
                     store,
                     path,
                     settings.insights_marker,
-                    lambda messages: extract_insights(settings.model, messages),
+                    _extractor(settings, session_files(path)),
                 )
             )
             label = (
@@ -348,9 +369,7 @@ def insights_sweep(
             store,
             root,
             settings.insights_marker,
-            (lambda messages: extract_insights(settings.model, messages))
-            if extract
-            else None,
+            _extractor(settings, all_session_files(root)) if extract else None,
             settle_seconds=settle_seconds,
             max_consecutive_failures=max_failures,
             on_progress=lock.refresh,
@@ -604,6 +623,18 @@ def web(
     extra = [h.strip() for h in settings.web_allowed_hosts.split(",") if h.strip()]
     allowed = list(dict.fromkeys(["127.0.0.1", "localhost", bind, *extra]))
     console.print(f"Insight feed at [bold]http://{bind}:{listen}/[/bold]")
+    # Stories and explainers are written with `claude -p`. A host without it
+    # (the always-on feed server, #111) must not claim queued work from the
+    # shared database only to fail it.
+    writes = claude_available()
+    if not writes and (
+        settings.web_video_sync or settings.web_prep_sync or settings.web_ask_sync
+    ):
+        console.print(
+            "No claude CLI here: not writing stories, explainers or answers in "
+            "the background (the Mac does that).",
+            markup=False,
+        )
     uvicorn.run(
         create_app(
             settings.db,
@@ -611,12 +642,37 @@ def web(
             allowed_hosts=allowed,
             videos=_video_sync(settings),
             instagram=_instagram_sync(settings),
-            video_loop=settings.web_video_sync,
+            video_loop=settings.web_video_sync and writes,
+            prep=_prep_sync(settings),
+            prep_loop=settings.web_prep_sync and writes,
+            questions=_question_sync(settings),
+            question_loop=settings.web_ask_sync and writes,
+            question_poll_seconds=settings.web_ask_poll_seconds,
         ),
         host=bind,
         port=listen,
         log_level="warning",
     )
+
+
+def _extractor(settings, transcript_files):
+    """The extraction lane, told the reader's ratings (issue #126) and each
+    session's project. Ratings are read once per run; if they can't be read,
+    extraction goes ahead without them."""
+    try:
+        feedback = extraction_feedback(settings.db)
+    except Exception as exc:  # noqa: BLE001 - feedback is a hint, never a blocker
+        console.print(f"Ratings unavailable: {exc}", style="yellow", markup=False)
+        feedback = ""
+    projects = session_projects(str(f) for f in transcript_files)
+
+    def extract(messages):
+        project = projects.get(messages[0].session_id, "") if messages else ""
+        return extract_insights(
+            settings.model, messages, feedback=feedback, project=project
+        )
+
+    return extract
 
 
 def _video_sync(settings, model: str | None = None) -> VideoSync:
@@ -628,6 +684,7 @@ def _video_sync(settings, model: str | None = None) -> VideoSync:
         YouTube(),
         lambda video, transcript: write_story(chosen, video, transcript),
         check_every=timedelta(hours=settings.video_check_hours),
+        backfill=settings.video_backfill,
     )
 
 
@@ -635,12 +692,12 @@ def _video_sync(settings, model: str | None = None) -> VideoSync:
 def videos_add(
     link: str = typer.Argument(..., help="A YouTube channel or playlist link."),
 ) -> None:
-    """Follow a channel: queue its latest 5 videos and every new upload."""
+    """Follow a channel: its latest 5 videos, new uploads, and one older a day."""
     sync = _video_sync(get_settings())
     try:
         source = asyncio.run(sync.follow(link))
     except (BadSourceLink, YouTubeError) as exc:
-        console.print(f"[red]{exc}[/red]", markup=False)
+        console.print(str(exc), style="red", markup=False)
         raise typer.Exit(1)
     console.print(
         f"Following {source.title or source.id} ({source.id}). Stories are "
@@ -671,7 +728,7 @@ def videos_remove(
 ) -> None:
     """Stop following a channel (its stories stay in the feed)."""
     if not _video_sync(get_settings()).unfollow(source_id):
-        console.print(f"[red]Not following {source_id}.[/red]", markup=False)
+        console.print(f"Not following {source_id}.", style="red", markup=False)
         raise typer.Exit(1)
     console.print(f"Stopped following {source_id}.", markup=False)
 
@@ -685,8 +742,9 @@ def videos_sync(
     settings = get_settings()
     report = asyncio.run(_video_sync(settings, model).run_once(limit=limit))
     console.print(
-        f"Checked {report.checked} source(s), queued {report.queued} video(s), "
-        f"wrote {report.written} story(ies)"
+        f"Checked {report.checked} source(s), queued {report.queued} video(s)"
+        + (f" ({report.older} older)" if report.older else "")
+        + f", wrote {report.written} story(ies)"
         + (f", {report.waiting} waiting for captions" if report.waiting else "")
         + (f", {report.remaining} still queued" if report.remaining else "")
         + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
@@ -820,7 +878,7 @@ def instagram_add(
     try:
         source = asyncio.run(sync.follow(link))
     except (BadSourceLink, InstagramError) as exc:
-        console.print(f"[red]{exc}[/red]", markup=False)
+        console.print(str(exc), style="red", markup=False)
         raise typer.Exit(1)
     console.print(
         f"Following {source.title or source.id} ({source.id}). Stories are "
@@ -859,7 +917,7 @@ def instagram_remove(
 
     store = InstagramStore(get_settings().db)
     if not store.unfollow(source_id, now=datetime.now().astimezone()):
-        console.print(f"[red]Not following {source_id}.[/red]", markup=False)
+        console.print(f"Not following {source_id}.", style="red", markup=False)
         raise typer.Exit(1)
     console.print(f"Stopped following {source_id}.", markup=False)
 
@@ -881,6 +939,146 @@ def instagram_sync(
         + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
         + "."
     )
+    for error in report.errors:
+        console.print(f"  [dim]{error}[/dim]", markup=False)
+
+
+def _prep_sync(settings, model: str | None = None) -> PrepSync:
+    from .agents.concept_writer import write_explainer
+
+    chosen = model or settings.prep_model
+    return PrepSync(settings.db, lambda request: write_explainer(chosen, request))
+
+
+@prep_app.command("import")
+def prep_import(
+    folder: Path = typer.Argument(..., help="The deep-dive folder (with README.md)."),
+    all_points: bool = typer.Option(
+        False, "--all", help="Also import non-job points (skills, general)."
+    ),
+) -> None:
+    """Add the folder's interview Q&A as flashcards and queue its concepts.
+
+    Run it again after editing the notes: changed answers are updated, removed
+    questions dropped, and changed concepts rewritten.
+    """
+    try:
+        report = _prep_sync(get_settings()).import_folder(
+            folder, jobs_only=not all_points
+        )
+    except DeepDiveError as exc:
+        console.print(str(exc), style="red", markup=False)
+        raise typer.Exit(1)
+    console.print(
+        f"{report.points} resume point(s): {report.cards_added} flashcard(s) added, "
+        f"{report.cards_updated} updated, {report.cards_removed} removed "
+        f"({report.unanswered} question(s) have no answer yet). "
+        f"{report.concepts_queued} concept explainer(s) queued"
+        + (f", {report.concepts_removed} removed" if report.concepts_removed else "")
+        + ". The feed server writes them in the background, or run "
+        "`daily-agent prep write`.",
+        markup=False,
+    )
+
+
+@prep_app.command("status")
+def prep_status() -> None:
+    """Flashcards in the feed and how far the explainers have got."""
+    progress = _prep_sync(get_settings()).store.progress()
+    console.print(
+        f"{progress.cards} flashcard(s); explainers: {progress.explainers} written, "
+        f"{progress.queued + progress.writing} to write, "
+        f"{len(progress.failed)} failed.",
+        markup=False,
+    )
+    for concept, error in progress.failed:
+        console.print(f"  failed: {concept}: {error}", markup=False)
+
+
+@prep_app.command("write")
+def prep_write(
+    limit: int = typer.Option(None, help="Write at most N explainers (default 5)."),
+    model: str = typer.Option(None, help="Claude Code model (default: prep_model)."),
+) -> None:
+    """Write queued concept explainers now."""
+    settings = get_settings()
+    report = asyncio.run(_prep_sync(settings, model).run_once(limit=limit))
+    console.print(
+        f"Wrote {report.written} explainer(s)"
+        + (f", {report.remaining} still queued" if report.remaining else "")
+        + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
+        + "."
+    )
+    for error in report.errors:
+        console.print(f"  [dim]{error}[/dim]", markup=False)
+
+
+def _telegram_notifier(settings):
+    """Sends one message to the bot chat (``None`` without Telegram)."""
+    if not settings.telegram_enabled:
+        return None
+
+    def send(text: str) -> None:
+        channel = TelegramChannel(
+            settings.telegram_bot_token, settings.telegram_chat_id
+        )
+        try:
+            channel.send_text(text)
+        finally:
+            channel.close()
+
+    return send
+
+
+def _question_sync(settings, model: str | None = None) -> QuestionSync:
+    from .agents.question_answerer import answer_question
+
+    chosen = model or settings.ask_model
+    return QuestionSync(
+        settings.db,
+        lambda request: answer_question(chosen, request),
+        notify=_telegram_notifier(settings),
+        feed_url=settings.feed_url,
+    )
+
+
+@questions_app.command("list")
+def questions_list(
+    limit: int = typer.Option(20, help="Show the N most recent questions."),
+) -> None:
+    """Recent questions and whether Claude has answered them."""
+    questions = _question_sync(get_settings()).store.recent(limit)
+    if not questions:
+        console.print("No questions asked yet.")
+    for q in questions:
+        state = "answered" if q.answered else q.state
+        if q.retrying:
+            state = f"retrying ({q.error})"
+        elif q.failed:
+            state = f"failed ({q.error})"
+        console.print(
+            f"{q.asked_at:%Y-%m-%d %H:%M}  {state:<9}  {q.key}  "
+            f"{' '.join(q.question.split())[:80]}",
+            markup=False,
+        )
+
+
+@questions_app.command("answer")
+def questions_answer(
+    limit: int = typer.Option(None, help="Answer at most N questions (default 3)."),
+    model: str = typer.Option(None, help="Claude Code model (default: ask_model)."),
+) -> None:
+    """Answer waiting questions now (and send their Telegram messages)."""
+    settings = get_settings()
+    report = asyncio.run(_question_sync(settings, model).run_once(limit=limit))
+    console.print(
+        f"Answered {report.written} question(s)"
+        + (f", {report.remaining} still waiting" if report.remaining else "")
+        + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
+        + "."
+    )
+    if not settings.telegram_enabled:
+        console.print("Telegram isn't configured, so no message was sent.")
     for error in report.errors:
         console.print(f"  [dim]{error}[/dim]", markup=False)
 
@@ -1001,3 +1199,85 @@ def db_copy(
         )
     if report.left_behind:
         console.print(f"Not store tables (not copied): {', '.join(report.left_behind)}")
+
+
+# --- deploy on merge (issue #128) ------------------------------------------------ #
+
+AUTODEPLOY_STATE = Path.home() / ".local" / "state" / "daily-agent"
+
+
+def _autodeploy(settings, role: str):
+    import shutil
+
+    import httpx
+
+    from .autodeploy import AutoDeploy
+
+    uv = shutil.which("uv") or str(Path.home() / ".local" / "bin" / "uv")
+    return AutoDeploy(
+        role,
+        Path(__file__).resolve().parents[2],  # the checkout this code runs from
+        state_dir=AUTODEPLOY_STATE,
+        http=httpx.Client(timeout=20.0, follow_redirects=True),
+        notify=_telegram_notifier(settings),
+        server_url=settings.feed_url,
+        database_url=settings.database_url,
+        uv=uv,
+    )
+
+
+ROLE_OPTION = typer.Option(..., "--role", help="server (the feed server) or mac.")
+
+
+@autodeploy_app.command("run")
+def autodeploy_run(role: str = ROLE_OPTION) -> None:
+    """One pass: deploy main here if it's new and both CI checks passed."""
+    from .autodeploy import QUIET, DeployError
+
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        outcome = _autodeploy(get_settings(), role).once()
+    except (DeployError, ValueError) as exc:
+        console.print(f"{stamp} error: {exc}", markup=False)
+        raise typer.Exit(1)
+    if outcome not in QUIET:
+        console.print(f"{stamp} {outcome}", markup=False)
+
+
+@autodeploy_app.command("pause")
+def autodeploy_pause() -> None:
+    """Stop deploying on merge on this machine until `autodeploy resume`."""
+    AUTODEPLOY_STATE.mkdir(parents=True, exist_ok=True)
+    (AUTODEPLOY_STATE / "autodeploy.paused").touch()
+    console.print("Deploy on merge is paused on this machine.")
+
+
+@autodeploy_app.command("resume")
+def autodeploy_resume() -> None:
+    """Deploy on merge again (the next pass catches up with main)."""
+    (AUTODEPLOY_STATE / "autodeploy.paused").unlink(missing_ok=True)
+    console.print("Deploy on merge is on.")
+
+
+@autodeploy_app.command("status")
+def autodeploy_status() -> None:
+    """Paused or not, the commit running here, and commits never to deploy."""
+    from .autodeploy import State
+
+    paused = (AUTODEPLOY_STATE / "autodeploy.paused").exists()
+    here = subprocess.run(
+        ["git", "log", "-1", "--format=%h %s"],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    console.print(f"Deploy on merge: {'paused' if paused else 'on'}", markup=False)
+    console.print(f"  running: {here or 'unknown'}", markup=False)
+    state = State.load(AUTODEPLOY_STATE / "autodeploy.json")
+    for sha, why in state.bad.items():
+        console.print(f"  never deploying {sha[:7]}: {why}", markup=False)
+    backups = sorted((AUTODEPLOY_STATE / "backups").glob("daily_agent-*.sql.gz"))
+    if backups:
+        console.print(
+            f"  latest backup: {backups[-1]} ({len(backups)} kept)", markup=False
+        )

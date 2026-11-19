@@ -1,5 +1,209 @@
 # Decisions
 
+## 2026-11-14 — Merging to main deploys; each machine pulls
+
+The maintainer wanted a merge to `main` to deploy (#128). The repo is public
+and the server is reachable only over the tailnet, so the deploy is **pull,
+not push**. Neither machine is reachable from GitHub, and GitHub holds no SSH
+key, tailnet key or runner on our machines. A self-hosted runner on a public
+repo would let any PR run code there.
+
+- **The trigger.** Every 2 minutes (a systemd timer on the server, launchd on
+  the Mac), each machine fetches `main`. A new commit is deployed only once
+  both CI checks have passed *for that commit*. That is read from GitHub's
+  public check-runs API without a token. A failed commit is remembered and
+  never deployed.
+- **Safety.**
+  - Server first, with a `pg_dump` before every deploy (14 kept, on top of
+    Lightsail's daily snapshots).
+  - The Mac waits for the server's `/version` to show the commit, so the
+    backup and any schema change happen once, on the server, before either
+    machine runs the new code.
+  - `update.sh` is pinned to the commit (`DEPLOY_SHA`), never a newer tip.
+  - Health = `/version` reports the commit. Otherwise roll back to the
+    previous commit and remember the bad one.
+  - A checkout with local edits is left alone.
+  - A file-based pause switch.
+  - Telegram reports each deploy, failure and rollback.
+- **Limits.** Rolling back the code doesn't undo a schema change; the dump is
+  there for that. So PRs keep schema changes additive (AGENTS.md).
+- **CI hardening, done at the same time.**
+  - `permissions: contents: read`.
+  - Actions pinned to commit SHAs.
+  - `tests (postgres)` is required on `main` too.
+  - Workflows from outside contributors' PRs wait for approval.
+
+## 2026-11-14 — Rate items 👍 / 👎, and the extractor learns from it
+
+The maintainer found some generated items useless. They compared four
+clickable mockups:
+- **A:** swipe
+- **B:** ✕ plus reasons
+- **C:** rate it
+- **D:** a tidy-up mode
+
+They chose **C** (#126).
+
+- **Where it shows.** A 👎 on every card, and "Was this worth reading?
+  👍 / 👎" at the end of every item, where the judgment is fresh.
+- **👎 is a hide plus a rating.** It reuses `web_feed_state.dismissed_at`, so
+  the item leaves For you, Latest and Interview and lands in Hidden. Undo
+  clears both. A short sheet asks why. It's optional and multi-select, with
+  four fixed reasons plus "Fewer from <source>" and "Fewer <type>". 👍 on a
+  hidden item brings it back.
+- **A new table, no migration.** One row per item in `feed_ratings` (latest
+  rating wins), created with `create_all`. Existing tables are untouched.
+- **Teaching the extractor.** `extraction_feedback` turns the latest 20 👎 and
+  10 👍 *coding insights* into a note: headline, type, project and reasons,
+  plus the projects and types the reader wants fewer of. The note goes into
+  the extraction prompt, together with the session's project, so "fewer from
+  daily-agent" can apply. The system prompt explains how to use it.
+  - Feedback is read once per run, and a failure to read it never blocks
+    extraction.
+  - Ratings of videos, posts and prep cards don't steer the extractor, which
+    doesn't write those.
+
+## 2026-11-14 — A quiet YouTube channel brings one older video a day
+
+The maintainer asked that a followed channel with no new videos go back one
+video a day: the 6th, then the 7th, and so on (#124).
+
+- **Per source, per local day.** After each check (every 3 hours), a source
+  that has queued nothing today, whether new, initial, or older, queues the
+  newest video it hasn't taken. A day with a new upload brings no older one.
+  "Today" starts at local midnight on the Mac, so the pace stays at one a day.
+  A rolling 24 hours would drift later at every 3-hour check.
+- **Where older videos come from.** The RSS feed lists only about 15 videos.
+  Beyond that, the channel's public long-form uploads list (`UULF…`, newest
+  first, no Shorts) is read 100 at a time through YouTube's own continuation
+  requests, up to 10 pages. A playlist source walks the playlist. A video
+  older than the feed is read from its watch page, for its exact upload date
+  and description. There is still no API key. If YouTube changes these pages,
+  going back stops and reports the error. New uploads are unaffected.
+- **No schema change.** `videos.found_at` now means "found, or taken from the
+  backlog", which is all the "queued today?" test needs. A private or removed
+  video stays `skipped` with an `unavailable:` error, so it's never tried
+  again. At most 3 are tried per check.
+- **Mac only**, like all story writing. `DAILY_AGENT_VIDEO_BACKFILL=false`
+  turns it off.
+
+## 2026-11-14 — Every model task runs on Opus 5.5
+
+The maintainer asked for Opus 5.5 for every task. All seven settings now
+default to `claude-code:claude-opus-5-5`: extraction, headlines, covers,
+YouTube and Instagram stories, prep explainers, and Ask answers. The full
+model name is pinned rather than the `opus` alias, so a new Opus release can't
+change the model silently. Opus uses the Claude plan faster than Sonnet did.
+Fable stays unused.
+
+## 2026-11-13 — The Ask box is a chat (option C)
+
+The first Ask box (#119) looked plain on the phone. The maintainer compared
+three clickable mockups:
+- **A:** starter chips plus a sticky "Ask Claude" pill
+- **B:** a floating button that opens a bottom sheet
+- **C:** inline, just polished
+
+They chose **C** (#121). The box stays at the end of the item, with no chips and
+no floating button:
+- The reader's question is a right-aligned blue bubble.
+- Claude's answer is a soft card marked "✦ Claude". Open questions get the same
+  card with a shimmering placeholder.
+- The composer is a pill that grows as you type, with a round send button.
+
+## 2026-11-13 — Ask Claude about an item; Telegram says when it's answered
+
+The maintainer asked for a way to question any article or interview card from
+the feed, with a Telegram message and a feed link once the answer is ready
+(#119).
+
+- **Asynchronous by necessity.** The phone reads the feed server, which has no
+  `claude` (#111, #114). Asking only stores the question in `feed_questions`,
+  in the shared Postgres. The Mac's `daily-agent web` polls for it every 15s
+  (gated on `claude_available()` like the other writers), answers with
+  `claude -p` (Sonnet), and sends the Telegram message. Questions wait while
+  the Mac sleeps. The 15s poll is a single indexed query, so it's cheap.
+- **Same queue as stories.** Questions reuse `StoryQueue` (claim, 1h/2h/4h
+  retries, give up after 4). It now has an oldest-first option, so questions
+  are answered in the order asked and a follow-up sees the earlier answer.
+- **Context.** Claude gets the item, the earlier Q&A on it, and, for interview
+  prep, that resume point's deep-dive notes. It never invents facts about the
+  reader's work. The answer uses the reader's small markdown subset, plus "• "
+  lines.
+- **Telegram:** a plain-text message to the bot chat (`TELEGRAM_CHAT_ID`), not
+  the per-type insight channels. It carries the question, up to 1,200
+  characters of the answer, and `DAILY_AGENT_FEED_URL/i/<key>#ask-<id>`. A
+  failed send is retried 3 times, 5 minutes apart and growing, and dropped
+  after a day.
+- **Reader UX:** the box sits under the text, after a flashcard's folded answer.
+  While a question is open, the page re-fetches only the thread every 10s, so
+  text being typed is kept. Everything works without JS too.
+- **Limits:** 1,000 characters per question, 20 waiting at once, and 50 per
+  item.
+
+## 2026-11-13 — The Interview tab is a rotating practice deck
+
+The fixed resume-point order from #115 never changed, so the same questions
+always came first. The maintainer asked for rotation (#117). They chose a
+practice deck over "seen ones go last" and over "fully random":
+
+- Every visit builds a fresh deck with the same builder and view tracking as
+  For you: unseen first (weighted shuffle), and seen questions come back after
+  1d, 3d, 1w, 3w, then 2mo (sooner if saved).
+- A question counts as seen once its card has been on screen, the same rule as
+  everywhere else.
+- Point chips build a deck for just that resume point.
+- The end of a deck says when the next question is due. For you's "next comes
+  back" no longer counts prep, and the Interview deck's counts only prep.
+
+## 2026-11-12 — Interview prep gets its own tab, in resume-point order
+
+After the 269 flashcards were imported, they took over For you: 14 of the
+first 20 cards. The maintainer asked for a separate section (#115) and chose:
+
+- **Only in the Interview tab.** Flashcards and concept explainers stay out of
+  For you and Latest, their type chips, the unseen count and the "new stories"
+  banner. Saved, Hidden and search still include them (search now also matches
+  headlines, so a question finds its card).
+- **Resume-point order, not a shuffled deck.** Points follow the tracker (their
+  files sort that way: `01-tranzact/...` before `02-edra-labs/...`). Within a
+  point come its questions in order, then its explainers. Chips pick one point.
+- Flashcard cards have no cover or time, since the question is the card.
+  Read next under prep suggests only prep, and under anything else never prep.
+- Concept explainers aren't written automatically on the Mac for now
+  (`DAILY_AGENT_WEB_PREP_SYNC=false` in the live `.env`): the maintainer asked
+  for the flashcards only. `daily-agent prep write` writes them on demand.
+
+## 2026-11-12 — Interview prep from the resume deep dive: flashcards + explainers
+
+The maintainer keeps interview prep for their resume in a local deep-dive
+folder: one file per resume point, in a fixed section format (#108). They asked
+for two things in the feed:
+
+- **Flashcards:** the written Q&A, with the answer hidden until tapped.
+- **Explainers:** one per "concept to master", written by Claude.
+
+Their constraints were only resume points (the tracker rows under a job, not
+skills or general) and no recurring daily drip.
+
+- **A one-time CLI import** (`daily-agent prep import <folder>`), re-runnable
+  after editing. There's no folder watcher. Card keys are
+  `prep:<point>-q<n>`, so a re-import updates answers in place and keeps the
+  reader's seen and saved state. It also removes cards whose question is gone
+  and rewrites explainers whose concept text changed.
+- **No answer, no card.** Questions whose answer is still `⬜ OPEN` with
+  nothing written (98 of 367) get no card. "Reference design — confirm"
+  drafts are dropped as unconfirmed.
+- **Hidden answers.** The card teaser shows the level, never the answer. The
+  reader folds the answer in a native `<details>`, so it needs no JavaScript.
+- **Explainers send the whole point file to `claude -p`** (Sonnet). That's how
+  they can use the reader's real numbers and incidents, and the prompt forbids
+  inventing any. Measured at about $0.048 each, roughly $5 for all 111. They're
+  written by the web server's background loop through the shared story queue.
+- **All at once.** The cards are web-only and lead For you as fresh items for
+  three days, broken up by the existing type-run limit. The maintainer chose
+  this over a daily drip. The Interview and Concept type chips filter them.
+
 ## 2026-11-12 — One shared Postgres; the feed is served from an always-on server
 
 The phone could only read the feed while the Mac was awake, because the feed

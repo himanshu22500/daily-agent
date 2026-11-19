@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import text
+from sqlalchemy import delete as sa_delete
 from sqlmodel import Field, SQLModel, select
 
 from ..db import (
@@ -109,6 +110,33 @@ class InsightStore:
             )
             # RETURNING, not rowcount: psycopg reports -1 for INSERTs (#111).
             return session.execute(stmt).first() is not None
+
+    def update_content(
+        self, key: str, *, text: str, title: str, tags: list[str]
+    ) -> bool:
+        """Replace an insight's text, headline, and tags; True if any changed.
+
+        For generated entries that are re-imported (interview prep, #108); the
+        reader's state (seen, saved, hidden) is kept.
+        """
+        with session_scope(self._engine) as session:
+            row = session.get(InsightRow, key)
+            joined = ",".join(tags)
+            if row is None or (row.text, row.title, row.tags) == (text, title, joined):
+                return False
+            row.text, row.title, row.tags = text, title or None, joined
+            session.add(row)
+            return True
+
+    def delete(self, keys: list[str]) -> int:
+        """Remove insights by key (generated entries only); return how many."""
+        if not keys:
+            return 0
+        with session_scope(self._engine) as session:
+            result = session.execute(
+                sa_delete(InsightRow).where(InsightRow.key.in_(keys))
+            )
+            return result.rowcount or 0
 
     def get(self, key: str) -> Insight | None:
         with session_scope(self._engine) as session:

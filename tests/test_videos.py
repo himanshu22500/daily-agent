@@ -14,6 +14,7 @@ from daily_agent.feed.insights_feed import enqueue_new_insights
 from daily_agent.feed.insights_store import InsightStore
 from daily_agent.feed.outbox import Outbox
 from daily_agent.feed.videos import (
+    BACKFILL_TRIES,
     CAPTION_WAIT,
     CHECK_EVERY,
     CLAIM_TTL,
@@ -33,6 +34,7 @@ from daily_agent.sources.youtube import (
     NoCaptions,
     Transcript,
     Video,
+    VideoUnavailable,
     YouTubeError,
     channel_ref,
 )
@@ -65,6 +67,14 @@ class FakeYouTube:
         self.no_captions: set[str] = set()
         self.caption_errors: dict[str, Exception] = {}
         self.feeds = 0
+        # The channel's long-form uploads, newest first (issue #124).
+        self.uploads: list[int] = []
+        self.page_size = 4
+        self.list_error: Exception | None = None
+        self.unavailable: set[str] = set()
+        self.lists: list[str] = []
+        self.pages_read = 0
+        self.pages_read_by_video: list[str] = []
 
     async def resolve(self, link: str):
         if "nope" in link:
@@ -81,6 +91,21 @@ class FakeYouTube:
         if self.page_error:
             raise self.page_error
         return "Fireship (page)"
+
+    async def list_pages(self, list_id: str):
+        self.lists.append(list_id)
+        if self.list_error:
+            raise self.list_error
+        for start in range(0, len(self.uploads), self.page_size):
+            self.pages_read += 1
+            yield [vid(n) for n in self.uploads[start : start + self.page_size]]
+
+    async def video(self, video_id: str) -> Video:
+        self.pages_read_by_video.append(video_id)
+        if video_id in self.unavailable:
+            raise VideoUnavailable("This video is unavailable")
+        n = int(video_id[5:])
+        return upload(n, age=timedelta(days=7 * n))
 
     async def transcript(self, video_id: str) -> Transcript:
         if video_id in self.caption_errors:
@@ -119,7 +144,7 @@ def setup(tmp_path):
         )
 
     clock = Clock()
-    sync = VideoSync(db, youtube, writer, clock=clock)
+    sync = VideoSync(db, youtube, writer, tz=timezone.utc, clock=clock)
     return sync, youtube, written, failures, clock, db
 
 
@@ -352,3 +377,190 @@ async def test_sync_forever_keeps_going_while_work_is_ready_and_wakes_on_demand(
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+# --- going back one older video a day (issue #124) ----------------------------- #
+
+
+async def next_day(sync, clock, *, hours: float = 24):
+    clock.now += timedelta(hours=hours)
+    return await sync.run_once()
+
+
+def written_ids(written) -> list[str]:
+    return [v for v, _ in written]
+
+
+async def test_a_quiet_day_brings_the_next_older_video(setup):
+    sync, youtube, written, _, clock, db = setup
+    youtube.uploads = list(range(1, 11))  # the feed shows 1-8; 9 and 10 are older
+    await sync.follow("@Fireship")
+    assert (await sync.run_once()).older == 0  # follow day: the latest five
+    assert written_ids(written) == [vid(n) for n in range(1, 6)]
+
+    report = await next_day(sync, clock)
+    assert (report.checked, report.queued, report.older, report.written) == (1, 1, 1, 1)
+    assert written_ids(written)[-1] == vid(6)  # the 6th
+    assert youtube.lists == [f"UULF{CHANNEL[2:]}"]
+    assert youtube.pages_read_by_video == []  # 6-8 are known from the feed
+    story = InsightStore(db).get(video_key(vid(6)))
+    assert story.captured_at == NOW - timedelta(days=6)  # its upload time
+
+    # One a day: later checks the same day bring nothing more.
+    for _ in range(3):
+        assert (await next_day(sync, clock, hours=3)).older == 0
+    for n in (7, 8, 9, 10):
+        clock.now = NOW + timedelta(days=n - 4, hours=1)
+        assert (await sync.run_once()).older == 1
+        assert written_ids(written)[-1] == vid(n)
+    # 9 and 10 are older than the feed reaches: read from their own pages.
+    assert youtube.pages_read_by_video == [vid(9), vid(10)]
+    older = InsightStore(db).get(video_key(vid(10)))
+    assert older.captured_at == NOW - timedelta(days=70)
+    assert older.source_session == f"yt:{CHANNEL}"
+
+    # The list has run out: tried once that day, not at every check.
+    lists = len(youtube.lists)
+    clock.now = NOW + timedelta(days=7, hours=1)
+    assert (await sync.run_once()).older == 0
+    assert len(youtube.lists) == lists + 1
+    assert (await next_day(sync, clock, hours=3)).older == 0
+    assert len(youtube.lists) == lists + 1
+    youtube.uploads.append(11)  # the next day it looks again
+    clock.now = NOW + timedelta(days=8, hours=1)
+    assert (await sync.run_once()).older == 1
+    assert written_ids(written)[-1] == vid(11)
+    [status] = sync.store.statuses()
+    assert (status.stories, status.queued) == (11, 0)
+
+
+async def test_a_day_with_a_new_upload_brings_no_older_video(setup):
+    sync, youtube, written, _, clock, _ = setup
+    youtube.uploads = list(range(1, 11))
+    await sync.follow("@Fireship")
+    await sync.run_once()
+    youtube.videos.insert(0, upload(99, age=timedelta(hours=-20)))
+    report = await next_day(sync, clock)
+    assert (report.queued, report.older) == (1, 0)
+    assert written_ids(written)[-1] == vid(99)
+    report = await next_day(sync, clock)
+    assert report.older == 1 and written_ids(written)[-1] == vid(6)
+
+
+async def test_days_start_at_local_midnight(tmp_path):
+    youtube = FakeYouTube([upload(n, age=timedelta(days=n)) for n in range(1, 9)])
+    youtube.uploads = list(range(1, 9))
+    clock = Clock()  # 09:00 UTC is 14:30 in India
+
+    async def writer(video, transcript):
+        return VideoStory(headline="h", text="t", tags=[])
+
+    india = timezone(timedelta(hours=5, minutes=30))
+    sync = VideoSync(str(tmp_path / "v.db"), youtube, writer, tz=india, clock=clock)
+    await sync.follow("@Fireship")
+    await sync.run_once()
+    # 21:00 UTC is 02:30 the next day in India: a new day, 12 hours later.
+    assert (await next_day(sync, clock, hours=12)).older == 1
+    assert (await next_day(sync, clock, hours=12)).older == 0  # 14:30, same day
+
+
+async def test_unavailable_videos_are_skipped_and_never_tried_again(setup):
+    sync, youtube, written, _, clock, _ = setup
+    youtube.uploads = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    youtube.videos = [upload(n, age=timedelta(days=n)) for n in range(1, 6)]
+    youtube.unavailable = {vid(6), vid(8)}
+    await sync.follow("@Fireship")
+    await sync.run_once()
+    assert (await next_day(sync, clock)).older == 1
+    assert written_ids(written)[-1] == vid(7)
+    assert youtube.pages_read_by_video == [vid(6), vid(7)]
+    assert (await next_day(sync, clock)).older == 1
+    assert written_ids(written)[-1] == vid(9)
+    assert youtube.pages_read_by_video == [vid(6), vid(7), vid(8), vid(9)]
+    assert sync.store.statuses()[0].failed == []  # unavailable isn't a failure
+
+
+async def test_only_a_few_unavailable_videos_are_tried_a_day(setup):
+    sync, youtube, written, _, clock, _ = setup
+    youtube.uploads = list(range(1, 21))
+    youtube.videos = [upload(n, age=timedelta(days=n)) for n in range(1, 6)]
+    youtube.unavailable = {vid(n) for n in range(6, 20)}
+    await sync.follow("@Fireship")
+    await sync.run_once()
+    assert (await next_day(sync, clock)).older == 0
+    assert len(youtube.pages_read_by_video) == BACKFILL_TRIES
+    # The next check that day goes on from there.
+    assert (await next_day(sync, clock, hours=3)).older == 0
+    assert len(youtube.pages_read_by_video) == 2 * BACKFILL_TRIES
+    assert youtube.pages_read_by_video[BACKFILL_TRIES] == vid(6 + BACKFILL_TRIES)
+
+
+async def test_older_video_errors_are_reported_and_retried(setup):
+    sync, youtube, written, _, clock, _ = setup
+    youtube.uploads = list(range(1, 11))
+    await sync.follow("@Fireship")
+    await sync.run_once()
+    youtube.list_error = YouTubeError("YouTube answered 429")
+    report = await next_day(sync, clock)
+    assert report.older == 0 and report.checked == 1
+    assert report.errors == ["Fireship: older videos: YouTube answered 429"]
+    assert sync.store.statuses()[0].check_error == ""  # the channel itself is fine
+    youtube.list_error = None
+    assert (await next_day(sync, clock, hours=3)).older == 1  # the next check
+
+    # A watch page that won't load is retried too (not marked unavailable).
+    youtube.uploads = [1, 2, 3, 4, 5, 6, 7, 8, 30]
+    youtube.video = _page_down
+    for n in (7, 8):
+        assert (await next_day(sync, clock)).older == 1
+        assert written_ids(written)[-1] == vid(n)
+    report = await next_day(sync, clock)  # 30 isn't in the feed: its page fails
+    assert report.older == 0 and report.errors == ["Fireship: older videos: bot check"]
+    del youtube.video
+    assert (await next_day(sync, clock, hours=3)).older == 1
+    assert written_ids(written)[-1] == vid(30)
+
+
+async def _page_down(video_id):
+    raise YouTubeError("bot check")
+
+
+async def test_the_feed_being_down_doesnt_stop_older_videos(setup):
+    sync, youtube, written, _, clock, _ = setup
+    youtube.uploads = list(range(1, 11))
+    await sync.follow("@Fireship")
+    await sync.run_once()
+    youtube.feed_error = FeedUnavailable("YouTube's video feed isn't answering (404)")
+    report = await next_day(sync, clock)
+    assert (report.checked, report.older) == (0, 1)
+    assert written_ids(written)[-1] == vid(6)
+
+
+async def test_a_source_never_checked_waits_for_its_latest_five(setup):
+    sync, youtube, written, _, clock, _ = setup
+    youtube.uploads = list(range(1, 11))
+    youtube.feed_error = FeedUnavailable("down")
+    await sync.follow("@Fireship")
+    assert (await next_day(sync, clock)).older == 0
+    assert youtube.lists == []
+    youtube.feed_error = None
+    report = await next_day(sync, clock, hours=3)
+    assert (report.queued, report.older) == (5, 0)
+    assert written_ids(written) == [vid(n) for n in range(1, 6)]
+
+
+async def test_going_back_can_be_turned_off(tmp_path):
+    youtube = FakeYouTube([upload(n, age=timedelta(days=n)) for n in range(1, 9)])
+    youtube.uploads = list(range(1, 9))
+    clock = Clock()
+
+    async def writer(video, transcript):
+        return VideoStory(headline="h", text="t", tags=[])
+
+    sync = VideoSync(
+        str(tmp_path / "v.db"), youtube, writer, backfill=False, clock=clock
+    )
+    await sync.follow("@Fireship")
+    await sync.run_once()
+    assert (await next_day(sync, clock)).older == 0
+    assert youtube.lists == []

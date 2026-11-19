@@ -26,9 +26,9 @@ All model work runs through the Claude Code CLI already signed in on the Mac
 
 | Work | Setting | Default |
 |---|---|---|
-| Insight extraction | `DAILY_AGENT_MODEL` | `claude-code:sonnet` |
-| Feed headlines | `DAILY_AGENT_HEADLINE_MODEL` | `claude-code:sonnet` |
-| Cover illustrations | `DAILY_AGENT_COVER_MODEL` | `claude-code:sonnet` |
+| Insight extraction | `DAILY_AGENT_MODEL` | `claude-code:claude-opus-5-5` |
+| Feed headlines | `DAILY_AGENT_HEADLINE_MODEL` | `claude-code:claude-opus-5-5` |
+| Cover illustrations | `DAILY_AGENT_COVER_MODEL` | `claude-code:claude-opus-5-5` |
 
 `claude-code:<alias>` takes any model `claude --model` accepts (`haiku`,
 `sonnet`, `opus`, or a full model name). Fable isn't used by default: it uses up the
@@ -95,7 +95,7 @@ key and tags. Telegram delivery creates one private channel per type on demand.
 Read every insight like a news feed, laid out like Google Discover. Each card
 has a generated cover (colored by type, showing the main topic and the project
 it came from), a headline, a two-line teaser, and a source row: project, time,
-♡ save, share, and ⋮ (hide, copy). Tap a card to open it like an article. It
+♡ save, share, 👎 not useful, and ⋮ (hide, copy). Tap a card to open it like an article. It
 shows the full text, the project and branch it was learned on, and the date,
 with bookmark, text size (Aa), and share. ✕ or Back returns to the same spot in
 the feed. An insight appears the moment it is stored. It doesn't wait for the
@@ -156,9 +156,17 @@ The latest 5 videos are queued at once. After that the channel is checked every
 3 hours (`DAILY_AGENT_VIDEO_CHECK_HOURS`) and each new upload is queued. Shorts
 are skipped.
 
+On a day a channel brings nothing new, it brings one older video instead: the
+6th, then the 7th, and so on, one a day, back through the channel's uploads
+(for a playlist, further down the playlist). A day with a new upload brings no
+older video. Days start at local midnight on the machine that writes the
+stories. Videos older than YouTube's feed reaches (about 15) are read from the
+channel's public uploads list, up to about 1,000 back. Private or removed
+videos are skipped. Set `DAILY_AGENT_VIDEO_BACKFILL=false` to turn this off.
+
 While `daily-agent web` runs, it writes queued videos in the background, one
 at a time: it fetches the video's captions (no API key) and has Claude Code
-(`DAILY_AGENT_VIDEO_MODEL`, default `claude-code:sonnet`) write a headline and
+(`DAILY_AGENT_VIDEO_MODEL`, default `claude-code:claude-opus-5-5`) write a headline and
 a short article from them. A new video without captions waits up to 6 hours for
 YouTube's auto-captions, then is written from its title and description.
 Failures are retried after 1, 2, and 4 hours. After 4 tries the video is shown
@@ -188,7 +196,7 @@ personal and private accounts can't be followed. It works like video stories:
 the latest 5 posts are queued at once, then each account is checked every 3
 hours (`DAILY_AGENT_INSTAGRAM_CHECK_HOURS`).
 
-Claude Code (`DAILY_AGENT_INSTAGRAM_MODEL`, default `claude-code:sonnet`) writes
+Claude Code (`DAILY_AGENT_INSTAGRAM_MODEL`, default `claude-code:claude-opus-5-5`) writes
 each story from the caption and the post's images. It reads a carousel's slides,
 where these posts usually put their content. A reel's audio isn't available, so
 a reel's story only covers its caption and cover frame. The images (up to 4 per
@@ -209,6 +217,95 @@ uv run daily-agent instagram list
 uv run daily-agent instagram sync                      # one pass now (5 stories max)
 uv run daily-agent instagram remove instagram:name
 ```
+
+### Interview prep (resume deep dive)
+
+Put interview prep for your resume in the feed: flashcards for your drafted
+answers, and an explainer for every concept you want to master. The input is a
+"deep dive" folder. It has a `README.md` whose progress tracker lists one
+markdown file per resume point, grouped by job. Each point file has
+`## 4. Likely interview questions` (`**Q1. ...**` followed by
+`- **Answer:** ...`) and `## 5. Concepts to master`.
+
+```bash
+uv run daily-agent prep import ~/path/to/deep-dive   # once; run again after editing
+uv run daily-agent prep status                        # flashcards and explainer progress
+uv run daily-agent prep write                         # write queued explainers now (5 max)
+```
+
+- **Which points:** only points under a job in the tracker are imported. Add
+  `--all` to include skills and general points.
+- **The Interview tab:** all of it lives in its own tab, next to For you and
+  Latest, and never mixes into those two (Saved, Hidden and search still
+  include it). It's a practice deck: every visit shuffles a fresh deck with
+  unseen questions first. A question you've seen leaves the deck and comes
+  back after 1 day, then 3 days, a week, 3 weeks and 2 months (sooner if
+  saved). Chips at the top narrow the deck to one resume point.
+- **Flashcards:** each answered question becomes a card. The question is the
+  headline, and the card shows only its level ("Deep dive question · tap to
+  answer"), with no cover. The reader keeps the answer behind **Show answer**.
+  - Answers still marked `⬜ OPEN` with nothing written are skipped. Partial
+    ones show what's written plus a **Still open** note. "Reference design —
+    confirm" drafts are left out.
+- **Explainers:** each concept is queued. While `daily-agent web` runs, it has
+  Claude Code (`DAILY_AGENT_PREP_MODEL`) write an explainer for it, after
+  that point's questions. An explainer teaches the concept and ties it to your own
+  work using only facts from that point's notes. That costs about $0.05 each,
+  since the whole point file goes along. Set
+  `DAILY_AGENT_WEB_PREP_SYNC=false` to write them only with `prep write`.
+- **Running it again:** nothing watches the folder, so run `prep import` again
+  after editing. Changed answers are updated in place, keeping what you've
+  seen or saved. Removed questions disappear, and changed concepts are
+  rewritten.
+
+Everything stays in the web feed; none of it goes to Telegram. The Sources page
+shows how many explainers are left to write.
+
+### Rate items: 👍 / 👎
+
+Every card has a 👎, and every item ends with "Was this worth reading? 👍
+Useful / 👎 Not useful".
+
+- **👎 removes the item.** It moves to Hidden, with an Undo. A sheet then asks
+  why. The answer is optional: too basic, not relevant, wrong or outdated,
+  repeats another, fewer from this project or channel, or fewer of this type.
+- **👍 marks it useful.** It also brings back an item hidden earlier.
+- **Claude learns from both.** Each extraction run reads the latest 20 👎 and
+  10 👍 coding insights, with their reasons, into the prompt. It also tells
+  Claude which project the session is from. So Claude writes fewer items like
+  the 👎 ones and more like the 👍 ones, and is stricter for projects you asked
+  for fewer of. Ratings on videos, Instagram posts and interview cards only
+  hide or keep them; those items aren't written by the extractor.
+
+Ratings live in `feed_ratings`.
+
+### Ask Claude about an item
+
+Every article and interview card ends with an **Ask about this** box. Type a
+question ("why does this matter?", "what would they ask next?") and Claude
+answers it below the item. When the answer is ready, Telegram sends you the
+question, the start of the answer, and a link that opens the item at the
+answer.
+
+- **Where it's answered:** on the Mac, by `daily-agent web` (Claude Code,
+  `DAILY_AGENT_ASK_MODEL`). The feed server has no `claude`, so it only stores the
+  question. The Mac checks for new ones every 15 seconds
+  (`DAILY_AGENT_WEB_ASK_POLL_SECONDS`), and while it's asleep they wait.
+  `uv run daily-agent questions answer` answers them by hand, and
+  `questions list` shows them. Set `DAILY_AGENT_WEB_ASK_SYNC=false` to answer
+  only by hand.
+- **What Claude sees:** the item's headline and text and any earlier questions
+  about it, with their answers. For interview cards and concept explainers it
+  also sees that resume point's notes. Facts about your own work come only from
+  those; general knowledge fills in the rest.
+- **Telegram:** the message goes to the bot chat (`DAILY_AGENT_TELEGRAM_CHAT_ID`)
+  from the Mac. Set `DAILY_AGENT_FEED_URL` to the feed's address on the phone,
+  e.g. `http://daily-agent.<tailnet>.ts.net`, for the link. Use the full name
+  with dots, since Telegram doesn't link a bare `http://daily-agent/`. A message
+  that fails to send is tried again a few times; the answer is in the feed
+  either way.
+- **Limits:** a question can be up to 1,000 characters, and at most 20 can be
+  waiting at once.
 
 ### On your phone (Tailscale)
 

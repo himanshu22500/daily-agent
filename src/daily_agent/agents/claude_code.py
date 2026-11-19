@@ -107,6 +107,12 @@ def claude_binary() -> str:
     return str(fallback)
 
 
+def claude_available() -> bool:
+    """Whether the ``claude`` CLI is installed here (the feed server has none)."""
+    path = claude_binary()
+    return os.path.isfile(path) and os.access(path, os.X_OK)
+
+
 def inline_refs(schema: dict) -> dict:
     """A JSON schema with local ``$defs`` references expanded in place."""
     defs = schema.get("$defs", {})

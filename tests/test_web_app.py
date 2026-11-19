@@ -272,6 +272,16 @@ def test_inline_markdown_subset():
     )
 
 
+def test_bold_may_contain_code():
+    out = str(inline_markdown("• **Why `LOWER()` and not `citext`?** Because.\x00"))
+    assert out == (
+        "<p>• <strong>Why <code>LOWER()</code> and not <code>citext</code>?</strong>"
+        " Because.</p>"
+    )
+    # An unpaired marker stays literal, and code never turns bold.
+    assert str(inline_markdown("a ** b `**c**`")) == "<p>a ** b <code>**c**</code></p>"
+
+
 def test_ago_buckets():
     now = T0
     assert ago(now - timedelta(seconds=5), now) == "just now"
@@ -423,3 +433,16 @@ def test_ago_long_spells_out_recent_times():
     assert ago_long(now - timedelta(minutes=38), now) == "38 mins ago"
     assert ago_long(now - timedelta(hours=3), now) == "3 hours ago"
     assert ago_long(now - timedelta(hours=30), now) == "yesterday"
+
+
+def test_version_reports_the_running_commit(tmp_path):
+    """Deploy-on-merge waits for /version after a restart (issue #128)."""
+    import re
+
+    from starlette.testclient import TestClient
+
+    from daily_agent.web.app import create_app
+
+    reply = TestClient(create_app(str(tmp_path / "v.db"))).get("/version")
+    assert reply.status_code == 200
+    assert re.fullmatch(r"[0-9a-f]{40}|", reply.json()["commit"])

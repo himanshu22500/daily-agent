@@ -38,6 +38,11 @@ For each candidate:
 - `type`: one of repo, technique, gotcha, architecture, or general
 - `tags`: short lower-kebab tags
 - `score`: 0.0 to 1.0, based on durability, non-obviousness, and reuse value
+
+The request may include READER FEEDBACK: items the reader rated in their feed.
+Calibrate to it. Skip candidates like the "not useful" ones (same kind, same
+level, same project habits), favour ones like the "useful" ones, and hold
+sessions from projects the reader wants fewer insights from to a higher bar.
 """
 
 
@@ -60,13 +65,19 @@ def _clean_text(text: str, *, limit: int = 1800) -> str:
     return rendered[: limit - 3].rstrip() + "..."
 
 
-def _render(messages: list[TranscriptMessage]) -> str:
+def _render(
+    messages: list[TranscriptMessage], *, feedback: str = "", project: str = ""
+) -> str:
     lines = [
         "Extract durable insights from these transcript messages.",
         "Ignore explicit marker-lane notes if they only restate an `insight:` marker.",
         "",
-        "MESSAGES:",
     ]
+    if project:
+        lines += [f"PROJECT: {project}", ""]
+    if feedback:
+        lines += ["READER FEEDBACK:", feedback.strip(), ""]
+    lines.append("MESSAGES:")
     for idx, msg in enumerate(messages, start=1):
         branch = msg.git_branch or "-"
         timestamp = msg.timestamp or "-"
@@ -82,13 +93,23 @@ def prompt_chars(messages: list[TranscriptMessage]) -> int:
 
 
 async def extract_insights(
-    model: str, messages: list[TranscriptMessage]
+    model: str,
+    messages: list[TranscriptMessage],
+    *,
+    feedback: str = "",
+    project: str = "",
 ) -> list[InsightCandidate]:
+    """Durable insights in ``messages``.
+
+    ``feedback`` is the reader's ratings note (``feed.ratings``) and ``project``
+    the session's project, so the model can calibrate to both (issue #126).
+    """
     if not messages:
         return []
+    prompt = _render(messages, feedback=feedback, project=project)
     if is_claude_code(model):
         result = await run_claude(
-            _render(messages),
+            prompt,
             model=model,
             system_prompt=_SYSTEM_PROMPT,
             json_schema=InsightExtraction.model_json_schema(),
@@ -98,5 +119,5 @@ async def extract_insights(
         except ValueError as exc:
             raise ClaudeCodeError(f"unexpected extraction shape: {exc}") from exc
     agent = build_insight_extractor(model)
-    result = await run_with_backoff(agent, _render(messages), attempts=ATTEMPTS)
+    result = await run_with_backoff(agent, prompt, attempts=ATTEMPTS)
     return result.output.candidates

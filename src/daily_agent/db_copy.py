@@ -29,6 +29,9 @@ STORE_MODULES = (
     "insights_store",
     "instagram_posts",
     "outbox",
+    "prep",
+    "questions",
+    "ratings",
     "videos",
     "web_feed",
 )

@@ -1,0 +1,28 @@
+{# "Was this worth reading?" at the end of an item (issue #126). #}
+{% from "_icons.html" import icon %}
+{% set rated = rating_of(entry.key) %}
+{% set rate_base = "/items/" ~ quote(entry.key) %}
+{% set rate_next = "&next=" ~ quote(close_url or "/") %}
+<section class="rate{% if rated %} is-rated{% endif %}" data-rate-box>
+  {% if rated and rated.up %}
+  <p class="rate-done">{{ icon("thumb-up", true) }} <span>Useful. Claude will write more like this.</span></p>
+  <form method="post" action="{{ rate_base }}/unrate?as=rate{{ rate_next }}" data-rate="undo">
+    <button type="submit" class="rate-undo">Undo</button>
+  </form>
+  {% elif rated %}
+  <p class="rate-done is-down">{{ icon("thumb-down", true) }} <span>Removed from your feed. Claude will write fewer like this.</span></p>
+  <form method="post" action="{{ rate_base }}/unrate?as=rate{{ rate_next }}" data-rate="undo">
+    <button type="submit" class="rate-undo">Undo</button>
+  </form>
+  {% else %}
+  <h2>Was this worth reading?</h2>
+  <div class="rate-row">
+    <form method="post" action="{{ rate_base }}/up?as=rate{{ rate_next }}" data-rate="up">
+      <button type="submit" class="rate-btn">{{ icon("thumb-up") }} Useful</button>
+    </form>
+    <form method="post" action="{{ rate_base }}/down?as=rate{{ rate_next }}" data-rate="down" data-source="{{ entry.source }}" data-kinds="{{ entry.type|kinds }}">
+      <button type="submit" class="rate-btn">{{ icon("thumb-down") }} Not useful</button>
+    </form>
+  </div>
+  {% endif %}
+</section>

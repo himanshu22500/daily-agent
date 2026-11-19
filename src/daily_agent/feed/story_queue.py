@@ -5,14 +5,16 @@ Each platform keeps two tables: the sources being followed, and the items
 (videos, posts) found on them. An item is queued (``pending``), claimed by one
 runner (``writing``) with a conditional update, then ``done``, or retried with
 backoff and finally ``failed``. A claim left by a crashed runner expires. This
-module holds that logic once; ``VideoStore`` and ``InstagramStore`` supply
-their tables (``source_row``/``item_row``) and how a source's items are
-recorded.
+module holds that logic once. ``StoryQueue`` is the queue alone (interview-prep
+explainers, #108, use just that); ``FollowedSources`` adds the followed
+sources, and ``VideoStore`` and ``InstagramStore`` supply their tables
+(``source_row``/``item_row``) and how a source's items are recorded.
 
-Both item tables need these columns: ``source_id``, ``title``,
-``published_at``, ``state``, ``attempts``, ``not_before``, ``claimed_at``,
-``error``. Both source tables need: ``id``, ``url``, ``title``, ``added_at``,
-``removed_at``, ``checked_at``, ``check_error``.
+A queue table needs these columns: ``published_at`` (orders the queue),
+``state``, ``attempts``, ``not_before``, ``claimed_at``, ``error``; with
+followed sources also ``source_id`` and ``title``. Source tables need: ``id``,
+``url``, ``title``, ``added_at``, ``removed_at``, ``checked_at``,
+``check_error``.
 """
 
 from __future__ import annotations
@@ -84,6 +86,8 @@ class SourceStatus:
 class SyncReport:
     checked: int = 0
     queued: int = 0
+    # Of those, older videos taken from a quiet source's backlog (#124).
+    older: int = 0
     written: int = 0
     waiting: int = 0  # not ready yet (e.g. no captions); retried later
     failed: int = 0
@@ -93,15 +97,108 @@ class SyncReport:
 
 
 class StoryQueue:
-    """Source and queue bookkeeping over a platform's two tables."""
+    """Claim/retry bookkeeping over a table of queued items."""
 
-    source_row: ClassVar[Any]
     item_row: ClassVar[Any]
     item_id: ClassVar[str]  # primary-key column of ``item_row``
-    platform: ClassVar[str]
+    # Stories are written newest first; questions (#119) are answered in the
+    # order they were asked, so a follow-up sees the earlier answer.
+    newest_first: ClassVar[bool] = True
     _engine: Engine
 
-    # --- sources ---------------------------------------------------------- #
+    def _claimable(self, stamp: str, stale: str):
+        item = self.item_row
+        return or_(
+            and_(
+                item.state == PENDING,
+                or_(item.not_before.is_(None), item.not_before <= stamp),
+            ),
+            and_(item.state == WRITING, item.claimed_at < stale),
+        )
+
+    def ready(self, *, now: datetime, limit: int) -> list:
+        """Queued items that may be worked on now (newest first by default)."""
+        published = self.item_row.published_at
+        stmt = (
+            select(self.item_row)
+            .where(self._claimable(iso(now), iso(now - CLAIM_TTL)))
+            .order_by(
+                published.desc() if self.newest_first else published.asc(),
+                self._id_col(),
+            )
+            .limit(limit)
+        )
+        with session_scope(self._engine) as session:
+            return list(session.exec(stmt).all())
+
+    def ready_count(self, *, now: datetime) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(self.item_row)
+            .where(self._claimable(iso(now), iso(now - CLAIM_TTL)))
+        )
+        with session_scope(self._engine) as session:
+            return session.scalar(stmt) or 0
+
+    def _id_col(self):
+        return getattr(self.item_row, self.item_id)
+
+    def claim(self, item_id: str, *, now: datetime) -> bool:
+        """Take an item to work on; False if another runner has it (or it's done)."""
+        stamp = iso(now)
+        with session_scope(self._engine) as session:
+            result = session.execute(
+                update(self.item_row)
+                .where(self._id_col() == item_id)
+                .where(self._claimable(stamp, iso(now - CLAIM_TTL)))
+                .values(state=WRITING, claimed_at=stamp)
+            )
+            return result.rowcount == 1
+
+    def finish(self, item_id: str) -> None:
+        self._set(item_id, state=DONE, error="", not_before=None, claimed_at=None)
+
+    def defer(self, item_id: str, until: datetime, *, error: str = "") -> None:
+        """Back to the queue, not before ``until`` (no attempt counted)."""
+        self._set(
+            item_id,
+            state=PENDING,
+            not_before=iso(until),
+            claimed_at=None,
+            error=error[:300],
+        )
+
+    def fail_attempt(self, item_id: str, error: str, *, now: datetime) -> bool:
+        """Count a failed attempt; retry later or give up. True if given up."""
+        with session_scope(self._engine) as session:
+            row = session.get(self.item_row, item_id)
+            if row is None:
+                return True
+            row.attempts += 1
+            row.error = error[:300]
+            row.claimed_at = None
+            if row.attempts >= MAX_ATTEMPTS:
+                row.state = FAILED
+                row.not_before = None
+            else:
+                row.state = PENDING
+                row.not_before = iso(now + RETRY_BASE * 2 ** (row.attempts - 1))
+            session.add(row)
+            return row.state == FAILED
+
+    def _set(self, item_id: str, **values) -> None:
+        with session_scope(self._engine) as session:
+            session.execute(
+                update(self.item_row).where(self._id_col() == item_id).values(**values)
+            )
+
+
+class FollowedSources(StoryQueue):
+    """A platform's followed sources plus the queue of items found on them."""
+
+    source_row: ClassVar[Any]
+    platform: ClassVar[str]
+
     def unfollow(self, source_id: str, *, now: datetime) -> bool:
         """Stop following; queued items are dropped, written stories stay."""
         item = self.item_row
@@ -181,89 +278,6 @@ class StoryQueue:
                 )
             )
         return out
-
-    # --- queue ------------------------------------------------------------ #
-    def _claimable(self, stamp: str, stale: str):
-        item = self.item_row
-        return or_(
-            and_(
-                item.state == PENDING,
-                or_(item.not_before.is_(None), item.not_before <= stamp),
-            ),
-            and_(item.state == WRITING, item.claimed_at < stale),
-        )
-
-    def ready(self, *, now: datetime, limit: int) -> list:
-        """Queued items that may be worked on now, newest first."""
-        stmt = (
-            select(self.item_row)
-            .where(self._claimable(iso(now), iso(now - CLAIM_TTL)))
-            .order_by(self.item_row.published_at.desc(), self._id_col())
-            .limit(limit)
-        )
-        with session_scope(self._engine) as session:
-            return list(session.exec(stmt).all())
-
-    def ready_count(self, *, now: datetime) -> int:
-        stmt = (
-            select(func.count())
-            .select_from(self.item_row)
-            .where(self._claimable(iso(now), iso(now - CLAIM_TTL)))
-        )
-        with session_scope(self._engine) as session:
-            return session.scalar(stmt) or 0
-
-    def _id_col(self):
-        return getattr(self.item_row, self.item_id)
-
-    def claim(self, item_id: str, *, now: datetime) -> bool:
-        """Take an item to work on; False if another runner has it (or it's done)."""
-        stamp = iso(now)
-        with session_scope(self._engine) as session:
-            result = session.execute(
-                update(self.item_row)
-                .where(self._id_col() == item_id)
-                .where(self._claimable(stamp, iso(now - CLAIM_TTL)))
-                .values(state=WRITING, claimed_at=stamp)
-            )
-            return result.rowcount == 1
-
-    def finish(self, item_id: str) -> None:
-        self._set(item_id, state=DONE, error="", not_before=None, claimed_at=None)
-
-    def defer(self, item_id: str, until: datetime, *, error: str = "") -> None:
-        """Back to the queue, not before ``until`` (no attempt counted)."""
-        self._set(
-            item_id,
-            state=PENDING,
-            not_before=iso(until),
-            claimed_at=None,
-            error=error[:300],
-        )
-
-    def fail_attempt(self, item_id: str, error: str, *, now: datetime) -> bool:
-        """Count a failed attempt; retry later or give up. True if given up."""
-        with session_scope(self._engine) as session:
-            row = session.get(self.item_row, item_id)
-            if row is None:
-                return True
-            row.attempts += 1
-            row.error = error[:300]
-            row.claimed_at = None
-            if row.attempts >= MAX_ATTEMPTS:
-                row.state = FAILED
-                row.not_before = None
-            else:
-                row.state = PENDING
-                row.not_before = iso(now + RETRY_BASE * 2 ** (row.attempts - 1))
-            session.add(row)
-            return row.state == FAILED
-
-    def _set(self, item_id: str, **values) -> None:
-        with session_scope(self._engine) as session:
-            session.execute(
-                update(self.item_row).where(self._id_col() == item_id).values(**values)
-            )
 
 
 class Syncer(Protocol):

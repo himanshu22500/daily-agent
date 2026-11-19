@@ -48,7 +48,7 @@ from .story_queue import (
     FAILED,
     PENDING,
     SKIPPED,
-    StoryQueue,
+    FollowedSources,
     SyncReport,
     aware,
     first_line,
@@ -164,7 +164,7 @@ class PostMedia:
         return f"/ig/{self.shortcode}/{position}.jpg" if position < self.images else ""
 
 
-class InstagramStore(StoryQueue):
+class InstagramStore(FollowedSources):
     """The ``instagram_sources``, ``instagram_posts`` and ``instagram_images`` tables."""
 
     source_row = InstagramSourceRow

@@ -18,21 +18,32 @@ class Settings(BaseSettings):
 
     # Insight extraction. `claude-code:<alias>` runs the local Claude Code CLI
     # (`claude -p`); other strings are pydantic-ai models (e.g. google:...).
-    model: str = "claude-code:sonnet"
+    model: str = "claude-code:claude-opus-5-5"
     # Feed headlines (Claude Code only) and cover illustrations.
-    headline_model: str = "claude-code:sonnet"
-    cover_model: str = "claude-code:sonnet"
+    headline_model: str = "claude-code:claude-opus-5-5"
+    cover_model: str = "claude-code:claude-opus-5-5"
     # Stories from followed YouTube channels (Claude Code only), and how often
     # each followed channel is checked for new uploads.
-    video_model: str = "claude-code:sonnet"
+    video_model: str = "claude-code:claude-opus-5-5"
     video_check_hours: float = 3.0
+    # On a day a followed channel brings no new video, queue its next older one
+    # (the 6th, then the 7th, ...; issue #124).
+    video_backfill: bool = True
     # Instagram (issue #107), set by `daily-agent instagram connect`: a Facebook
     # Page token (doesn't expire) and the id of your own Instagram professional
     # account, which Business Discovery reads other accounts through.
     instagram_token: str = ""
     instagram_user_id: str = ""
-    instagram_model: str = "claude-code:sonnet"
+    instagram_model: str = "claude-code:claude-opus-5-5"
     instagram_check_hours: float = 3.0
+    # Concept explainers for interview prep (`daily-agent prep import`).
+    prep_model: str = "claude-code:claude-opus-5-5"
+    # Answers to questions asked under a feed item (issue #119).
+    ask_model: str = "claude-code:claude-opus-5-5"
+    # The feed's address on the phone, for links in Telegram messages, e.g.
+    # http://daily-agent.<tailnet>.ts.net (a name with a dot, so Telegram
+    # makes it a link).
+    feed_url: str = ""
     db_path: str = "daily_agent.db"
     # Shared database (issue #111), e.g. postgresql://user:pass@daily-agent/db.
     # When set, every store uses it instead of the SQLite file at db_path; lock
@@ -67,6 +78,14 @@ class Settings(BaseSettings):
     # background while the feed server runs. Off: run `daily-agent videos sync`
     # and `daily-agent instagram sync` instead.
     web_video_sync: bool = True
+    # Write queued interview-prep explainers in the background (else:
+    # `daily-agent prep write`).
+    web_prep_sync: bool = True
+    # Answer questions asked in the feed in the background (else: `daily-agent
+    # questions answer`), checking for new ones this often. They are usually
+    # asked on the feed server, so the Mac has to look for them.
+    web_ask_sync: bool = True
+    web_ask_poll_seconds: float = 15.0
 
     @property
     def db(self) -> str:
