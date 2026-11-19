@@ -13,6 +13,8 @@ WorkingDirectory=/home/ubuntu/daily-agent
 ExecStart=/home/ubuntu/.local/bin/uv run --frozen --no-dev daily-agent web
 Restart=always
 RestartSec=5
+# uv exits 143 when systemd stops it with SIGTERM; that is a clean stop, not a failure.
+SuccessExitStatus=143
 
 [Install]
 WantedBy=multi-user.target
