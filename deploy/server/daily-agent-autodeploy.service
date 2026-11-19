@@ -1,0 +1,18 @@
+# Deploy-on-merge (issue #128): one pass. Started every 2 minutes by
+# daily-agent-autodeploy.timer; installed by deploy/server/update.sh.
+# Deploys main once both CI checks pass, after a pg_dump to
+# ~/.local/state/daily-agent/backups; rolls back if the feed doesn't come up.
+# Pause: daily-agent autodeploy pause. Log: journalctl -u daily-agent-autodeploy
+[Unit]
+Description=daily-agent deploy-on-merge (one pass)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/daily-agent
+Environment=HOME=/home/ubuntu
+Environment=PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/ubuntu/daily-agent/.venv/bin/daily-agent autodeploy run --role server
+TimeoutStartSec=20min

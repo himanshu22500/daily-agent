@@ -1,5 +1,38 @@
 # Decisions
 
+## 2026-11-14 — Merging to main deploys; each machine pulls
+
+The maintainer wanted a merge to `main` to deploy (#128). The repo is public
+and the server is reachable only over the tailnet, so the deploy is **pull,
+not push**. Neither machine is reachable from GitHub, and GitHub holds no SSH
+key, tailnet key or runner on our machines. A self-hosted runner on a public
+repo would let any PR run code there.
+
+- **The trigger.** Every 2 minutes (a systemd timer on the server, launchd on
+  the Mac), each machine fetches `main`. A new commit is deployed only once
+  both CI checks have passed *for that commit*. That is read from GitHub's
+  public check-runs API without a token. A failed commit is remembered and
+  never deployed.
+- **Safety.**
+  - Server first, with a `pg_dump` before every deploy (14 kept, on top of
+    Lightsail's daily snapshots).
+  - The Mac waits for the server's `/version` to show the commit, so the
+    backup and any schema change happen once, on the server, before either
+    machine runs the new code.
+  - `update.sh` is pinned to the commit (`DEPLOY_SHA`), never a newer tip.
+  - Health = `/version` reports the commit. Otherwise roll back to the
+    previous commit and remember the bad one.
+  - A checkout with local edits is left alone.
+  - A file-based pause switch.
+  - Telegram reports each deploy, failure and rollback.
+- **Limits.** Rolling back the code doesn't undo a schema change; the dump is
+  there for that. So PRs keep schema changes additive (AGENTS.md).
+- **CI hardening, done at the same time.**
+  - `permissions: contents: read`.
+  - Actions pinned to commit SHAs.
+  - `tests (postgres)` is required on `main` too.
+  - Workflows from outside contributors' PRs wait for approval.
+
 ## 2026-11-14 — Rate items 👍 / 👎, and the extractor learns from it
 
 The maintainer found some generated items useless. They compared four

@@ -26,11 +26,46 @@ reachable only over the tailnet; the Lightsail firewall has no public ports.
 
 ## Day to day
 
-Deploy a new version after merging to `main`:
+**Merging to `main` deploys** (issue #128). Within a few minutes of a merge,
+each machine updates itself:
+
+- **When.** Every 2 minutes a timer runs `daily-agent autodeploy run`: systemd
+  `daily-agent-autodeploy.timer` on the server, launchd
+  `com.daily-agent.autodeploy` on the Mac.
+- **Only green commits.** It deploys the new `main` only once both CI checks
+  (`tests`, `tests (postgres)`) have passed for that exact commit. A commit
+  whose CI failed is never deployed.
+- **Server first.** The server `pg_dump`s the database to
+  `~/.local/state/daily-agent/backups/` (the last 14 are kept), then runs
+  `update.sh` pinned to that commit.
+- **Mac second.** The Mac waits until the server runs the commit, then
+  resets, runs `uv sync` and restarts `com.daily-agent.web`. It skips the
+  deploy, and says so, if its checkout has local edits.
+- **Automatic rollback.** Each machine checks `/version`. If the feed doesn't
+  come up on the new commit, it rolls back to the previous one and never
+  retries the bad commit.
+- **Telegram** reports every deploy, failure and rollback (the bot chat). The
+  server's `.env` needs `DAILY_AGENT_TELEGRAM_BOT_TOKEN` and
+  `DAILY_AGENT_TELEGRAM_CHAT_ID` for that; without them it only logs.
+
+GitHub never connects to either machine and holds no keys. The machines pull,
+and they read CI results from GitHub's public API.
 
 ```bash
-ssh -i ~/.ssh/daily-agent-lightsail ubuntu@daily-agent 'bash ~/daily-agent/deploy/server/update.sh'
+uv run daily-agent autodeploy status    # on, the commit running, never-deploy list, latest backup
+uv run daily-agent autodeploy pause     # stop on this machine (resume: ... resume)
+journalctl -u daily-agent-autodeploy -n 30 --no-pager   # server log
+tail digests/autodeploy.log                              # Mac log
 ```
+
+Setup:
+- **Server:** `update.sh` installs and starts the timer. Run it by hand once to
+  install, or any time to deploy without waiting:
+  ```bash
+  ssh -i ~/.ssh/daily-agent-lightsail ubuntu@daily-agent 'bash ~/daily-agent/deploy/server/update.sh'
+  ```
+- **Mac:** run `scripts/install-autodeploy-launchd.sh` once, from the live
+  install.
 
 Check the server and the data:
 
@@ -117,6 +152,21 @@ cursors only advance after a successful write.
    `DAILY_AGENT_DATABASE_URL` from `.env` and restart the jobs.
 
 ## Restoring
+
+Every deploy-on-merge backs up first. To go back to the database as it was
+before a deploy:
+
+```bash
+# on the server (ssh -i ~/.ssh/daily-agent-lightsail ubuntu@daily-agent):
+ls -t ~/.local/state/daily-agent/backups | head
+cd ~/daily-agent && .venv/bin/daily-agent autodeploy pause
+sudo systemctl stop daily-agent-web
+sudo -u postgres dropdb daily_agent
+sudo -u postgres createdb -O daily_agent -l C -T template0 daily_agent
+# as the app's user, so it owns the tables (password: DAILY_AGENT_DATABASE_URL in .env)
+gunzip -c ~/.local/state/daily-agent/backups/<file>.sql.gz | psql -q -h localhost -U daily_agent daily_agent
+sudo systemctl start daily-agent-web   # stop the Mac's launchd jobs meanwhile, then autodeploy resume
+```
 
 Lightsail keeps the last 7 daily snapshots. Restore one into a new instance from
 the console or with `aws lightsail create-instances-from-snapshot`, add it to the

@@ -14,6 +14,7 @@ import asyncio
 import hashlib
 import json
 import secrets
+import subprocess
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path
@@ -109,6 +110,22 @@ def _asset_version() -> str:
     return digest.hexdigest()[:10]
 
 
+def _running_commit() -> str:
+    """The git commit this server runs ("" outside a checkout), for /version:
+    deploy-on-merge waits for it after a restart (issue #128)."""
+    try:
+        done = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=HERE,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
 async def _form(request: Request) -> dict[str, str]:
     """A small urlencoded form body (first value per field)."""
     body = await request.body()
@@ -157,6 +174,7 @@ def create_app(
         questions.store if questions is not None else QuestionStore(db_path)
     )
     ratings = Ratings(db_path)
+    commit = _running_commit()
     wake = asyncio.Event()
     ig_wake = asyncio.Event()
     ask_wake = asyncio.Event()
@@ -344,6 +362,10 @@ def create_app(
             opened_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         )
         return templates.TemplateResponse(request, "index.html", context)
+
+    def version(request: Request) -> Response:
+        """The commit this server runs (deploy-on-merge's health check)."""
+        return JSONResponse({"commit": commit})
 
     def new_count(request: Request) -> Response:
         try:
@@ -707,6 +729,7 @@ def create_app(
             Route("/sources", sources, methods=["GET", "POST"]),
             Route("/sources/unfollow", unfollow, methods=["POST"]),
             Route("/new-count", new_count),
+            Route("/version", version),
             Route("/seen", seen, methods=["POST"]),
             Route("/items/{key:path}/ask", ask, methods=["GET", "POST"]),
             Route("/items/{key:path}/reasons", rate_reasons, methods=["POST"]),
