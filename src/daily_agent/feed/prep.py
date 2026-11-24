@@ -36,6 +36,13 @@ from ..db import conflict_insert, create_tables, make_engine, session_scope
 from ..models import Insight, VideoStory
 from ..sources.deep_dive import DeepDive, Flashcard, read_deep_dive
 from .insights_store import InsightRow, InsightStore
+from .prep_tracks import (  # shared with every prep track (#130)
+    CARD_TYPE,
+    CONCEPT_TYPE,
+    KEY_PREFIX,
+    SCORE,
+    STATUS,
+)
 from .story_queue import (
     DONE,
     FAILED,
@@ -50,11 +57,6 @@ from .story_queue import (
 
 _LOG = logging.getLogger(__name__)
 
-KEY_PREFIX = "prep:"
-CARD_TYPE = "interview"
-CONCEPT_TYPE = "concept"
-STATUS = "web-only"
-SCORE = 0.5
 PER_RUN = 5
 LEVELS = {"surface": "Surface", "deep-dive": "Deep dive", "curveball": "Curveball"}
 

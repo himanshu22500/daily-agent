@@ -258,6 +258,17 @@ uv run daily-agent prep write                         # write queued explainers 
   seen or saved. Removed questions disappear, and changed concepts are
   rewritten.
 
+### Prep tracks: Resume, DSA and System design
+
+Interview prep has three tracks (#130): **Resume** (the flashcards and
+explainers above), **DSA** (`dsa` problems and `drill` pattern quizzes) and
+**System design** (`design` walkthroughs and recall cards). Code that adds
+prep cards goes through `PrepItems.put` in `feed/prep_tracks.py`, under a
+labelled source. A card's text can reveal in steps: one tap per `### <title>`
+section after the prompt. Grading a card Got it, Shaky or Missed
+(`feed/prep_grades.py`) reschedules it: tomorrow, in 3 days, or in 7, 21 and
+then 60 days.
+
 Everything stays in the web feed; none of it goes to Telegram. The Sources page
 shows how many explainers are left to write.
 

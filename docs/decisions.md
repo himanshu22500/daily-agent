@@ -1,5 +1,30 @@
 # Decisions
 
+## 2026-11-25 — Interview prep has three tracks, one card store, and self-grading
+
+The maintainer's focus is now interview prep, with a DSA round and a system
+design round, and they asked for several prep features to be built in
+parallel (#130 and the PRs that follow it). They all share one foundation, so
+that each feature only adds cards or reads grades:
+
+- **Tracks** (`feed/prep_tracks.py`): Resume (`interview`, `concept`), DSA
+  (`dsa` problems, `drill` "which pattern?" quizzes) and System design
+  (`design` walkthroughs, building blocks, recall cards). `PREP_TYPES` lives
+  there now. Every prep type stays out of For you and Latest, as in #116.
+- **One way in:** features put cards in the feed with `PrepItems.put(source,
+  label, items)`. Each card is a `web-only` insights row with a `prep:` key,
+  and its source label (e.g. "Blinkit DSA pack") shows as the publisher. A
+  re-import with `replace=True` only touches its own source's cards.
+- **Steps, not one answer:** a card's text reveals in steps. The prompt comes
+  first, then one tap per `### <title>` section (Pattern, Key idea,
+  Complexity, Solution). Resume flashcards keep their single hidden answer.
+- **Self-grading** (`feed/prep_grades.py`): Got it, Shaky or Missed, kept as
+  a history. A grade reschedules the card: missed comes back tomorrow, shaky
+  in 3 days, and got-it in 7, 21, then 60 days while got-its run on. That's
+  stricter than the view-count gaps, because a card read isn't a card
+  answered. Each card's latest grade per tag gives the weak spots that the
+  daily writers aim at and the progress page shows.
+
 ## 2026-11-14 — Merging to main deploys; each machine pulls
 
 The maintainer wanted a merge to `main` to deploy (#128). The repo is public
