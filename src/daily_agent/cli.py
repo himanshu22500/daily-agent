@@ -981,6 +981,92 @@ def prep_import(
     )
 
 
+def _tag_list(tags: str) -> list[str]:
+    return [t.strip() for t in (tags or "").split(",") if t.strip()]
+
+
+@prep_app.command("import-pack")
+def prep_import_pack(
+    folder: Path = typer.Argument(
+        ..., help="The pack folder (README.md index, problems/, answers/)."
+    ),
+    label: str = typer.Option(
+        None, help='Source shown on the cards (default: "<Company> DSA pack").'
+    ),
+    source: str = typer.Option(
+        None, help="Source id; a re-import replaces its cards (default: dsa-<folder>)."
+    ),
+    tags: str = typer.Option("", help="Extra comma-separated tags on every card."),
+) -> None:
+    """Add a DSA practice pack: one card per problem, its answer in steps.
+
+    Run it again after editing the pack: changed cards update in place (keeping
+    what you've seen and graded) and removed problems are dropped.
+    """
+    from .feed.prep_tracks import DSA, PrepItems
+    from .sources.practice_pack import PackError, pack_source, read_pack
+
+    source_id = source or pack_source(folder)
+    try:
+        pack = read_pack(folder, source_id, tags=_tag_list(tags))
+    except PackError as exc:
+        console.print(str(exc), style="red", markup=False)
+        raise typer.Exit(1)
+    name = label or pack.label
+    report = PrepItems(get_settings().db).put(
+        source_id, name, pack.items, track=DSA, replace=True
+    )
+    console.print(
+        f"{name} ({source_id}): {len(pack.items)} problem(s), {pack.must_do} "
+        f"must-do. {report.added} added, {report.updated} updated, "
+        f"{report.removed} removed.",
+        markup=False,
+    )
+    for warning in pack.warnings:
+        console.print(f"  {warning}", style="yellow", markup=False)
+
+
+@prep_app.command("import-notes")
+def prep_import_notes(
+    file: Path = typer.Argument(
+        ..., help="A talk-track markdown file (# title, one ## section per step)."
+    ),
+    track: str = typer.Option("design", help="design, dsa or resume."),
+    label: str = typer.Option(
+        None, help='Source shown on the card (default: "Interview notes").'
+    ),
+    source: str = typer.Option(
+        None, help="Source id; a re-import replaces its card (default: notes-<file>)."
+    ),
+    tags: str = typer.Option("", help="Comma-separated tags (the topic is added)."),
+    question: str = typer.Option(
+        None, help="The interview question it answers (default: from the title)."
+    ),
+) -> None:
+    """Add a talk-track notes file as one card: the question, then each section."""
+    from .feed.prep_tracks import TRACKS, PrepItems
+    from .sources.practice_pack import NOTES_LABEL, PackError, notes_source, read_notes
+
+    source_id = source or notes_source(file)
+    try:
+        notes = read_notes(
+            file, source_id, track=track, question=question, tags=_tag_list(tags)
+        )
+    except PackError as exc:
+        console.print(str(exc), style="red", markup=False)
+        raise typer.Exit(1)
+    name = label or NOTES_LABEL
+    report = PrepItems(get_settings().db).put(
+        source_id, name, [notes.item], track=track, replace=True
+    )
+    console.print(
+        f"{notes.item.title} ({source_id}, {TRACKS[track]}): "
+        f'"{notes.question}" + {len(notes.steps)} step(s). '
+        f"{report.added} added, {report.updated} updated, {report.removed} removed.",
+        markup=False,
+    )
+
+
 @prep_app.command("status")
 def prep_status() -> None:
     """Flashcards in the feed and how far the explainers have got."""

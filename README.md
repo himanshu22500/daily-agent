@@ -272,6 +272,43 @@ then 60 days.
 Everything stays in the web feed; none of it goes to Telegram. The Sources page
 shows how many explainers are left to write.
 
+### Practice packs and talk-track notes
+
+Study material you already wrote can go straight into the DSA and System design
+tracks (#135). No model is called.
+
+```bash
+uv run daily-agent prep import-pack ~/path/to/blinkit-dsa-round1 \
+  --source dsa-blinkit-r1 --label "Blinkit DSA pack"
+uv run daily-agent prep import-notes ~/path/to/rate_limiter_notes.md \
+  --tags "rate-limiting,redis" --label "Rate limiter notes"
+```
+
+- **A DSA pack** is a folder with a `README.md` index table (`#`, problem link,
+  pattern, target complexity), `problems/NN-*.md` and `answers/NN-*.md`. Each
+  problem becomes one `dsa` card: its name is the headline, its statement the
+  prompt, and its answer reveals in steps: **Pattern** (with the target
+  complexity), **Key idea**, **Brute force**, **Optimal solution**,
+  **Walkthrough**, **Edge cases & follow-ups**. Answer sections are matched to
+  those steps by heading ("Intuition", "Translating the wording", "Naive",
+  "Optimal A", "Dry run", "Common mistakes", ...). A section the importer
+  doesn't recognise ("Faster reads") stays in the step before it. Code fences
+  are kept as written.
+- **Tags:** the index's pattern column maps to the shared slugs in
+  `DSA_PATTERNS` (`sources/practice_pack.py`), e.g. "two heaps (Meeting Rooms
+  III)" becomes `heap` and `intervals`. The pack's company comes from the README
+  title (`blinkit`), and the "do these first" problems get `must-do`. Add more
+  with `--tags`. Problems with no known pattern, missing answers and unmatched
+  index rows are listed after the import.
+- **Talk-track notes:** one markdown file becomes one card (`--track design` by
+  default). The `# ` title is the headline, the prompt is the interview question
+  ("Design a rate limiter. Talk me through it.", or `--question`), and each
+  `## ` section is one step, in order. Tags are `--tags` plus the topic.
+- **Running it again** after editing updates changed cards in place, keeping
+  what you've seen and graded, and drops problems you removed. Each `--source`
+  is replaced only by its own import; the defaults are `dsa-<folder>` and
+  `notes-<file>`.
+
 ### Rate items: 👍 / 👎
 
 Every card has a 👎, and every item ends with "Was this worth reading? 👍

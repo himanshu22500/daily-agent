@@ -1,5 +1,40 @@
 # Decisions
 
+## 2026-11-25 — Practice packs and talk-track notes become prep cards as written
+
+The maintainer already had a DSA practice pack (an index README, problem
+statements and answer write-ups) and a system design talk track as markdown.
+#135 imports them through `PrepItems.put` instead of having Claude rewrite
+them.
+
+- **Their words, our steps.** A pack problem is one `dsa` card: the statement
+  is the prompt, and the answer is cut into fixed steps (Pattern, Key idea,
+  Brute force, Optimal solution, Walkthrough, Edge cases & follow-ups). The
+  answer's sections are matched to those steps by heading, and their content is
+  never rewritten. A section no rule recognises stays with the step before it,
+  so nothing is dropped. A dry run on the real pack lost no source lines.
+- **Only our steps start with `### `.** Headings inside a prompt or a step
+  become bold lines. Otherwise a nested `### Alternative` would split a step,
+  and the feed's renderer shows bold but not headings. Fences are left alone
+  (`split_steps` already ignores `###` in code), and a fence left open at the
+  end of a step is closed so it can't swallow the next one.
+- **One pattern vocabulary.** `DSA_PATTERNS` in `sources/practice_pack.py`
+  lists the 25 canonical slugs, shared with the DSA writers and the weak-spot
+  reader. Free-text patterns map to it by keyword rules, and a more specific
+  slug replaces the one it implies (`binary-search-on-answer` over
+  `binary-search`). The pack's company tag (`blinkit`) and `must-do` name a
+  source and a priority, not a skill. Consumers that want skills keep only
+  tags in `DSA_PATTERNS`.
+- **Re-runnable, per source.** Each pack or notes file is its own source
+  (`dsa-<folder>`, `notes-<file>` by default), imported with `replace=True`.
+  An edit updates the card in place and keeps its grades and schedule. An
+  empty or wrong folder is an error, so it can't wipe a source.
+- **Talk tracks:** one file is one card on a chosen track. The H1 is the
+  title. The prompt is the question, derived from the H1's topic ("Rate
+  limiter: interview talk track" gives "Design a rate limiter. Talk me through
+  it.") or given with `--question`. Each `## ` section is a step, in order.
+  The topic slug is a tag.
+
 ## 2026-11-25 — Interview prep has three tracks, one card store, and self-grading
 
 The maintainer's focus is now interview prep, with a DSA round and a system
