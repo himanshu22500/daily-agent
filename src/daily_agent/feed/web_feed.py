@@ -47,7 +47,8 @@ from .headlines import fallback_headline, plain, split_first_sentence
 from .insights_store import InsightCursorRow, InsightRow, InsightStore
 from .instagram_posts import InstagramStore, shortcode_of
 from .projects import session_projects
-from .prep import CARD_TYPE, CONCEPT_TYPE, PrepStore, level_label, source_of
+from .prep import PrepStore, level_label, source_of
+from .prep_tracks import CARD_TYPE, PREP_TYPES, PrepItems, track_of
 from .videos import VideoStore, video_id_of
 
 FOR_YOU = "for-you"
@@ -56,7 +57,6 @@ VIEWS = (FOR_YOU, "latest", INTERVIEW, "saved", "hidden")
 # Interview prep (#108) has its own tab (#115) and stays out of For you and
 # Latest (and their chips, unseen count and "new stories" banner). Saved,
 # Hidden and search still include it.
-PREP_TYPES = (CARD_TYPE, CONCEPT_TYPE)
 _NOT_PREP = InsightRow.type.not_in(PREP_TYPES)
 # Editions older than this are pruned; their infinite scroll asks for a refresh.
 EDITION_TTL = timedelta(days=3)
@@ -123,6 +123,11 @@ class FeedEntry:
     def flashcard(self) -> bool:
         """An interview question whose answer stays hidden until tapped."""
         return self.type == CARD_TYPE
+
+    @property
+    def track(self) -> str:
+        """ "resume", "dsa" or "design" for interview prep ("" otherwise)."""
+        return track_of(self.type) or ""
 
     @property
     def prep_level(self) -> str:
@@ -208,6 +213,7 @@ class WebFeed:
         self._videos = VideoStore(self.db_path)
         self._instagram = InstagramStore(self.db_path)
         self._prep = PrepStore(self.db_path)
+        self._prep_items = PrepItems(self.db_path)
         self._migrate()
 
     def _migrate(self) -> None:
@@ -243,6 +249,7 @@ class WebFeed:
             **self._videos.channel_names(),
             **self._instagram.account_names(),
             **self._prep.labels(),
+            **self._prep_items.labels(),
         }
 
     # --- reading: chronological views -------------------------------------- #

@@ -30,6 +30,8 @@ STORE_MODULES = (
     "instagram_posts",
     "outbox",
     "prep",
+    "prep_grades",
+    "prep_tracks",
     "questions",
     "ratings",
     "videos",
