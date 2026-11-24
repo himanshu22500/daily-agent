@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     web_host: str = "127.0.0.1"
     web_port: int = 8765
     web_page_size: int = 20
+    # Prep mode (issue #132): while its switch on For you is on, this share of
+    # each For you edition is interview prep (0.5: every other card).
+    prep_mix: float = 0.5
     # Extra Host names the feed answers to (comma-separated), e.g. a Tailscale
     # MagicDNS name. Loopback names and web_host are always allowed.
     web_allowed_hosts: str = ""

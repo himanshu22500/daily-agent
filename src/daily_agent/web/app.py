@@ -38,6 +38,7 @@ from starlette.templating import Jinja2Templates
 
 from ..feed.covers import CoverStore, cover_slug
 from ..feed.instagram_posts import InstagramStore, InstagramSync, shortcode_of
+from ..feed.preferences import Preferences
 from ..feed.prep import PrepStore, PrepSync
 from ..feed.prep_grades import GOT, GRADES, MISSED, GradeStore
 from ..feed.prep_tracks import DESIGN, DSA, RESUME, TRACKS, slug
@@ -159,6 +160,7 @@ def create_app(
     db_path: str | Path,
     *,
     page_size: int = 20,
+    prep_mix: float = 0.5,
     allowed_hosts: Sequence[str] | None = None,
     videos: VideoSync | None = None,
     instagram: InstagramSync | None = None,
@@ -184,6 +186,9 @@ def create_app(
     explainers (issue #108). Questions asked under an item are always stored;
     with ``questions`` and ``question_loop`` the server also answers them,
     checking for new ones every ``question_poll_seconds`` (issue #119).
+
+    ``prep_mix`` is the share of a For you edition that is interview prep
+    while the reader's Prep mode switch is on (issue #132).
     """
     feed = WebFeed(db_path)
     covers = CoverStore(db_path)
@@ -195,6 +200,7 @@ def create_app(
     )
     ratings = Ratings(db_path)
     grades = GradeStore(db_path)
+    prefs = Preferences(db_path)
     commit = _running_commit()
     wake = asyncio.Event()
     ig_wake = asyncio.Event()
@@ -261,10 +267,18 @@ def create_app(
             offset = int(params.get("offset") or 0)
         except ValueError:
             return PlainTextResponse("Invalid offset.", status_code=400)
+        # Prep mode (#132) mixes prep into the all-types deck; a type chip
+        # still shows just that type.
+        prep_on = prep_mix > 0 and prefs.prep_mode()
+        mix = prep_mix if prep_on and not type_ else 0.0
+
+        def build() -> str:
+            return feed.new_edition(type=type_ or None, prep_mix=mix)
+
         if not edition:
             if partial:
                 return PlainTextResponse("Missing session.", status_code=400)
-            edition, offset = feed.new_edition(type=type_ or None), 0
+            edition, offset = build(), 0
         try:
             page = feed.edition_page(edition, offset=offset, limit=page_size)
         except KeyError:
@@ -272,21 +286,25 @@ def create_app(
                 return templates.TemplateResponse(
                     request, "_expired.html", {}, status_code=410
                 )
-            edition = feed.new_edition(type=type_ or None)
+            edition = build()
             page = feed.edition_page(edition, offset=0, limit=page_size)
             offset = 0
         return {
+            "prep_mode": prep_on,
+            "prep_mixed": mix > 0,
             "entries": page.entries,
             "session_id": edition,
             "first_page": offset == 0,
             "more_url": (
-                _feed_url(session=edition, offset=str(page.next_offset))
+                # The chip's type rides along, so a later page knows the
+                # edition wasn't a prep mix.
+                _feed_url(type=type_, session=edition, offset=str(page.next_offset))
                 if page.next_offset is not None
                 else None
             ),
             "next_revisit": None
             if page.next_offset is not None
-            else (feed.next_revisit_at()),
+            else feed.next_revisit_at(prep=mix > 0),
         }
 
     def _chronological(
@@ -414,6 +432,7 @@ def create_app(
         if partial:
             return templates.TemplateResponse(request, "_cards.html", context)
         context.update(
+            prep_toggle=prep_mix > 0,
             views=VIEWS,
             types=feed.types(),
             # Track chips hide empty tracks (unless picked); points sit
@@ -432,6 +451,17 @@ def create_app(
             opened_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         )
         return templates.TemplateResponse(request, "index.html", context)
+
+    async def prep_switch(request: Request) -> Response:
+        """The Prep mode switch on For you (issue #132). Body: ``on=1|0``."""
+        if not _same_origin(request):
+            return PlainTextResponse("Cross-site request refused.", status_code=403)
+        on = (await _form(request)).get("on")
+        if on not in ("0", "1"):
+            return PlainTextResponse("Expected on=1 or on=0.", status_code=400)
+        await run_in_threadpool(prefs.set_prep_mode, on == "1")
+        # A fresh For you edition, built with the new setting.
+        return RedirectResponse(_feed_url(), status_code=303)
 
     def version(request: Request) -> Response:
         """The commit this server runs (deploy-on-merge's health check)."""
@@ -845,6 +875,7 @@ def create_app(
             Route("/sources/unfollow", unfollow, methods=["POST"]),
             Route("/new-count", new_count),
             Route("/version", version),
+            Route("/prefs/prep-mode", prep_switch, methods=["POST"]),
             Route("/seen", seen, methods=["POST"]),
             Route("/items/{key:path}/grade", grade, methods=["POST"]),
             Route("/items/{key:path}/ask", ask, methods=["GET", "POST"]),

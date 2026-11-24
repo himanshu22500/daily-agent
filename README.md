@@ -136,6 +136,19 @@ every 2 months. Saved ones come back sooner and hidden ones never do. Revisits
 are marked "↻ Revisit". When nothing is left, it says you're caught up instead
 of repeating itself.
 
+**Prep mode** (the switch at the top of For you, on by default) mixes
+interview prep into For you: about every other card is a flashcard or concept
+explainer, spread evenly through the edition (`DAILY_AGENT_PREP_MIX`, default
+`0.5`). The prep cards rotate exactly like the Interview tab's deck (unseen
+first; seen cards come back when due) and behave the same: the answer stays
+hidden until you tap it. To make room, each edition keeps only the best work
+stories (higher score first, then unseen before revisits). The rest wait for a
+later mix. An edition is as long as it would be without prep, and at least
+30 cards while there's prep to show, so being caught up on work still leaves
+a practice run. A type chip still shows just that type. The switch is stored
+on the server, so the phone and the Mac agree. Turn it off and For you is
+exactly as described above.
+
 An insight counts as **seen** only after it has been on screen for about a
 second; loading it isn't enough. A blue dot marks insights you haven't seen.
 
@@ -236,8 +249,8 @@ uv run daily-agent prep write                         # write queued explainers 
 - **Which points:** only points under a job in the tracker are imported. Add
   `--all` to include skills and general points.
 - **The Interview tab:** all of it lives in its own tab, next to For you and
-  Latest, and never mixes into those two (Saved, Hidden and search still
-  include it). It's a practice deck: every visit shuffles a fresh deck with
+  Latest. It mixes into For you only while Prep mode is on, never into Latest
+  (Saved, Hidden and search still include it). It's a practice deck: every visit shuffles a fresh deck with
   unseen questions first. A question you've seen leaves the deck and comes
   back after 1 day, then 3 days, a week, 3 weeks and 2 months (sooner if
   saved). Chips at the top narrow the deck to one resume point.

@@ -9,6 +9,13 @@
     {% if next_revisit %}The next one is due {{ next_revisit|until }}.{% endif %}</p>
   {% if entries or not first_page %}<p><a href="{{ feed_url(view='interview', track=filters.track, tag=filters.tag, point=filters.point) }}">Shuffle a new deck →</a></p>{% endif %}
 </div>
+{% elif filters.view == "for-you" and prep_mixed and (entries or not first_page) %}
+<div class="end">
+  <p><strong>That's the end of this mix.</strong></p>
+  <p>Prep mode makes room for interview prep, so lower-ranked stories may wait for a later mix.
+    {% if next_revisit %}The next card comes back {{ next_revisit|until }}.{% endif %}</p>
+  <p><a href="{{ feed_url() }}">Shuffle a new mix →</a></p>
+</div>
 {% elif filters.view == "for-you" %}
 <div class="end">
   <p><strong>You're all caught up.</strong></p>

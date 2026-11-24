@@ -33,11 +33,20 @@
       <a class="tab{% if filters.view == 'hidden' %} on{% endif %}" href="{{ feed_url(view='hidden') }}">Hidden</a>
     </div>
     {% if filters.view in ("for-you", "latest") %}
-    <div class="chips">
-      <a class="chip{% if not filters.type %} on{% endif %}" href="{{ feed_url(view=filters.view, q=filters.q) }}">All types</a>
-      {% for type, _ in types %}
-      <a class="chip t-{{ type|type_class }}{% if filters.type == type %} on{% endif %}" href="{{ feed_url(view=filters.view, type=type, q=filters.q) }}">{{ type|label }}</a>
-      {% endfor %}
+    <div class="chip-bar">
+      {% if filters.view == "for-you" and prep_toggle %}
+      {# Prep mode (#132): stays put while the type chips scroll beside it. #}
+      <form class="prep-switch" method="post" action="/prefs/prep-mode" data-prep-switch>
+        <input type="hidden" name="on" value="{{ '0' if prep_mode else '1' }}">
+        <button type="submit" role="switch" aria-checked="{{ 'true' if prep_mode else 'false' }}"><span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>Prep mode</button>
+      </form>
+      {% endif %}
+      <div class="chips">
+        <a class="chip{% if not filters.type %} on{% endif %}" href="{{ feed_url(view=filters.view, q=filters.q) }}">All types</a>
+        {% for type, _ in types %}
+        <a class="chip t-{{ type|type_class }}{% if filters.type == type %} on{% endif %}" href="{{ feed_url(view=filters.view, type=type, q=filters.q) }}">{{ type|label }}</a>
+        {% endfor %}
+      </div>
     </div>
     {% elif filters.view == "interview" %}
     {# Tracks (#137), then under Resume its points, and a tag from a link

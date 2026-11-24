@@ -639,6 +639,7 @@ def web(
         create_app(
             settings.db,
             page_size=settings.web_page_size,
+            prep_mix=settings.prep_mix,
             allowed_hosts=allowed,
             videos=_video_sync(settings),
             instagram=_instagram_sync(settings),

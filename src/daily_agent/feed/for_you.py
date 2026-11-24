@@ -15,10 +15,15 @@ the feed from repeating. Each pool is weighted-shuffled (higher score is more
 likely to come early, never guaranteed), revisits are mixed into the backlog
 rather than dumped at the end, and a final pass breaks up runs of one type or
 of consecutive insights from the same coding session.
+
+**Prep mode** (issue #132) blends interview prep into the edition
+(``blend_edition``): a share of the slots goes to prep cards, spread evenly,
+and the work stories keep only the best of the remaining slots.
 """
 
 from __future__ import annotations
 
+import math
 import random
 from collections import Counter
 from dataclasses import dataclass
@@ -33,6 +38,10 @@ FRESH_WINDOW = timedelta(days=3)
 # After the fresh block, every Nth slot goes to a due revisit when one is left.
 REVISIT_EVERY = 4
 MAX_TYPE_RUN = 2
+# Prep mode: an edition is as long as it would be without prep (one slot per
+# work story that is unseen or due), but never shorter than this while there
+# is prep to show, so being caught up on work still leaves a practice run.
+PREP_MIN_SLOTS = 30
 
 
 @dataclass(frozen=True)
@@ -156,3 +165,77 @@ def build_edition(
         REVISIT_EVERY,
     )
     return [c.key for c in lead + _diversify(rest, placed=lead)]
+
+
+def _showable(c: Candidate, now: datetime) -> bool:
+    """Unseen, or seen and due again: what an edition may include."""
+    return not c.seen or (c.due_at is not None and c.due_at <= now)
+
+
+def best_work(
+    candidates: Sequence[Candidate], count: int, *, now: datetime
+) -> list[Candidate]:
+    """The ``count`` work stories most worth reading, in their original order.
+
+    Higher score first; at equal score, unseen stories from the last few days,
+    then older unseen ones, then due revisits; then the newest; the key breaks
+    any remaining tie. Callers pass only showable candidates.
+    """
+
+    def rank(c: Candidate) -> tuple:
+        fresh = not c.seen and c.published_at >= now - FRESH_WINDOW
+        score = max(0.0, min(c.score, 1.0))
+        return (-score, not fresh, c.seen, -c.published_at.timestamp(), c.key)
+
+    keep = {c.key for c in sorted(candidates, key=rank)[: max(count, 0)]}
+    return [c for c in candidates if c.key in keep]
+
+
+def _is_prep_slot(slot: int, mix: float) -> bool:
+    """Whether slot ``slot`` (0-based) is a prep slot: spreads ``mix`` evenly,
+    work first (0.5 -> work, prep, work, prep; 1/3 -> work, work, prep)."""
+    return math.floor((slot + 1) * mix + 1e-9) > math.floor(slot * mix + 1e-9)
+
+
+def blend_edition(
+    work: Sequence[Candidate],
+    prep: Sequence[Candidate],
+    *,
+    mix: float,
+    now: datetime,
+    rng: random.Random,
+    min_slots: int = PREP_MIN_SLOTS,
+) -> list[str]:
+    """A For you edition with interview prep mixed in (prep mode, issue #132).
+
+    The edition has as many slots as there are work stories to show (unseen
+    or due), at least ``min_slots``. A ``mix`` share of them goes to prep
+    cards, ordered like the Interview tab's deck (``build_edition``: unseen
+    first, seen cards only when due). Work stories fill the rest, trimmed to
+    the best ones (``best_work``) and ordered as For you always orders them.
+    Prep is spread evenly through the edition while both last; when one runs
+    out, the other fills its slots. Hidden items must be excluded by the
+    caller. ``mix`` <= 0 is plain ``build_edition`` over the work stories.
+    """
+    mix = min(max(mix, 0.0), 1.0)
+    if mix <= 0:
+        return build_edition(work, now=now, rng=rng)
+    work = [c for c in work if _showable(c, now)]
+    prep = [c for c in prep if _showable(c, now)]
+    slots = max(len(work), min_slots)
+    prep_slots = math.floor(slots * mix + 1e-9)  # how many _is_prep_slot picks
+    work_count = min(len(work), slots - min(len(prep), prep_slots))
+    prep_count = min(len(prep), slots - work_count)
+    work_keys = build_edition(best_work(work, work_count, now=now), now=now, rng=rng)
+    prep_keys = build_edition(prep, now=now, rng=rng)[:prep_count]
+    out: list[str] = []
+    w, p = iter(work_keys), iter(prep_keys)
+    left_w, left_p = len(work_keys), len(prep_keys)
+    while left_w or left_p:
+        if left_p and (not left_w or _is_prep_slot(len(out), mix)):
+            out.append(next(p))
+            left_p -= 1
+        else:
+            out.append(next(w))
+            left_w -= 1
+    return out

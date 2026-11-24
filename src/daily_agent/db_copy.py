@@ -29,6 +29,7 @@ STORE_MODULES = (
     "insights_store",
     "instagram_posts",
     "outbox",
+    "preferences",
     "prep",
     "prep_grades",
     "prep_tracks",
