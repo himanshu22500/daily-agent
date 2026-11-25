@@ -306,6 +306,7 @@ def _sweep(monkeypatch, tmp_path, *args):
     (tmp_path / "projects").mkdir(exist_ok=True)
     monkeypatch.setenv("DAILY_AGENT_INSIGHTS_PROJECTS_DIR", str(tmp_path / "projects"))
     monkeypatch.setenv("DAILY_AGENT_SLIDE_MODEL", "claude-code:s")
+    monkeypatch.setenv("DAILY_AGENT_WORK_INSIGHTS", "true")  # off by default (#162)
     cli.get_settings.cache_clear()
     try:
         return CliRunner().invoke(

@@ -88,8 +88,12 @@ MAX_SEEN_BODY = 64 * 1024
 MAX_FORM_BODY = 8 * 1024
 
 
-def _feed_url(view: str = FOR_YOU, type: str = "", q: str = "", **extra: str) -> str:
-    params = {"view": "" if view == FOR_YOU else view, "type": type, "q": q, **extra}
+def _feed_url(
+    view: str = "", type: str = "", q: str = "", *, home: str = FOR_YOU, **extra: str
+) -> str:
+    """A feed link. The ``home`` tab (#162) is the one without a ``view``."""
+    view = view or home
+    params = {"view": "" if view == home else view, "type": type, "q": q, **extra}
     query = urlencode({k: v for k, v in params.items() if v})
     return "/?" + query if query else "/"
 
@@ -179,6 +183,8 @@ def create_app(
     questions: QuestionSync | None = None,
     question_loop: bool = False,
     question_poll_seconds: float = 15.0,
+    work_insights: bool = True,
+    home: str = FOR_YOU,
 ) -> Starlette:
     """Build the feed app.
 
@@ -201,8 +207,18 @@ def create_app(
 
     ``drill`` sends the Telegram prep drill in the background; ``local_tz``
     and ``interview_date`` set the progress page's days (issue #136).
+
+    Interview-prep focus (issue #162): with ``work_insights`` off the feed
+    hides work insights everywhere, and ``home`` is the tab ``/`` opens.
     """
-    feed = WebFeed(db_path)
+    home = _VIEW_ALIASES.get(home, home)
+    if home not in VIEWS:
+        raise ValueError(f"unknown home tab {home!r}; pick one of {', '.join(VIEWS)}")
+    feed = WebFeed(db_path, work_insights=work_insights)
+
+    def feed_url(view: str = "", type: str = "", q: str = "", **extra: str) -> str:
+        return _feed_url(view, type, q, home=home, **extra)
+
     covers = CoverStore(db_path)
     slide_store = SlideStore(db_path)
     video_store = videos.store if videos is not None else VideoStore(db_path)
@@ -282,7 +298,7 @@ def create_app(
     )
     templates.env.globals.update(
         quote=lambda s: quote(s, safe=""),
-        feed_url=_feed_url,
+        feed_url=feed_url,
         cover_style=cover_style,
         cover_url=cover_url,
         post_media=post_media,
@@ -319,7 +335,10 @@ def create_app(
         except KeyError:
             if partial:
                 return templates.TemplateResponse(
-                    request, "_expired.html", {}, status_code=410
+                    request,
+                    "_expired.html",
+                    {"fresh_url": feed_url(view=FOR_YOU)},
+                    status_code=410,
                 )
             edition = build()
             page = feed.edition_page(edition, offset=0, limit=page_size)
@@ -333,7 +352,12 @@ def create_app(
             "more_url": (
                 # The chip's type rides along, so a later page knows the
                 # edition wasn't a prep mix.
-                _feed_url(type=type_, session=edition, offset=str(page.next_offset))
+                feed_url(
+                    view=FOR_YOU,
+                    type=type_,
+                    session=edition,
+                    offset=str(page.next_offset),
+                )
                 if page.next_offset is not None
                 else None
             ),
@@ -360,7 +384,7 @@ def create_app(
             or "p-" + secrets.token_urlsafe(6),
             "first_page": cursor is None,
             "more_url": (
-                _feed_url(**filters, cursor=page.next_cursor)
+                feed_url(**filters, cursor=page.next_cursor)
                 if page.next_cursor
                 else None
             ),
@@ -391,7 +415,10 @@ def create_app(
         except KeyError:
             if partial:
                 return templates.TemplateResponse(
-                    request, "_expired.html", {}, status_code=410
+                    request,
+                    "_expired.html",
+                    {"fresh_url": feed_url(view=INTERVIEW)},
+                    status_code=410,
                 )
             edition, offset = build(), 0
             page = feed.edition_page(edition, offset=0, limit=page_size)
@@ -400,7 +427,7 @@ def create_app(
             "session_id": edition,
             "first_page": offset == 0,
             "more_url": (
-                _feed_url(
+                feed_url(
                     view=INTERVIEW,
                     **deck,
                     session=edition,
@@ -432,7 +459,7 @@ def create_app(
 
     def index(request: Request) -> Response:
         params = request.query_params
-        view = params.get("view") or FOR_YOU
+        view = params.get("view") or home
         view = _VIEW_ALIASES.get(view, view)
         if view not in VIEWS:
             return PlainTextResponse(f"Unknown view: {view}", status_code=400)
@@ -442,7 +469,7 @@ def create_app(
         partial = params.get("partial") == "1"
         if view in (FOR_YOU, "latest") and type_ in PREP_TYPES and not partial:
             # Old links to the Interview/Concept chips: prep has its own tab now.
-            return RedirectResponse(_feed_url(view=INTERVIEW), status_code=303)
+            return RedirectResponse(feed_url(view=INTERVIEW), status_code=303)
 
         if view == FOR_YOU:
             result = _for_you(request, type_, partial)
@@ -459,7 +486,7 @@ def create_app(
             **result,
             "filters": filters,
             "show_revisit": view in (FOR_YOU, INTERVIEW),
-            "next_url": _feed_url(**filters),
+            "next_url": feed_url(**filters),
         }
         if view not in (FOR_YOU, INTERVIEW) and context["more_url"]:
             # Keep one page-load id across this list's infinite scroll.
@@ -496,7 +523,7 @@ def create_app(
             return PlainTextResponse("Expected on=1 or on=0.", status_code=400)
         await run_in_threadpool(prefs.set_prep_mode, on == "1")
         # A fresh For you edition, built with the new setting.
-        return RedirectResponse(_feed_url(), status_code=303)
+        return RedirectResponse(feed_url(view=FOR_YOU), status_code=303)
 
     def progress(request: Request) -> Response:
         """How prepared the reader is (#136). Read-only, so the server shows

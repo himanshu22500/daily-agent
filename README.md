@@ -11,6 +11,12 @@ The useful output is a concise fact, gotcha, architecture constraint, or reusabl
 technique. Transcript chatter, progress updates, and temporary debugging steps are
 filtered out. Exact semantic keys prevent the same lesson from being queued twice.
 
+**Today it's mostly an interview-prep app** (#162). Work insights are off by
+default (`DAILY_AGENT_WORK_INSIGHTS=false`): the sweep still reads every session,
+but only turns interview study into practice cards. The feed hides the work
+insights already stored, and it opens on the Interview tab. See
+[Interview-prep focus](#interview-prep-focus-work-insights-off).
+
 ## Setup
 
 ```bash
@@ -127,12 +133,30 @@ uv run daily-agent web            # http://127.0.0.1:8765/
 scripts/install-web-launchd.sh    # keep it running in the background (macOS)
 ```
 
+### Interview-prep focus (work insights off)
+
+The feed is used almost only for interview prep, so since #162 two settings
+default to that:
+
+- **`DAILY_AGENT_WORK_INSIGHTS=false`.** The flush and the sweep store no work
+  insights: no `insight:` marker notes and no extracted ones. The sweep still
+  reads every session, because study can happen in any folder. The extractor gets
+  a shorter, study-only brief, without the ratings, and a study session becomes
+  practice cards as before. Work insights already stored stay in the database,
+  but every tab, count, chip, banner and "Read next" leaves them out, and no
+  headlines, covers or slides are written for them. A direct link still opens
+  one. Set it to `true` to have them all back.
+- **`DAILY_AGENT_WEB_HOME=interview`.** `/`, and so the installed app, opens on
+  the Interview tab. For you (YouTube stories plus Prep mode) is
+  `/?view=for-you`, one tab or swipe away. Set it to `for-you` for the old
+  layout.
+
 On a phone, swipe left or right anywhere on the feed to move to the next or
 previous tab (For you, Latest, Interview, Saved, Hidden), as in the YouTube
 app (#152). Rows that scroll sideways (chips, code, tables) keep their own
 swipe, and the screen edges are left to the browser's Back gesture.
 
-**For you** (the default) is different every time you open it. It leads with
+**For you** (the home tab before #162) is different every time you open it. It leads with
 unseen insights from the last few days, then the rest of your unseen backlog in
 a fresh random order. Higher-scored insights tend to come earlier, and there are
 never more than two of one type in a row. Insights you've already seen stay out
@@ -623,7 +647,9 @@ so a live conversation is read once it pauses. It shares the flush's cursors and
 lock, so nothing is read twice and the two never run at once. New insights show
 on the web feed immediately and are queued for Telegram; only the flush delivers,
 so Telegram's pace is unchanged. After capture it writes headlines and draws
-covers for insights that lack them. Logs go to `digests/sweep.{out,err}.log`; a
+covers for insights that lack them. With work insights off (the default since
+#162), a run stores only practice cards from study sessions and draws nothing
+for the hidden insights. Logs go to `digests/sweep.{out,err}.log`; a
 run missed while the Mac sleeps happens on wake.
 
 Keep the web feed running with `scripts/install-web-launchd.sh`. Logs go to

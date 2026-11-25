@@ -241,6 +241,9 @@ def _cli(monkeypatch, tmp_path, *args):
     monkeypatch.setenv("DAILY_AGENT_DB_PATH", str(tmp_path / "cli.db"))
     monkeypatch.setenv("DAILY_AGENT_INSIGHTS_PROJECTS_DIR", str(tmp_path / "projects"))
     monkeypatch.setenv("DAILY_AGENT_MODEL", "test")
+    # These tests are about capturing work insights, which are off by
+    # default (#162); the off switch has its own tests.
+    monkeypatch.setenv("DAILY_AGENT_WORK_INSIGHTS", "true")
     cli.get_settings.cache_clear()
     try:
         return CliRunner().invoke(cli.app, ["insights", "sweep", *args])

@@ -14,7 +14,7 @@
   <p><strong>That's the end of this mix.</strong></p>
   <p>Prep mode makes room for interview prep, so lower-ranked stories may wait for a later mix.
     {% if next_revisit %}The next card comes back {{ next_revisit|until }}.{% endif %}</p>
-  <p><a href="{{ feed_url() }}">Shuffle a new mix →</a></p>
+  <p><a href="{{ feed_url(view='for-you') }}">Shuffle a new mix →</a></p>
 </div>
 {% elif filters.view == "for-you" %}
 <div class="end">

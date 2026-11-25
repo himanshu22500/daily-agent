@@ -29,6 +29,15 @@ from ..db import (
 )
 from ..models import Insight
 
+# Work insights: what the marker and extraction lanes capture from coding
+# sessions. Only they have this key prefix (videos, posts and prep cards have
+# their own). ``DAILY_AGENT_WORK_INSIGHTS`` turns them off (issue #162).
+WORK_PREFIX = "insight:"
+
+
+def is_work_insight(key: str) -> bool:
+    return key.startswith(WORK_PREFIX)
+
 
 class InsightRow(SQLModel, table=True):
     __tablename__ = "insights"

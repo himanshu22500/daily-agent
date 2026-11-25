@@ -13,6 +13,10 @@ A batch the extractor marks as interview study (issue #139) is the exception:
 its practice cards go to the Interview tab (``practice_cards``) and its coding
 insights are dropped, so a study session adds no insight noise. The marker
 lane still captures what the reader marked by hand.
+
+With work insights off (``work=False``, issue #162) neither lane stores
+anything: the transcript is still read (and its cursor moved) so study
+sessions become practice cards, and nothing else is kept.
 """
 
 from __future__ import annotations
@@ -168,15 +172,18 @@ async def collect_insights(
     transcripts_dir: str | Path,
     marker: str,
     extractor: InsightExtractor | None,
+    *,
+    work: bool = True,
 ) -> CollectResult:
     """Capture marker and extraction lanes from new transcript records.
 
     Returns counts for all newly stored insights plus per-lane breakdowns. The
     cursor advances only after both lanes succeed for a transcript file.
+    ``work=False``: study cards only (see ``collect_file``).
     """
     total = CollectResult(new=0, scanned=0, marked=0, extracted=0)
     for path in session_files(transcripts_dir):
-        total = total + await collect_file(store, path, marker, extractor)
+        total = total + await collect_file(store, path, marker, extractor, work=work)
     return total
 
 
@@ -191,13 +198,16 @@ async def collect_file(
     path: Path,
     marker: str,
     extractor: InsightExtractor | None,
+    *,
+    work: bool = True,
 ) -> CollectResult:
     """Both capture lanes over one transcript's unread lines.
 
     The cursor advances only after both lanes succeed; if the extractor raises,
     the exception propagates and the same lines are read again next time
     (marker-lane insights dedup on their key). A study batch stores practice
-    cards instead of extracted insights.
+    cards instead of extracted insights. With ``work`` off (#162) a study
+    batch's cards are all that is stored.
     """
     read_at = datetime.now(timezone.utc)
     lines, start = unread_lines(store, path)
@@ -208,7 +218,7 @@ async def collect_file(
         if msg is None:
             continue
         messages.append(msg)
-        insight = extract_marked(msg, marker)
+        insight = extract_marked(msg, marker) if work else None
         if insight is not None and store.add(insight):
             new += 1
             marked += 1
@@ -223,7 +233,7 @@ async def collect_file(
                     .put_study(found.prep_cards, captured_at=_latest_ts(messages))
                     .added
                 )
-        for candidate in candidates:
+        for candidate in candidates if work else ():
             insight = insight_from_candidate(candidate, messages)
             if insight is not None and store.add(insight):
                 new += 1

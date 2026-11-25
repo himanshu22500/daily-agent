@@ -1,5 +1,33 @@
 # Decisions
 
+## 2026-11-25 — Interview prep first: work insights off, the app opens on Interview
+
+The maintainer reads the feed almost only for interview prep. Work insights from
+coding sessions went unread: 757 stored, none saved, 3 rated 👎, and the only 3
+`insight:` marker notes were accidental matches inside pasted summaries. Their
+Telegram posts had already stopped earlier the same day. Issue #162 makes prep
+the default.
+
+- **One switch, `DAILY_AGENT_WORK_INSIGHTS`, default off.** While it's off:
+  - Capture stores no `insight:` items from either lane.
+  - The feed leaves them out of every list, count, chip, banner and "Read next".
+    A direct link still opens one.
+  - The sweep writes no headlines, covers or slides for them.
+  - Nothing is deleted, so turning it on restores everything.
+  - The prefix check is `insights_store.is_work_insight`. Videos, posts and prep
+    cards all have their own prefixes.
+- **Still read every session, but only for study.** Study happens in any folder,
+  not just `interview-prep`, so the sweep keeps reading all transcripts. It
+  sends a shorter, study-only system prompt and no ratings. The code also drops
+  any candidates, whatever the model returns. Reading only the study folder would
+  cost less, but it was rejected because it misses study done elsewhere.
+- **Home tab: `DAILY_AGENT_WEB_HOME`, default `interview`.** `/` and the installed
+  app's start URL open the Interview deck, and For you moves to `?view=for-you`.
+  `create_app` keeps For you as its own default, so the HTTP tests describe the
+  tabs, not the deployment.
+- **Unchanged:** all four YouTube channels stay followed (two aren't prep). Prep
+  mode stays on. Telegram carries only the prep pings.
+
 ## 2026-11-25 — About 1 in 4 feed items is a slide story
 
 Cards can be news-style carousels (#157, #158): 3-5 slides, each a bold

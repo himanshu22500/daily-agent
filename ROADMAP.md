@@ -1,8 +1,16 @@
 # Product direction
 
-`daily-agent` is a personal coding-insight memory loop. Its job is to notice or
-accept durable lessons during coding sessions, save them without duplicates, and
-resurface a few at useful intervals.
+`daily-agent` started as a personal coding-insight memory loop. It grew into a
+news-style feed (YouTube and Instagram stories), and then into an interview-prep
+app: the Interview tab's practice deck, daily DSA and system design cards, mock
+interviews, and a morning drill. It is installed on the phone as a web app.
+
+**Focus since 2026-11-25 (#162): interview prep.** Work insights from coding
+sessions went unread (757 stored, none saved), so they are off by default. The
+sweep reads sessions only for interview study, which becomes practice cards. The
+feed hides the stored work insights, and the app opens on the Interview tab. New
+work should make prep better. The insight pipeline below stays in the code,
+behind `DAILY_AGENT_WORK_INSIGHTS`, but isn't where effort goes.
 
 ## Product principles
 

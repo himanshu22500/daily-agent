@@ -17,6 +17,10 @@ Per-reader state lives in ``web_feed_state``, separate from ``insights.status``
 (which belongs to the delivery pipeline). An insight counts as *seen* only when
 the page reports it was actually on screen (``record_views``), at most once per
 edition, and each view schedules its next revisit.
+
+With work insights off (``work_insights=False``, issue #162) every list, count
+and suggestion leaves out ``insight:`` items. They stay stored, and a direct
+link (``entry``) still opens one.
 """
 
 from __future__ import annotations
@@ -44,7 +48,13 @@ from ..sources.instagram import post_url
 from ..sources.youtube import embed_url, thumbnail_url, watch_url
 from .for_you import Candidate, blend_edition, build_edition, revisit_interval
 from .headlines import fallback_headline, plain, split_first_sentence
-from .insights_store import InsightCursorRow, InsightRow, InsightStore
+from .insights_store import (
+    WORK_PREFIX,
+    InsightCursorRow,
+    InsightRow,
+    InsightStore,
+    is_work_insight,
+)
 from .instagram_posts import InstagramStore, shortcode_of
 from .projects import session_projects
 from .prep import PrepStore, level_label, source_of
@@ -60,6 +70,7 @@ VIEWS = (FOR_YOU, "latest", INTERVIEW, "saved", "hidden")
 # Latest (and their chips, unseen count and "new stories" banner). Saved,
 # Hidden and search still include it.
 _NOT_PREP = InsightRow.type.not_in(PREP_TYPES)
+_NOT_WORK = ~InsightRow.key.startswith(WORK_PREFIX, autoescape=True)
 # Editions older than this are pruned; their infinite scroll asks for a refresh.
 EDITION_TTL = timedelta(days=3)
 
@@ -234,8 +245,13 @@ def _parse_cursor(cursor: str) -> tuple[str, str]:
 
 
 class WebFeed:
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(self, db_path: str | Path, *, work_insights: bool = True) -> None:
         self.db_path = str(db_path)
+        self.work_insights = work_insights
+        # Extra clauses for every list: none, or "no work insights" (#162).
+        self._shown: tuple[ColumnElement[bool], ...] = (
+            () if work_insights else (_NOT_WORK,)
+        )
         # Ensures the insights table exists and carries ``stored_at``.
         InsightStore(self.db_path)
         self._engine = make_engine(self.db_path)
@@ -281,6 +297,10 @@ class WebFeed:
             **self._prep.labels(),
             **self._prep_items.labels(),
         }
+
+    def _shows(self, key: str) -> bool:
+        """Whether lists may show ``key`` (work insights may be off, #162)."""
+        return self.work_insights or not is_work_insight(key)
 
     # --- reading: chronological views -------------------------------------- #
     def _base(self):
@@ -333,7 +353,7 @@ class WebFeed:
         between page loads never shifts later pages (no skips, no repeats).
         Raises ``ValueError`` for an unknown view or a malformed cursor.
         """
-        stmt = self._base().where(*self._filters(view, type, query))
+        stmt = self._base().where(*self._filters(view, type, query), *self._shown)
         if cursor:
             published, key = _parse_cursor(cursor)
             stmt = stmt.where(
@@ -376,7 +396,7 @@ class WebFeed:
         """
         moment = now or _now()
         mixing = prep_mix > 0 and not interview and not type
-        stmt = self._base().where(WebFeedStateRow.dismissed_at.is_(None))
+        stmt = self._base().where(WebFeedStateRow.dismissed_at.is_(None), *self._shown)
         if interview:
             stmt = stmt.where(*_deck_clauses(point, track, tag))
         elif not mixing:
@@ -444,7 +464,7 @@ class WebFeed:
             for key in chunk:
                 position += 1
                 hit = found.get(key)
-                if hit and not (hit[1] and hit[1].dismissed_at):
+                if hit and not (hit[1] and hit[1].dismissed_at) and self._shows(key):
                     entries.append(_entry(*hit, sources))
                     if len(entries) == limit:
                         break
@@ -507,6 +527,7 @@ class WebFeed:
             .join(InsightRow, InsightRow.key == WebFeedStateRow.key)
             .where(WebFeedStateRow.dismissed_at.is_(None))
             .where(WebFeedStateRow.due_at > stamp)
+            .where(*self._shown)
         )
         if interview:
             stmt = stmt.where(*_deck_clauses(point, track, tag))
@@ -553,7 +574,7 @@ class WebFeed:
                 self._base()
                 .where(WebFeedStateRow.dismissed_at.is_(None))
                 .where(InsightRow.key != key)
-                .where(same_kind)
+                .where(same_kind, *self._shown)
             ).all()
         tags = set(current.tags)
         scored = []
@@ -587,7 +608,7 @@ class WebFeed:
             select(InsightRow.type, func.count())
             .outerjoin(WebFeedStateRow, WebFeedStateRow.key == InsightRow.key)
             .where(WebFeedStateRow.dismissed_at.is_(None))
-            .where(_NOT_PREP)
+            .where(_NOT_PREP, *self._shown)
             .group_by(InsightRow.type)
             .order_by(func.count().desc(), InsightRow.type)
         )
@@ -601,7 +622,7 @@ class WebFeed:
             .outerjoin(WebFeedStateRow, WebFeedStateRow.key == InsightRow.key)
             .where(WebFeedStateRow.seen_at.is_(None))
             .where(WebFeedStateRow.dismissed_at.is_(None))
-            .where(_NOT_PREP)
+            .where(_NOT_PREP, *self._shown)
         )
         with session_scope(self._engine) as session:
             return session.scalar(stmt) or 0
@@ -613,7 +634,7 @@ class WebFeed:
             .select_from(InsightRow)
             .outerjoin(WebFeedStateRow, WebFeedStateRow.key == InsightRow.key)
             .where(WebFeedStateRow.dismissed_at.is_(None))
-            .where(_NOT_PREP)
+            .where(_NOT_PREP, *self._shown)
             .where(_PUBLISHED > _iso(since))
         )
         with session_scope(self._engine) as session:

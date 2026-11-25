@@ -28,7 +28,7 @@
   </header>
   <nav class="sticky" aria-label="Feed">
     <div class="tabs">
-      <a class="tab{% if filters.view == 'for-you' %} on{% endif %}" href="{{ feed_url() }}">For you</a>
+      <a class="tab{% if filters.view == 'for-you' %} on{% endif %}" href="{{ feed_url(view='for-you') }}">For you</a>
       <a class="tab{% if filters.view == 'latest' %} on{% endif %}" href="{{ feed_url(view='latest') }}">Latest</a>
       <a class="tab{% if filters.view == 'interview' %} on{% endif %}" href="{{ feed_url(view='interview') }}">Interview</a>
       <a class="tab{% if filters.view == 'saved' %} on{% endif %}" href="{{ feed_url(view='saved') }}">Saved</a>

@@ -555,7 +555,7 @@ async def test_work_sessions_keep_their_insights(tmp_path):
 async def test_the_cli_extractor_knows_study_folders(tmp_path, monkeypatch):
     seen: list[bool] = []
 
-    async def fake_extract(model, messages, *, feedback, project, study):
+    async def fake_extract(model, messages, *, feedback, project, study, work):
         seen.append(study)
         return InsightExtraction()
 
@@ -592,8 +592,9 @@ def test_the_sweep_reports_study_cards(monkeypatch, tmp_path):
         tmp_path, "Mock interview: design a URL shortener", cwd="/x/interview-prep"
     )
 
-    async def fake_extract(model, messages, *, feedback, project, study):
+    async def fake_extract(model, messages, *, feedback, project, study, work):
         assert study  # the transcript's cwd is in the default study folder
+        assert not work  # work insights are off by default (#162)
         return InsightExtraction(
             candidates=[CANDIDATE], study_session=study, prep_cards=[PrepCard(**RECALL)]
         )

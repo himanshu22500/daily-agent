@@ -278,6 +278,7 @@ def insights_flush(
                     path,
                     settings.insights_marker,
                     _extractor(settings, session_files(path)),
+                    work=settings.work_insights,
                 )
             )
             label = (
@@ -286,11 +287,13 @@ def insights_flush(
                 + (f"and {captured.cards} study card(s) " if captured.cards else "")
                 + f"from {captured.scanned} records"
             )
-        else:
+        elif settings.work_insights:
             new, scanned = collect_marked(store, path, settings.insights_marker)
             label = (
                 f"Insight flush captured {new} marker insight(s) from {scanned} records"
             )
+        else:  # the marker lane is all that's left, and it's off (#162)
+            label = "Work insights are off: nothing captured"
         queued = enqueue_new_insights(store, Outbox(settings.db))
         _drain(
             store,
@@ -337,7 +340,9 @@ def insights_sweep(
     insights reach the web feed at once and are queued for Telegram, which
     keeps its own pace (only `flush` delivers). Then headlines and covers are
     written for insights that lack them, and slide stories for the ~1 in 4
-    items picked for one, within per-run caps.
+    items picked for one, within per-run caps. With work insights off (#162,
+    the default) it stores only practice cards from study sessions, and
+    writes nothing for the work insights already stored.
     """
     settings = get_settings()
     root = Path(settings.projects_path)
@@ -355,7 +360,7 @@ def insights_sweep(
         for item in ready:
             unread = unread_messages(store, item.path)
             messages += len(unread)
-            chars += prompt_chars(unread)
+            chars += prompt_chars(unread, work=settings.work_insights)
         console.print(
             f"{stamp} Sweep dry run: {len(ready)} transcript(s) to read, "
             f"{messages} message(s), about {chars // 4:,} input tokens; "
@@ -382,6 +387,7 @@ def insights_sweep(
             settle_seconds=settle_seconds,
             max_consecutive_failures=max_failures,
             on_progress=lock.refresh,
+            work=settings.work_insights,
         )
         if swept.stopped_early:  # most likely the same outage; try next sweep
             return swept, None, None, None
@@ -393,7 +399,9 @@ def insights_sweep(
                 limit=max_titles,
                 on_progress=lock.refresh,
             )
-        if max_covers > 0:
+        # Only work insights get covers (covers.cover_slug), so with them off
+        # (#162) there is nothing to draw.
+        if max_covers > 0 and settings.work_insights:
 
             async def draw(record: dict, feedback: list[str] | None) -> str:
                 lock.refresh()
@@ -420,6 +428,7 @@ def insights_sweep(
                 source=f"model:{settings.slide_model}",
                 limit=max_slides,
                 on_progress=lock.refresh,
+                work=settings.work_insights,
             )
         return swept, titled, covered, storied
 
@@ -716,6 +725,9 @@ def web(
             page_size=settings.web_page_size,
             prep_mix=settings.prep_mix,
             allowed_hosts=allowed,
+            # Interview-prep focus (#162).
+            work_insights=settings.work_insights,
+            home=settings.web_home,
             # Interview prep drill and progress page (#136).
             drill=_prep_drill(settings),
             local_tz=settings.timezone,
@@ -760,9 +772,11 @@ def _extractor(settings, transcript_files):
     """The extraction lane, told the reader's ratings (issue #126), each
     session's project, and whether it ran in a study folder (issue #139).
     Ratings are read once per run; if they can't be read, extraction goes
-    ahead without them."""
+    ahead without them. With work insights off (#162) it only looks for
+    study, and ratings (which steer insights) aren't read."""
+    work = settings.work_insights
     try:
-        feedback = extraction_feedback(settings.db)
+        feedback = extraction_feedback(settings.db) if work else ""
     except Exception as exc:  # noqa: BLE001 - feedback is a hint, never a blocker
         console.print(f"Ratings unavailable: {exc}", style="yellow", markup=False)
         feedback = ""
@@ -776,6 +790,7 @@ def _extractor(settings, transcript_files):
             feedback=feedback,
             project=project,
             study=is_study_session(messages, settings.prep_study_paths),
+            work=work,
         )
 
     return extract
