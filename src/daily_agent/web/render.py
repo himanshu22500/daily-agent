@@ -340,6 +340,12 @@ def source_hue(source: str) -> int:
     return _hash(source or "?") % 360
 
 
+def source_initial(source: str) -> str:
+    """The letter on a source's badge: its first letter or digit, so a label
+    with a leading symbol ("▶ Hello Interview") still shows "H"."""
+    return next((ch.upper() for ch in source or "" if ch.isalnum()), "?")
+
+
 def longdate(moment: datetime) -> str:
     """``November 11, 2026, 5:38 PM`` in local time."""
     if moment.tzinfo is None:

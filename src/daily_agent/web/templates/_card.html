@@ -11,7 +11,7 @@
     {% if entry.snippet %}<p class="snippet">{{ entry.snippet }}</p>{% endif %}
   </a>
   <div class="story-meta">
-    <span class="src-icon" style="--sh:{{ source_hue(entry.source) }}" aria-hidden="true">{{ (entry.source or entry.type)[:1]|upper }}</span>
+    <span class="src-icon" style="--sh:{{ source_hue(entry.source) }}" aria-hidden="true">{{ source_initial(entry.source or entry.type) }}</span>
     <span class="src">{{ entry.source or entry.type|label }}</span>
     {% if not entry.flashcard %}{# when a question was imported means nothing #}
     <span class="sep">·</span>

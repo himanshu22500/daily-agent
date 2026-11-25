@@ -33,10 +33,10 @@ from daily_agent.feed.prep_view import (
     tag_label,
     teaser,
 )
-from daily_agent.feed.web_feed import WebFeed
+from daily_agent.feed.web_feed import WebFeed, _past_title
 from daily_agent.models import Insight
 from daily_agent.web.app import create_app
-from daily_agent.web.render import back_in, inline_markdown
+from daily_agent.web.render import back_in, inline_markdown, source_initial
 
 T0 = datetime(2026, 11, 25, 9, 0, tzinfo=timezone.utc)
 FETCH = {"X-Requested-With": "fetch"}
@@ -263,6 +263,20 @@ def test_the_teaser_never_gives_a_step_away():
     # the scenario itself, not "Scenario A big sale...".
     labelled = "**Scenario**\nA big sale is coming.\n\n**Task:**\nReturn **k**."
     assert teaser(PROBLEM_TYPE, labelled) == "A big sale is coming.\n\nReturn **k**."
+
+
+def test_a_card_preview_never_repeats_its_title():
+    question = "Why split retrieval and ranking?"
+    # A practice card whose prompt is its question: say nothing twice.
+    assert _past_title(question, question) == "Tap to answer"
+    assert _past_title(question + " Assume 1B items.", question) == "Assume 1B items."
+    assert _past_title("Given a grid.", "Islands") == "Given a grid."
+
+
+def test_a_source_badge_shows_a_letter():
+    assert source_initial("▶ Hello Interview") == "H"
+    assert source_initial("tranzact-v2") == "T"
+    assert source_initial("") == "?"
 
 
 def test_back_in_counts_whole_days():
