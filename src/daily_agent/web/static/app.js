@@ -4,12 +4,14 @@
 (() => {
   const feed = document.getElementById("feed");
 
-  // A selected chip far along the row (a resume point in the Interview tab)
+  // A selected chip far along its row (a resume point in the Interview tab)
   // starts out of view; bring it in without moving the page.
-  const activeChip = document.querySelector(".chips .chip.on");
-  if (activeChip && activeChip !== activeChip.parentElement.firstElementChild) {
-    activeChip.scrollIntoView({ block: "nearest", inline: "center" });
-  }
+  document.querySelectorAll(".chips").forEach((row) => {
+    const activeChip = row.querySelector(".chip.on");
+    if (activeChip && activeChip !== row.firstElementChild) {
+      activeChip.scrollIntoView({ block: "nearest", inline: "center" });
+    }
+  });
   const sessionId = feed && feed.dataset.session;
   const overlay = document.getElementById("reader-overlay");
   const toastEl = document.getElementById("toast");
@@ -251,11 +253,101 @@
     if (event.key === "Escape" && overlay && !overlay.hidden) closeReader();
   });
 
-  // A standalone /i/<key> page: opening it is a view.
+  // A standalone /i/<key> page: opening it is a view. Not when a grade's form
+  // post lands back here (#137): the view would reschedule over the grade.
   if (!overlay) {
     const standalone = document.querySelector("[data-reader]");
-    if (standalone) markSeen(standalone.dataset.key, { now: true });
+    const justGraded = new URLSearchParams(location.search).has("graded");
+    if (standalone && !justGraded) markSeen(standalone.dataset.key, { now: true });
   }
+
+  // --- Prep cards (#137): steps, "Show all", drills, grades --------------------------
+  // Steps are nested <details>, so they reveal without JS. JS keeps an open
+  // step from folding back up (taking every later step with it), opens them
+  // all for "Show all", and posts a grade or a drill's pick in place.
+  function openStates(reader) {
+    return [...reader.querySelectorAll("details.step, details.answer")].map((d) => d.open);
+  }
+  function reopen(states) {
+    const reader = document.querySelector("[data-reader]");
+    if (!reader || !states) return;
+    reader.querySelectorAll("details.step, details.answer").forEach((d, i) => {
+      if (states[i]) d.open = true;
+    });
+  }
+
+  document.addEventListener("click", (event) => {
+    const showAll = event.target.closest("[data-steps-all]");
+    if (showAll) {
+      event.preventDefault();
+      showAll
+        .closest("[data-steps]")
+        .querySelectorAll("details.step")
+        .forEach((step) => (step.open = true));
+      return;
+    }
+    const summary = event.target.closest("details.step > summary");
+    if (summary && summary.parentElement.open) event.preventDefault();
+  });
+
+  // Once a step opens: a drill's answer is out, so its options are done; and
+  // with every step open, "Show all" has nothing left to show.
+  document.addEventListener(
+    "toggle",
+    (event) => {
+      const step = event.target;
+      if (!(step instanceof Element) || !step.matches("details.step") || !step.open) return;
+      const steps = step.closest("[data-steps]");
+      if (!steps) return;
+      if (step === steps.querySelector("details.step")) {
+        steps.querySelectorAll(".options button").forEach((button) => (button.disabled = true));
+      }
+      if (![...steps.querySelectorAll("details.step")].some((d) => !d.open)) {
+        const bar = steps.querySelector(".steps-bar");
+        if (bar) bar.remove();
+      }
+    },
+    true,
+  );
+
+  document.addEventListener("submit", async (event) => {
+    const form = event.target;
+    if (!form.matches("form[data-grade]")) return;
+    event.preventDefault();
+    if (form.dataset.busy) return;
+    form.dataset.busy = "1";
+    const button = event.submitter;
+    const body = new URLSearchParams();
+    if (button && button.name) body.set(button.name, button.value);
+    const swap = form.closest(form.dataset.grade === "steps" ? "[data-steps]" : "[data-grade-box]");
+    const buttons = [...form.querySelectorAll("button")];
+    buttons.forEach((b) => (b.disabled = true));
+    try {
+      const res = await fetch(form.action, {
+        method: "POST",
+        body,
+        headers: { "X-Requested-With": "fetch" },
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const tpl = document.createElement("template");
+      tpl.innerHTML = await res.text();
+      const fresh = tpl.content.querySelector("[data-steps], [data-grade-box]");
+      swap.replaceWith(tpl.content);
+      const box = fresh && (fresh.matches("[data-grade-box]") ? fresh : fresh.querySelector("[data-grade-box]"));
+      if (box) box.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    } catch {
+      delete form.dataset.busy;
+      buttons.forEach((b) => (b.disabled = false));
+      if (button && button.name) {
+        const field = document.createElement("input");
+        field.type = "hidden";
+        field.name = button.name;
+        field.value = button.value;
+        form.append(field);
+      }
+      form.submit(); // the plain post grades it and comes back to the reader
+    }
+  });
 
   // --- Clicks: menus, share, copy, text size, open/close reader ---------------------
   function closeMenus(except) {
@@ -333,7 +425,10 @@
       });
       if (!res.ok) throw new Error(String(res.status));
       const html = await res.text();
+      // Re-rendering the reader (e.g. after Save) keeps revealed steps open.
+      const opened = target && target.matches("[data-reader]") ? openStates(target) : null;
       if (target) target.outerHTML = html;
+      reopen(opened);
       closeMenus();
       if (form.hasAttribute("data-close-reader")) {
         if (overlay && !overlay.hidden) closeReader();

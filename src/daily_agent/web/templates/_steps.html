@@ -1,0 +1,41 @@
+{# A DSA problem, drill or design card in the reader (#137): the prompt, then
+   one tap per step, like an interviewer giving hints. Each step's button sits
+   inside the step before it, so revealing one shows the next (no JS needed);
+   the grade box sits inside the last. A drill's options are buttons: a tap
+   grades it and opens its Answer step.
+   Expects `entry` and `close_url`; optional `steps_open` ("Show all"),
+   `graded` (just graded) and `choice` (the drill's picked option). #}
+{% set view = steps_of(entry.type, entry.text) %}
+{% set drill = view.drill %}
+{% set picked = choice if drill and choice and drill.option(choice) else "" %}
+<section class="steps{% if drill %} is-drill{% endif %}" data-steps>
+  {% if view.prompt %}<div class="reader-text prompt">{{ view.prompt|md }}</div>{% endif %}
+  {% if drill %}
+  <form class="options" method="post" action="/items/{{ quote(entry.key) }}/grade?as=steps&amp;from={{ quote(close_url or '/') }}" data-grade="steps">
+    {% for option in drill.options %}
+    {% set mark = ("is-right" if drill.right(option.letter) else "is-wrong" if option.letter == picked else "") if picked else "" %}
+    <button type="submit" name="choice" value="{{ option.letter }}" class="option {{ mark }}"{% if picked %} disabled{% endif %}>
+      <span class="option-letter">{{ option.letter }}</span>
+      <span class="option-text">{{ option.text|mdi }}</span>
+      {% if mark == "is-right" %}<span class="option-mark" aria-label="Right answer">✓</span>
+      {% elif mark %}<span class="option-mark" aria-label="Your pick">✕</span>{% endif %}
+    </button>
+    {% endfor %}
+  </form>
+  {% if drill.after %}<div class="reader-text">{{ drill.after|md }}</div>{% endif %}
+  {% if picked %}{% include "_grade.html" %}{% endif %}
+  {% endif %}
+  {% if view.steps|length > 1 and not steps_open and not picked %}
+  <div class="steps-bar">
+    <span>{{ view.steps|length }} steps{% if drill %}, or pick an option{% endif %}</span>
+    <a class="steps-all" href="{{ reader_url(entry.key, close_url, steps='all') }}" data-steps-all>Show all</a>
+  </div>
+  {% endif %}
+  {% for step in view.steps %}
+  <details class="step" data-step{% if steps_open or (picked and loop.first) %} open{% endif %}>
+    <summary><span class="if-closed">{{ step.title|reveal }}</span><span class="if-open">{{ step.title }}</span>{% if loop.length > 1 %}<span class="step-count">{{ loop.index }}/{{ loop.length }}</span>{% endif %}</summary>
+    <div class="reader-text step-body">{{ step.body|md }}</div>
+  {% endfor %}
+  {% if not picked %}{% include "_grade.html" %}{% endif %}
+  {% for step in view.steps %}</details>{% endfor %}
+</section>

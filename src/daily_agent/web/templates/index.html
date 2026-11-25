@@ -39,13 +39,30 @@
       <a class="chip t-{{ type|type_class }}{% if filters.type == type %} on{% endif %}" href="{{ feed_url(view=filters.view, type=type, q=filters.q) }}">{{ type|label }}</a>
       {% endfor %}
     </div>
-    {% elif filters.view == "interview" and points %}
+    {% elif filters.view == "interview" %}
+    {# Tracks (#137), then under Resume its points, and a tag from a link
+       (the progress page's weak spots) as a chip that clears with ✕. #}
+    {% if tracks %}
     <div class="chips">
-      <a class="chip{% if not filters.point %} on{% endif %}" href="{{ feed_url(view='interview') }}">All points</a>
-      {% for id, name, count in points %}
-      <a class="chip chip-point{% if filters.point == id %} on{% endif %}" href="{{ feed_url(view='interview', point=id) }}" title="{{ name }} ({{ count }})">{{ name }}</a>
+      <a class="chip{% if not filters.track %} on{% endif %}" href="{{ feed_url(view='interview') }}">All</a>
+      {% for id, name, count in tracks %}
+      <a class="chip chip-track{% if filters.track == id %} on{% endif %}" href="{{ feed_url(view='interview', track=id) }}" title="{{ name }} ({{ count }})">{{ name }}</a>
       {% endfor %}
     </div>
+    {% endif %}
+    {% if filters.tag or points %}
+    <div class="chips chips-sub">
+      {% if filters.tag %}
+      <a class="chip chip-tag on" href="{{ feed_url(view='interview', track=filters.track, point=filters.point) }}" aria-label="Clear the {{ filters.tag|tag_label }} filter">{{ filters.tag|tag_label }}<span class="chip-x" aria-hidden="true">✕</span></a>
+      {% endif %}
+      {% if points %}
+      <a class="chip{% if not filters.point %} on{% endif %}" href="{{ feed_url(view='interview', track='resume', tag=filters.tag) }}">All points</a>
+      {% for id, name, count in points %}
+      <a class="chip chip-point{% if filters.point == id %} on{% endif %}" href="{{ feed_url(view='interview', track='resume', tag=filters.tag, point=id) }}" title="{{ name }} ({{ count }})">{{ name }}</a>
+      {% endfor %}
+      {% endif %}
+    </div>
+    {% endif %}
     {% endif %}
   </nav>
   <a class="fresh" id="fresh" href="{{ next_url }}" hidden></a>

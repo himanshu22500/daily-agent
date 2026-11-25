@@ -1,0 +1,30 @@
+{# Grade a prep card: Got it / Shaky / Missed moves its next review (#137).
+   Expects `entry` and `close_url`; `graded` once it was just graded; and after
+   a drill's option was tapped, `choice` (the drill's own grade). #}
+{% set grade_drill = steps_of(entry.type, entry.text).drill if choice else none %}
+{% set grade_pick = choice if grade_drill and grade_drill.option(choice) else "" %}
+{% set grade_action = "/items/" ~ quote(entry.key) ~ "/grade?as=grade&from=" ~ quote(close_url or "/") %}
+{% set grade_buttons %}
+<form class="grade-row" method="post" action="{{ grade_action }}" data-grade="grade">
+  {% for code, name in grade_names.items() if code != graded %}
+  <button type="submit" name="grade" value="{{ code }}" class="grade-btn g-{{ code }}">{{ name }}</button>
+  {% endfor %}
+</form>
+{% endset %}
+<section class="grade{% if graded %} is-graded{% endif %}" id="grade" data-grade-box>
+  {% if graded %}
+  {% set due = due_of(entry.key) %}
+  <p class="grade-done g-{{ graded }}" role="status">
+    {% if grade_pick %}<strong>{{ "Right." if grade_drill.right(grade_pick) else "Not quite: it's " ~ grade_drill.answer ~ "." }}</strong>{% endif %}
+    <span>{{ grade_names[graded] }}{% if due %} · back {{ due|back_in }}{% endif %}</span>
+  </p>
+  <details class="regrade">
+    <summary>Change</summary>
+    {{ grade_buttons }}
+  </details>
+  {% else %}
+  <h2>How did it go?</h2>
+  {{ grade_buttons }}
+  <p class="grade-hint">Missed comes back tomorrow, Shaky in 3 days, Got it in a week or more.</p>
+  {% endif %}
+</section>

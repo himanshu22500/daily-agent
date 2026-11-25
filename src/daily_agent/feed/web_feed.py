@@ -48,7 +48,9 @@ from .insights_store import InsightCursorRow, InsightRow, InsightStore
 from .instagram_posts import InstagramStore, shortcode_of
 from .projects import session_projects
 from .prep import PrepStore, level_label, source_of
-from .prep_tracks import CARD_TYPE, PREP_TYPES, PrepItems, track_of
+from .prep_tracks import CARD_TYPE, PREP_TYPES, TRACKS, PrepItems, track_of, types_for
+from .prep_view import GRADED_TYPES, STEP_TYPES, teaser
+from .prep_view import kicker as prep_kicker
 from .videos import VideoStore, video_id_of
 
 FOR_YOU = "for-you"
@@ -130,6 +132,21 @@ class FeedEntry:
         return track_of(self.type) or ""
 
     @property
+    def stepped(self) -> bool:
+        """A DSA problem, drill or design card: its text reveals in steps."""
+        return self.type in STEP_TYPES
+
+    @property
+    def gradable(self) -> bool:
+        """A prep card the reader grades Got it / Shaky / Missed (#137)."""
+        return self.type in GRADED_TYPES
+
+    @property
+    def kicker(self) -> str:
+        """ "DSA · Sliding window" above a step card's headline ("" otherwise)."""
+        return prep_kicker(self.type, self.key, self.tags, self.source)
+
+    @property
     def prep_level(self) -> str:
         """ "Deep dive" etc. for a flashcard ("" otherwise)."""
         return level_label(self.tags) if self.flashcard else ""
@@ -161,6 +178,8 @@ class FeedEntry:
         if self.flashcard:  # never give the answer away on the card
             level = self.prep_level
             return f"{level} question · tap to answer" if level else "Tap to answer"
+        if self.stepped:  # the prompt only: never a step
+            return plain(teaser(self.type, self.text))
         if self.title:
             return plain(self.text)
         return split_first_sentence(self.text)[1]
@@ -327,6 +346,8 @@ class WebFeed:
         type: str | None = None,
         interview: bool = False,
         point: str | None = None,
+        track: str | None = None,
+        tag: str | None = None,
         now: datetime | None = None,
         rng: random.Random | None = None,
     ) -> str:
@@ -334,15 +355,14 @@ class WebFeed:
 
         For you by default (everything but interview prep). With ``interview``,
         the Interview tab's practice deck (#117): prep only, optionally one
-        resume ``point``, with the same rotation. Unseen first, and seen cards
-        come back after their spaced-repetition gap.
+        ``track`` (#137), one resume ``point`` and cards with one ``tag``, with
+        the same rotation. Unseen first, and seen cards come back after their
+        spaced-repetition gap.
         """
         moment = now or _now()
         stmt = self._base().where(WebFeedStateRow.dismissed_at.is_(None))
         if interview:
-            stmt = stmt.where(InsightRow.type.in_(PREP_TYPES))
-            if point:
-                stmt = stmt.where(InsightRow.source_session == source_of(point))
+            stmt = stmt.where(*_deck_clauses(point, track, tag))
         else:
             stmt = stmt.where(_NOT_PREP)
         if type:
@@ -361,7 +381,11 @@ class WebFeed:
                 WebFeedSessionRow(
                     id=edition_id,
                     created_at=_iso(moment),
-                    type_filter=f"interview:{point or ''}" if interview else type or "",
+                    type_filter=(
+                        f"interview:{track or ''}:{tag or ''}:{point or ''}"
+                        if interview
+                        else type or ""
+                    ),
                     keys=json.dumps(keys),
                 )
             )
@@ -421,15 +445,35 @@ class WebFeed:
             if counts.get(source_of(p.id))
         ]
 
+    def interview_tracks(self) -> list[tuple[str, str, int]]:
+        """``(track, label, visible cards)`` for the Interview tab's track
+        chips (#137), in ``TRACKS`` order; empty tracks count 0."""
+        stmt = (
+            select(InsightRow.type, func.count())
+            .outerjoin(WebFeedStateRow, WebFeedStateRow.key == InsightRow.key)
+            .where(InsightRow.type.in_(PREP_TYPES))
+            .where(WebFeedStateRow.dismissed_at.is_(None))
+            .group_by(InsightRow.type)
+        )
+        with session_scope(self._engine) as session:
+            counts = dict(session.exec(stmt).all())
+        return [
+            (track, name, sum(counts.get(t, 0) for t in types_for(track)))
+            for track, name in TRACKS.items()
+        ]
+
     def next_revisit_at(
         self,
         *,
         interview: bool = False,
         point: str | None = None,
+        track: str | None = None,
+        tag: str | None = None,
         now: datetime | None = None,
     ) -> datetime | None:
         """When the next seen item becomes due again (``None`` if none pending):
-        in For you, or with ``interview`` in the Interview deck (one ``point``)."""
+        in For you, or with ``interview`` in the Interview deck (narrowed like
+        ``new_edition``)."""
         stamp = _iso(now or _now())
         stmt = (
             select(func.min(WebFeedStateRow.due_at))
@@ -438,14 +482,18 @@ class WebFeed:
             .where(WebFeedStateRow.due_at > stamp)
         )
         if interview:
-            stmt = stmt.where(InsightRow.type.in_(PREP_TYPES))
-            if point:
-                stmt = stmt.where(InsightRow.source_session == source_of(point))
+            stmt = stmt.where(*_deck_clauses(point, track, tag))
         else:
             stmt = stmt.where(_NOT_PREP)
         with session_scope(self._engine) as session:
             value = session.scalar(stmt)
         return _aware(value) if value else None
+
+    def due_at(self, key: str) -> datetime | None:
+        """When ``key`` comes back (after a view or a grade), if scheduled."""
+        with session_scope(self._engine) as session:
+            state = session.get(WebFeedStateRow, key)
+        return _aware(state.due_at) if state and state.due_at else None
 
     # --- reading: shared ---------------------------------------------------- #
     def entry(self, key: str) -> FeedEntry | None:
@@ -607,6 +655,31 @@ class WebFeed:
 def _aware(value: str) -> datetime:
     moment = datetime.fromisoformat(value)
     return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def _has_tag(tag: str) -> ColumnElement[bool]:
+    """``tags`` (comma-joined slugs) holds ``tag``; dialect-neutral."""
+    tags = InsightRow.tags
+    return or_(
+        tags == tag,
+        tags.startswith(f"{tag},", autoescape=True),
+        tags.endswith(f",{tag}", autoescape=True),
+        tags.contains(f",{tag},", autoescape=True),
+    )
+
+
+def _deck_clauses(
+    point: str | None, track: str | None, tag: str | None
+) -> list[ColumnElement[bool]]:
+    """The Interview deck: prep of one track (all without one), one resume
+    point, and cards tagged ``tag``."""
+    types = types_for(track) if track in TRACKS else PREP_TYPES
+    clauses = [InsightRow.type.in_(types)]
+    if point:
+        clauses.append(InsightRow.source_session == source_of(point))
+    if tag:
+        clauses.append(_has_tag(tag))
+    return clauses
 
 
 def _candidate(

@@ -39,6 +39,9 @@ from starlette.templating import Jinja2Templates
 from ..feed.covers import CoverStore, cover_slug
 from ..feed.instagram_posts import InstagramStore, InstagramSync, shortcode_of
 from ..feed.prep import PrepStore, PrepSync
+from ..feed.prep_grades import GOT, GRADES, MISSED, GradeStore
+from ..feed.prep_tracks import DESIGN, DSA, RESUME, TRACKS, slug
+from ..feed.prep_view import reveal_label, steps_of, tag_label
 from ..feed.questions import QuestionError, QuestionStore, QuestionSync
 from ..feed.ratings import DOWN, UP, Ratings
 from ..feed.story_queue import sync_forever
@@ -49,8 +52,10 @@ from ..sources.youtube import BadSourceLink, YouTubeError
 from .render import (
     ago,
     ago_long,
+    back_in,
     cover_style,
     inline_markdown,
+    inline_spans,
     kinds,
     label,
     longdate,
@@ -81,6 +86,21 @@ def _feed_url(view: str = FOR_YOU, type: str = "", q: str = "", **extra: str) ->
     params = {"view": "" if view == FOR_YOU else view, "type": type, "q": q, **extra}
     query = urlencode({k: v for k, v in params.items() if v})
     return "/?" + query if query else "/"
+
+
+def _reader_url(key: str, back: str = "", **params: str) -> str:
+    """``/i/<key>``, opened from ``back`` (its close link), with ``params``."""
+    query = urlencode({k: v for k, v in {"from": back, **params}.items() if v})
+    return f"/i/{quote(key, safe='')}" + ("?" + query if query else "")
+
+
+# The Interview tab's decks (#137): what "every ... that's due" counts.
+_DECK_NAMES = {
+    "": "card",
+    RESUME: "question",
+    DSA: "DSA card",
+    DESIGN: "system design card",
+}
 
 
 def _safe_next(value: str | None) -> str:
@@ -174,6 +194,7 @@ def create_app(
         questions.store if questions is not None else QuestionStore(db_path)
     )
     ratings = Ratings(db_path)
+    grades = GradeStore(db_path)
     commit = _running_commit()
     wake = asyncio.Event()
     ig_wake = asyncio.Event()
@@ -202,6 +223,24 @@ def create_app(
         longdate=longdate,
         ago_long=ago_long,
         kinds=kinds,
+        mdi=inline_spans,
+        back_in=back_in,
+        tag_label=tag_label,
+        reveal=reveal_label,
+    )
+
+    def last_grade(key: str):
+        """A prep card's latest grade (None if never graded)."""
+        return grades.latest([key]).get(key)
+
+    templates.env.globals.update(
+        steps_of=steps_of,
+        reader_url=_reader_url,
+        last_grade=last_grade,
+        due_of=feed.due_at,
+        grade_names=GRADES,
+        track_names=TRACKS,
+        deck_names=_DECK_NAMES,
     )
     templates.env.globals.update(
         quote=lambda s: quote(s, safe=""),
@@ -274,17 +313,21 @@ def create_app(
             ),
         }
 
-    def _interview(request: Request, point: str, partial: bool) -> Response | dict:
-        """The Interview tab: a practice deck rebuilt on every visit (#117)."""
+    def _interview(
+        request: Request, deck: dict[str, str], partial: bool
+    ) -> Response | dict:
+        """The Interview tab: a practice deck rebuilt on every visit (#117),
+        of one track, resume point and tag (``deck``; #137)."""
         params = request.query_params
         edition = params.get("session") or ""
+        narrow = {name: value or None for name, value in deck.items()}
         try:
             offset = int(params.get("offset") or 0)
         except ValueError:
             return PlainTextResponse("Invalid offset.", status_code=400)
 
         def build() -> str:
-            return feed.new_edition(interview=True, point=point or None)
+            return feed.new_edition(interview=True, **narrow)
 
         if not edition:
             if partial:
@@ -306,7 +349,7 @@ def create_app(
             "more_url": (
                 _feed_url(
                     view=INTERVIEW,
-                    point=point,
+                    **deck,
                     session=edition,
                     offset=str(page.next_offset),
                 )
@@ -315,7 +358,23 @@ def create_app(
             ),
             "next_revisit": None
             if page.next_offset is not None
-            else feed.next_revisit_at(interview=True, point=point or None),
+            else feed.next_revisit_at(interview=True, **narrow),
+        }
+
+    def _deck(params) -> dict[str, str]:
+        """The Interview deck a URL asks for: ``track``, ``tag`` and ``point``
+        (a resume point implies the Resume track; old links carry only it)."""
+        track = params.get("track") or ""
+        track = track if track in TRACKS else ""
+        point = (params.get("point") or "").strip().lower()[:20]
+        if point and track in ("", RESUME):
+            track = RESUME
+        else:
+            point = ""
+        return {
+            "track": track,
+            "tag": slug(params.get("tag") or "", limit=40),
+            "point": point,
         }
 
     def index(request: Request) -> Response:
@@ -326,7 +385,7 @@ def create_app(
             return PlainTextResponse(f"Unknown view: {view}", status_code=400)
         type_ = params.get("type") or ""
         q = params.get("q") or ""
-        point = (params.get("point") or "").strip().lower()[:20]
+        deck = _deck(params)
         partial = params.get("partial") == "1"
         if view in (FOR_YOU, "latest") and type_ in PREP_TYPES and not partial:
             # Old links to the Interview/Concept chips: prep has its own tab now.
@@ -335,14 +394,14 @@ def create_app(
         if view == FOR_YOU:
             result = _for_you(request, type_, partial)
         elif view == INTERVIEW:
-            result = _interview(request, point, partial)
+            result = _interview(request, deck, partial)
         else:
             result = _chronological(request, view, type_, q)
         if isinstance(result, Response):
             return result
         filters = {"view": view, "type": type_, "q": q}
         if view == INTERVIEW:
-            filters = {"view": view, "point": point}
+            filters = {"view": view, **deck}
         context = {
             **result,
             "filters": filters,
@@ -357,7 +416,18 @@ def create_app(
         context.update(
             views=VIEWS,
             types=feed.types(),
-            points=feed.interview_points() if view == INTERVIEW else [],
+            # Track chips hide empty tracks (unless picked); points sit
+            # under Resume.
+            tracks=[
+                (track, name, count)
+                for track, name, count in feed.interview_tracks()
+                if count or track == deck["track"]
+            ]
+            if view == INTERVIEW
+            else [],
+            points=feed.interview_points()
+            if view == INTERVIEW and deck["track"] == RESUME
+            else [],
             unseen=feed.unseen_count(),
             opened_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         )
@@ -497,6 +567,43 @@ def create_app(
             return PlainTextResponse("Rate it 👎 first.", status_code=409)
         return JSONResponse({"reasons": list(ratings.get(key).reasons)})
 
+    async def grade(request: Request) -> Response:
+        """Got it / Shaky / Missed on a prep card (#137), or a drill's picked
+        option, which grades itself: right is got it, wrong is missed.
+
+        Body: ``grade=got|shaky|missed`` or ``choice=A..D``. A fetch gets back
+        what the page swaps in: the grade box, or with ``as=steps`` the
+        drill's steps. A plain form post returns to the reader with every
+        step open, the grade shown and the drill's pick marked.
+        """
+        if not _same_origin(request):
+            return PlainTextResponse("Cross-site request refused.", status_code=403)
+        entry = feed.entry(request.path_params["key"])
+        if entry is None or not entry.gradable:
+            return PlainTextResponse("No such prep card.", status_code=404)
+        form = await _form(request)
+        choice = form.get("choice", "").strip().upper()
+        given = form.get("grade", "")
+        if choice:
+            drill = steps_of(entry.type, entry.text).drill
+            if drill is None or drill.option(choice) is None:
+                return PlainTextResponse("No such option.", status_code=400)
+            given = GOT if drill.right(choice) else MISSED
+        if given not in GRADES:
+            return PlainTextResponse("Unknown grade.", status_code=400)
+        await run_in_threadpool(grades.grade, entry.key, given)
+        back = _safe_next(request.query_params.get("from"))
+        if request.headers.get("x-requested-with") != "fetch":
+            shown = {"choice": choice} if choice else {"steps": "all"}
+            target = _reader_url(entry.key, back, **shown, graded=given)
+            return RedirectResponse(target + "#grade", status_code=303)
+        as_steps = request.query_params.get("as") == "steps"
+        return templates.TemplateResponse(
+            request,
+            "_steps.html" if as_steps else "_grade.html",
+            {"entry": entry, "close_url": back, "graded": given, "choice": choice},
+        )
+
     def card(request: Request) -> Response:
         """One feed card, to refresh it after acting on it in the reader."""
         entry = feed.entry(request.path_params["key"])
@@ -515,11 +622,19 @@ def create_app(
         )
 
     def _reader_context(request: Request, entry) -> dict:
+        params = request.query_params
+        choice = (params.get("choice") or "").upper()
+        graded = params.get("graded") or ""
         return {
             "entry": entry,
-            "close_url": _safe_next(request.query_params.get("from")),
+            "close_url": _safe_next(params.get("from")),
             "session_id": "r-" + secrets.token_urlsafe(6),
             "related": feed.related(entry.key),
+            # A prep card's state after a grade without JS (#137): every step
+            # open, the grade just given, and a drill's picked option.
+            "steps_open": params.get("steps") == "all",
+            "graded": graded if graded in GRADES else "",
+            "choice": choice if choice in ("A", "B", "C", "D") else "",
         }
 
     def reader(request: Request) -> Response:
@@ -731,6 +846,7 @@ def create_app(
             Route("/new-count", new_count),
             Route("/version", version),
             Route("/seen", seen, methods=["POST"]),
+            Route("/items/{key:path}/grade", grade, methods=["POST"]),
             Route("/items/{key:path}/ask", ask, methods=["GET", "POST"]),
             Route("/items/{key:path}/reasons", rate_reasons, methods=["POST"]),
             Route("/items/{key:path}/{action}", act, methods=["POST"]),

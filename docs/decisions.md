@@ -1,5 +1,31 @@
 # Decisions
 
+## 2026-11-25 — The Interview tab reads prep cards step by step and grades them
+
+#137 is the UI on top of the prep tracks and grades from #130.
+
+- **Tracks are chips, tags are links.** All · Resume · DSA · System design
+  (`track=`); a track with no cards has no chip. Resume points sit under
+  Resume. `tag=<slug>` narrows any deck to one tag and shows as a chip with ✕,
+  so other pages (the progress page's weak spots) can link straight to a
+  practice deck. The rotation from #118 is unchanged.
+- **Steps are nested `<details>`.** Each `### ` step's button sits inside the
+  step before it, so revealing one shows the next, and the grade box sits
+  inside the last. It works without JS; JS only adds "Show all" in place and
+  keeps an open step from folding up.
+- **Drills grade themselves.** A well-formed drill (four `A) `..`D) ` lines,
+  `### Answer` first, starting with the right letter) shows its options as
+  buttons; a tap opens the answer and grades right = Got it, wrong = Missed.
+  Anything else falls back to plain steps. A drill's tags name its answer, so
+  they are never shown.
+- **Prep cards grade instead of 👍 / 👎.** Got it / Shaky / Missed go through
+  `GradeStore.grade`, which reschedules the card. Other items keep 👍 / 👎,
+  which steer the extractor; prep cards don't come from the extractor.
+- **The markdown renderer stays escape-first.** It gains fenced code
+  (monospace, never wrapped, scrolls sideways; light Python highlighting),
+  tables (scroll sideways), lists and headings. Only tags it generates are
+  emitted, so model-written text still can't inject markup.
+
 ## 2026-11-25 — Practice packs and talk-track notes become prep cards as written
 
 The maintainer already had a DSA practice pack (an index README, problem

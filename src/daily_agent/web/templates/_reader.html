@@ -3,6 +3,8 @@
 {% set back = "&next=" ~ quote(close_url) %}
 {% set branch = entry.git_branch if entry.git_branch != "HEAD" else "" %}
 {% set save_action = base ~ "/" ~ ("unsave" if entry.saved else "save") ~ "?as=reader" ~ back %}
+{% set coverless = entry.flashcard or entry.stepped %}
+{% set last = last_grade(entry.key) if entry.gradable else none %}
 <div class="reader t-{{ entry.type|type_class }}" data-swap data-reader data-key="{{ entry.key }}">
   <header class="reader-bar">
     <a class="icon-btn" href="{{ close_url }}" data-close aria-label="Close">{{ icon("close") }}</a>
@@ -25,6 +27,7 @@
     </details>
   </header>
   <article class="reader-body">
+    {% if entry.kicker %}<p class="kicker k-{{ entry.track }}">{{ entry.kicker }}</p>{% endif %}
     <h1 class="reader-h1">{{ entry.headline }}</h1>
     {% set post = post_media(entry.key) if entry.post_id else none %}
     {% if entry.video_id %}
@@ -32,7 +35,10 @@
     <p class="dateline">Uploaded {{ entry.captured_at|longdate }} · Added {{ entry.published_at|ago }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
     {% elif entry.flashcard %}
     <p class="byline">Interview question · <strong>{{ entry.source or "your resume" }}</strong></p>
-    <p class="dateline">{{ entry.prep_level or "Interview" }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
+    <p class="dateline">{{ entry.prep_level or "Interview" }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}{% if last %} · Last graded {{ grade_names[last.grade] }}, {{ last.graded_at|ago_long }}{% endif %}</p>
+    {% elif entry.stepped %}
+    <p class="byline">From <strong>{{ entry.source or "interview prep" }}</strong></p>
+    <p class="dateline">Added {{ entry.published_at|ago_long }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}{% if last %} · Last graded {{ grade_names[last.grade] }}, {{ last.graded_at|ago_long }}{% endif %}</p>
     {% elif entry.type == "concept" %}
     <p class="byline">Concept from your resume · <strong>{{ entry.source or "interview prep" }}</strong></p>
     <p class="dateline">Written {{ entry.published_at|ago }}{% if entry.view_count %} · Seen {{ entry.view_count }}×{% endif %}</p>
@@ -50,7 +56,7 @@
       <button type="button" class="pill-btn" data-textsize aria-label="Text size">{{ icon("text") }}</button>
       <button type="button" class="pill-btn" data-share data-title="{{ entry.headline }}" data-text="{{ entry.text }}" aria-label="Share">{{ icon("share") }}</button>
     </div>
-    {% if not entry.flashcard %}
+    {% if not coverless %}
     <figure class="reader-figure">
       {% if entry.video_id %}
       <div class="video-embed">
@@ -75,20 +81,23 @@
     </figure>
     {% endif %}
     {% if entry.flashcard %}
-    <details class="answer">
+    <details class="answer"{% if steps_open or graded %} open{% endif %}>
       <summary><span class="if-closed">Show answer</span><span class="if-open">Hide answer</span></summary>
       <div class="reader-text">{{ entry.text|md }}</div>
+      {% include "_grade.html" %}
     </details>
+    {% elif entry.stepped %}
+    {% include "_steps.html" %}
     {% else %}
     <div class="reader-text">{{ entry.text|md }}</div>
     {% endif %}
-    {% include "_rate.html" %}
+    {% if not entry.gradable %}{% include "_rate.html" %}{% endif %}{# prep cards grade instead #}
     {% include "_ask.html" %}
-    {% if entry.tags %}
+    {% if entry.tags and entry.type != "drill" %}{# a drill's tags name its answer #}
     <section class="topics">
-      <p class="topics-label">Suggested topics:</p>
+      <p class="topics-label">{{ "Practice more:" if entry.track else "Suggested topics:" }}</p>
       <div class="topic-pills">
-        {% for tag in entry.tags %}<a class="topic" href="{{ feed_url(view='latest', q=tag) }}">{{ tag }}</a>{% endfor %}
+        {% for tag in entry.tags %}<a class="topic" href="{{ feed_url(view='interview', track=entry.track, tag=tag) if entry.track else feed_url(view='latest', q=tag) }}">{{ tag|tag_label if entry.track else tag }}</a>{% endfor %}
       </div>
     </section>
     {% endif %}
@@ -98,13 +107,14 @@
       {% for item in related %}
       <a class="next-item" href="/i/{{ quote(item.key) }}" data-open>
         <span class="next-text">
-          <span class="next-kind">{{ item.type|label }}{% if item.source %} · {{ item.source }}{% endif %}</span>
+          <span class="next-kind">{{ item.kicker or item.type|label }}{% if item.source %} · {{ item.source }}{% endif %}</span>
           <span class="next-title">{{ item.headline }}</span>
           <time datetime="{{ item.published_at.isoformat() }}">{{ item.published_at|ago_long }}</time>
         </span>
         {% set item_post = post_media(item.key) if item.post_id else none %}
         {% set thumb = item.thumbnail or (item_post.image_url(0) if item_post else "") or cover_url(item.key) %}
-        {% if thumb %}
+        {% if item.stepped %}{# the question is the card: no picture #}
+        {% elif thumb %}
         <span class="cover thumb has-art" aria-hidden="true"><img src="{{ thumb }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"></span>
         {% else %}
         <span class="cover thumb" style="{{ cover_style(item.key, item.type) }}" aria-hidden="true">
