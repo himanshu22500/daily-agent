@@ -159,6 +159,56 @@ code {
 .chip-tag { display: inline-flex; align-items: center; gap: 6px; }
 .chip-x { font-size: 0.75em; opacity: 0.75; }
 
+/* For you: the Prep mode switch (#132), fixed at the start of the chip row
+   while the type chips scroll beside it. */
+.chip-bar { display: flex; align-items: center; }
+.chip-bar .chips { flex: 1; min-width: 0; }
+.prep-switch {
+  display: flex;
+  flex: none;
+  margin: 0 8px 0 0;
+  padding-right: 8px;
+  border-right: 1px solid var(--line);
+}
+.prep-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 12px 4px 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.switch-track {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--line);
+  transition: background 0.15s;
+}
+.switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 30%);
+  transition: transform 0.15s;
+}
+.prep-switch [aria-checked="true"] { border-color: var(--new); color: var(--text); }
+.prep-switch [aria-checked="true"] .switch-track { background: var(--new); }
+.prep-switch [aria-checked="true"] .switch-knob { transform: translateX(12px); }
+
 /* --- Feed stories (Discover-style cards) ------------------------------------- */
 
 .feed {

@@ -117,6 +117,7 @@ def mixed(db, tmp_path) -> TestClient:
 
 async def test_prep_lives_only_in_the_interview_tab(mixed, db):
     await PrepSync(db, _writer).run_once()  # the explainers, too
+    mixed.post("/prefs/prep-mode", data={"on": "0"})  # For you without prep (#132)
     for url in ("/", "/?view=latest"):
         page = mixed.get(url).text
         assert _keys(page) == ["insight:uv-sync"]

@@ -25,6 +25,45 @@
   (monospace, never wrapped, scrolls sideways; light Python highlighting),
   tables (scroll sideways), lists and headings. Only tags it generates are
   emitted, so model-written text still can't inject markup.
+## 2026-11-25 — Prep mode: interview prep in For you
+
+The maintainer is preparing for mid-level interviews and wanted the feed to
+help. For you was almost all coding insights (162 of the last 179 stories)
+and prep lived only in the Interview tab (#116, #118). Prep mode (#132) is a
+switch at the top of For you.
+
+- **The switch.** Stored server-side in a new key/value table,
+  `feed_preferences`, so the phone and the Mac agree (one reader, no
+  cookie). Default **on**, since more prep is what was asked for now. It is a
+  plain form post that reloads For you with a new edition, so it works
+  without JS. It sits fixed at the start of the chip row while the type chips
+  scroll beside it.
+- **The blend** (`for_you.blend_edition`).
+  - An edition keeps the number of slots it would have without prep: one per
+    work story that is unseen or due. It never has fewer than 30
+    (`PREP_MIN_SLOTS`) while there's prep to show, so being caught up on work
+    still leaves a practice run.
+  - `DAILY_AGENT_PREP_MIX` (default 0.5) of the slots go to prep. Prep is
+    spread evenly, work first (W P W P at 0.5, W W P at 1/3), not in a block.
+    When one side runs out, the other fills its slots.
+  - Prep is ordered by `build_edition`, the same rotation as the Interview
+    deck: unseen first, seen cards only when due.
+  - Work stories are trimmed to the best: higher score first; at equal score,
+    unseen ones from the last 3 days, then older unseen ones, then due
+    revisits. The kept ones are then ordered as For you always orders them.
+    Trimmed ones are still unseen, so a later mix brings them.
+  - Hidden and 👎 items never appear: 👎 already hides (#126).
+- **Unchanged.**
+  - With the switch off, `new_edition` takes exactly the old path. A test
+    checks this against `build_edition` over the non-prep items.
+  - A type chip shows only that type.
+  - The Interview tab, Latest, the unseen count and the "new insights" pill
+    still ignore prep.
+- **The end of an edition.** With prep mixed in it says "That's the end of
+  this mix", not "You're all caught up", because trimmed stories may be
+  waiting. The next revisit there includes prep. Code refers to `PREP_TYPES`,
+  never a literal list, so new prep types (#130) join the blend without
+  further changes.
 
 ## 2026-11-25 — Practice packs and talk-track notes become prep cards as written
 

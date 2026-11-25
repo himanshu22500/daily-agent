@@ -646,6 +646,16 @@
   });
 
 
+  // --- Prep mode switch (#132): flip it at once; the plain post reloads For you ---
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (!form.matches("form[data-prep-switch]")) return;
+    const button = form.querySelector('[role="switch"]');
+    if (button) {
+      button.setAttribute("aria-checked", button.getAttribute("aria-checked") === "true" ? "false" : "true");
+    }
+  });
+
   // --- "N new insights" pill ----------------------------------------------------------
   const fresh = document.getElementById("fresh");
   const opened = feed && feed.dataset.opened;

@@ -42,7 +42,7 @@ from ..db import (
 )
 from ..sources.instagram import post_url
 from ..sources.youtube import embed_url, thumbnail_url, watch_url
-from .for_you import Candidate, build_edition, revisit_interval
+from .for_you import Candidate, blend_edition, build_edition, revisit_interval
 from .headlines import fallback_headline, plain, split_first_sentence
 from .insights_store import InsightCursorRow, InsightRow, InsightStore
 from .instagram_posts import InstagramStore, shortcode_of
@@ -348,28 +348,43 @@ class WebFeed:
         point: str | None = None,
         track: str | None = None,
         tag: str | None = None,
+        prep_mix: float = 0.0,
         now: datetime | None = None,
         rng: random.Random | None = None,
     ) -> str:
         """Build and store a fresh deck; return its edition id.
 
-        For you by default (everything but interview prep). With ``interview``,
-        the Interview tab's practice deck (#117): prep only, optionally one
-        ``track`` (#137), one resume ``point`` and cards with one ``tag``, with
-        the same rotation. Unseen first, and seen cards come back after their
+        For you by default (everything but interview prep). With ``prep_mix``
+        > 0 and no ``type``, prep mode (#132): that share of the slots goes to
+        prep cards, spread through the deck, and the work stories are trimmed
+        to the best ones. With ``interview``, the Interview tab's practice deck
+        (#117): prep only, optionally one ``track`` (#137), one resume
+        ``point`` and cards with one ``tag``, with the same rotation. Unseen
+        first, and seen cards come back after their
         spaced-repetition gap.
         """
         moment = now or _now()
+        mixing = prep_mix > 0 and not interview and not type
         stmt = self._base().where(WebFeedStateRow.dismissed_at.is_(None))
         if interview:
             stmt = stmt.where(*_deck_clauses(point, track, tag))
-        else:
+        elif not mixing:
             stmt = stmt.where(_NOT_PREP)
         if type:
             stmt = stmt.where(InsightRow.type == type)
         with session_scope(self._engine) as session:
             candidates = [_candidate(*row) for row in session.exec(stmt).all()]
-        keys = build_edition(candidates, now=moment, rng=rng or random.Random())
+        rng = rng or random.Random()
+        if mixing:
+            keys = blend_edition(
+                [c for c in candidates if c.type not in PREP_TYPES],
+                [c for c in candidates if c.type in PREP_TYPES],
+                mix=prep_mix,
+                now=moment,
+                rng=rng,
+            )
+        else:
+            keys = build_edition(candidates, now=moment, rng=rng)
         edition_id = secrets.token_urlsafe(9)
         with session_scope(self._engine) as session:
             session.execute(
@@ -469,11 +484,12 @@ class WebFeed:
         point: str | None = None,
         track: str | None = None,
         tag: str | None = None,
+        prep: bool = False,
         now: datetime | None = None,
     ) -> datetime | None:
         """When the next seen item becomes due again (``None`` if none pending):
-        in For you, or with ``interview`` in the Interview deck (narrowed like
-        ``new_edition``)."""
+        in For you (with ``prep``, prep mode's For you, prep included), or with
+        ``interview`` in the Interview deck (narrowed like ``new_edition``)."""
         stamp = _iso(now or _now())
         stmt = (
             select(func.min(WebFeedStateRow.due_at))
@@ -483,7 +499,7 @@ class WebFeed:
         )
         if interview:
             stmt = stmt.where(*_deck_clauses(point, track, tag))
-        else:
+        elif not prep:
             stmt = stmt.where(_NOT_PREP)
         with session_scope(self._engine) as session:
             value = session.scalar(stmt)
