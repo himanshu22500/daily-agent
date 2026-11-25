@@ -141,6 +141,9 @@ def reveal_label(title: str) -> str:
 # --- drills ------------------------------------------------------------------ #
 
 _OPTION = re.compile(r"^([A-D])\) (\S.*)$")
+# A line that is only a bold label ("**Scenario**", "**Task:**"): a heading in
+# all but name, so the teaser drops it like one.
+_LABEL = re.compile(r"^\*\*[^*\n]{1,40}\*\*:?$")
 _ANSWER = re.compile(r"^(?:\*\*)?([A-D])\)\s")
 
 
@@ -224,9 +227,10 @@ def teaser(type_: str, text: str) -> str:
         bare = line.strip()
         if (
             in_fence
-            or bare.startswith("|")
+            or bare.startswith(("|", "#"))
+            or _LABEL.match(bare)
             or (type_ == DRILL_TYPE and _OPTION.match(line))
         ):
             continue
-        kept.append(bare.lstrip("#").strip() if bare.startswith("#") else line)
+        kept.append(line)
     return "\n".join(kept).strip()

@@ -258,7 +258,11 @@ def test_the_teaser_never_gives_a_step_away():
     drill = teaser(DRILL_TYPE, DRILL)
     assert drill.endswith("Which pattern fits best?") and "Monotonic" not in drill
     code = "Given:\n```python\nxs = [1]\n```\n| a | b |\n|---|---|\n## Task\nSort it."
-    assert teaser(PROBLEM_TYPE, code) == "Given:\nTask\nSort it."
+    assert teaser(PROBLEM_TYPE, code) == "Given:\nSort it."
+    # A pack problem's bold labels are headings too: the teaser starts with
+    # the scenario itself, not "Scenario A big sale...".
+    labelled = "**Scenario**\nA big sale is coming.\n\n**Task:**\nReturn **k**."
+    assert teaser(PROBLEM_TYPE, labelled) == "A big sale is coming.\n\nReturn **k**."
 
 
 def test_back_in_counts_whole_days():
