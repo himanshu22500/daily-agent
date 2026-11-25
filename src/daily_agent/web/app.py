@@ -41,7 +41,9 @@ from ..feed.instagram_posts import InstagramStore, InstagramSync, shortcode_of
 from ..feed.mock_interviews import DEFAULT_QUESTIONS, InterviewError, InterviewStore
 from ..feed.preferences import Preferences
 from ..feed.prep import PrepStore, PrepSync
+from ..feed.prep_drill import PrepDrill, drill_forever
 from ..feed.prep_grades import GOT, GRADES, MISSED, GradeStore
+from ..feed.prep_progress import PrepProgress, interview_day, local_zone
 from ..feed.prep_tracks import DESIGN, DSA, RESUME, TRACKS, slug
 from ..feed.prep_view import reveal_label, steps_of, tag_label
 from ..feed.questions import QuestionError, QuestionStore, QuestionSync
@@ -163,6 +165,9 @@ def create_app(
     page_size: int = 20,
     prep_mix: float = 0.5,
     allowed_hosts: Sequence[str] | None = None,
+    drill: PrepDrill | None = None,
+    local_tz: str = "Asia/Kolkata",
+    interview_date: str = "",
     videos: VideoSync | None = None,
     instagram: InstagramSync | None = None,
     video_loop: bool = False,
@@ -191,6 +196,9 @@ def create_app(
 
     ``prep_mix`` is the share of a For you edition that is interview prep
     while the reader's Prep mode switch is on (issue #132).
+
+    ``drill`` sends the Telegram prep drill in the background; ``local_tz``
+    and ``interview_date`` set the progress page's days (issue #136).
     """
     feed = WebFeed(db_path)
     covers = CoverStore(db_path)
@@ -203,6 +211,9 @@ def create_app(
     ratings = Ratings(db_path)
     grades = GradeStore(db_path)
     prefs = Preferences(db_path)
+    prep_progress = PrepProgress(db_path)
+    zone = local_zone(local_tz)
+    interview_on = interview_day(interview_date)
     commit = _running_commit()
     wake = asyncio.Event()
     ig_wake = asyncio.Event()
@@ -464,6 +475,21 @@ def create_app(
         await run_in_threadpool(prefs.set_prep_mode, on == "1")
         # A fresh For you edition, built with the new setting.
         return RedirectResponse(_feed_url(), status_code=303)
+
+    def progress(request: Request) -> Response:
+        """How prepared the reader is (#136). Read-only, so the server shows
+        it too."""
+        return templates.TemplateResponse(
+            request,
+            "progress.html",
+            {
+                "p": prep_progress.build(
+                    now=datetime.now(timezone.utc),
+                    zone=zone,
+                    interview_date=interview_on,
+                )
+            },
+        )
 
     def version(request: Request) -> Response:
         """The commit this server runs (deploy-on-merge's health check)."""
@@ -906,6 +932,8 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_app: Starlette):
         tasks = []
+        if drill is not None:
+            tasks.append(asyncio.create_task(drill_forever(drill)))
         if video_loop:
             for sync, event in ((videos, wake), (instagram, ig_wake)):
                 if sync is not None:
@@ -946,6 +974,7 @@ def create_app(
             Route("/", index),
             Route("/sources", sources, methods=["GET", "POST"]),
             Route("/sources/unfollow", unfollow, methods=["POST"]),
+            Route("/progress", progress),
             Route("/new-count", new_count),
             Route("/version", version),
             Route("/prefs/prep-mode", prep_switch, methods=["POST"]),

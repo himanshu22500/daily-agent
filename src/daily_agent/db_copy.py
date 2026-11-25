@@ -33,6 +33,7 @@ STORE_MODULES = (
     "preferences",
     "practice_cards",
     "prep",
+    "prep_drill",
     "prep_grades",
     "prep_tracks",
     "questions",

@@ -1,0 +1,166 @@
+{%- macro figures(x) -%}
+{%- set parts = [] -%}
+{%- if x.got %}{% set _ = parts.append(x.got ~ " got it") %}{% endif -%}
+{%- if x.shaky %}{% set _ = parts.append(x.shaky ~ " shaky") %}{% endif -%}
+{%- if x.missed %}{% set _ = parts.append(x.missed ~ " missed") %}{% endif -%}
+{{ parts|join(" · ") }}
+{%- endmacro -%}
+
+{%- macro split(x) -%}
+<span class="split" role="img" aria-label="{{ figures(x) or 'Not graded yet' }}{% if x.ungraded %}, {{ x.ungraded }} not graded{% endif %}">
+  {%- for part, n in (("got", x.got), ("shaky", x.shaky), ("missed", x.missed), ("none", x.ungraded)) if n -%}
+  <span class="seg seg-{{ part }}" style="flex-grow: {{ n }}"></span>
+  {%- else -%}
+  <span class="seg seg-none" style="flex-grow: 1"></span>
+  {%- endfor -%}
+</span>
+{%- endmacro -%}
+
+{%- macro cards(n) %}{{ n }} card{{ "s" if n != 1 }}{% endmacro -%}
+
+{%- macro tile(t) -%}
+{%- if t.cards -%}
+<a class="tile lv-{{ t.level }}" href="{{ feed_url(view='interview', track=t.track, tag=t.tag) }}">
+  <span class="tile-head"><span class="tile-name">{{ t.label }}</span><span class="tile-level"><i class="lv-dot" aria-hidden="true"></i>{{ t.level_label }}</span></span>
+  {{ split(t) }}
+  <span class="tile-figs">{{ cards(t.cards) }}{% if t.graded %} · {{ figures(t) }}{% endif %}</span>
+</a>
+{%- else -%}
+<div class="tile lv-gap">
+  <span class="tile-head"><span class="tile-name">{{ t.label }}</span></span>
+  <span class="tile-figs">No cards yet</span>
+</div>
+{%- endif -%}
+{%- endmacro -%}
+
+{%- macro legend(ungraded=True) -%}
+<p class="legend"><span><i class="sw seg-got"></i>Got it</span><span><i class="sw seg-shaky"></i>Shaky</span><span><i class="sw seg-missed"></i>Missed</span>{% if ungraded %}<span><i class="sw seg-none"></i>Not graded</span>{% endif %}</p>
+{%- endmacro -%}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css?v={{ asset_version }}">
+  <title>Progress · Insights</title>
+</head>
+<body>
+  <header class="top">
+    <div class="bar">
+      <a class="brand" href="/">Insights</a>
+      <a class="bar-link" href="{{ feed_url(view='interview') }}">Back to Interview</a>
+    </div>
+  </header>
+  <main class="progress">
+    <h1>Progress</h1>
+
+    <section class="kpis" aria-label="Summary">
+      {%- if p.days_left is not none %}
+      <div class="kpi">
+        {%- if p.days_left %}
+        <span class="kpi-value">{{ p.days_left }}</span>
+        <span class="kpi-label">day{{ "s" if p.days_left != 1 }} to go</span>
+        {%- else %}
+        <span class="kpi-value">Today</span>
+        <span class="kpi-label">Interview day</span>
+        {%- endif %}
+        <span class="kpi-sub">{{ p.interview_date.strftime('%a') }} {{ p.interview_date.day }} {{ p.interview_date.strftime('%b') }}</span>
+      </div>
+      {%- endif %}
+      <div class="kpi">
+        <span class="kpi-value">{{ p.streak }}</span>
+        <span class="kpi-label">day streak</span>
+        <span class="kpi-sub">{% if p.today_tally.total %}Kept today{% elif p.streak %}Grade a card to keep it{% else %}Grade a card to start{% endif %}</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-value">{{ p.today_tally.total }}</span>
+        <span class="kpi-label">graded today</span>
+        <span class="kpi-sub">{{ figures(p.today_tally) or "None yet" }}</span>
+      </div>
+    </section>
+
+    <section class="pg" aria-labelledby="pg-tracks">
+      <h2 id="pg-tracks">Tracks</h2>
+      {{ legend() }}
+      {%- for t in p.tracks %}
+      <a class="track" href="{{ feed_url(view='interview', track=t.track) }}">
+        <span class="track-head"><span class="track-name">{{ t.label }}</span><span class="track-rate">{% if t.got_rate is not none %}{{ t.got_rate }}% got it{% endif %}</span></span>
+        {{ split(t) }}
+        <span class="track-figs">{% if t.cards %}{{ cards(t.cards) }} · {{ t.seen }} seen · {{ t.graded }} graded{% else %}No cards yet{% endif %}</span>
+      </a>
+      {%- endfor %}
+    </section>
+
+    <section class="pg" aria-labelledby="pg-patterns">
+      <h2 id="pg-patterns">DSA patterns</h2>
+      <p class="pg-sub">Each card counts by its latest grade. Tap a pattern to practise it.</p>
+      <div class="tiles">
+        {%- for t in p.patterns %}
+        {{ tile(t) }}
+        {%- endfor %}
+      </div>
+    </section>
+
+    <section class="pg" aria-labelledby="pg-topics">
+      <h2 id="pg-topics">System design topics</h2>
+      {%- if p.topics %}
+      <div class="tiles">
+        {%- for t in p.topics %}
+        {{ tile(t) }}
+        {%- endfor %}
+      </div>
+      {%- else %}
+      <p class="pg-empty">No design cards yet.</p>
+      {%- endif %}
+    </section>
+
+    <section class="pg" aria-labelledby="pg-weak">
+      <h2 id="pg-weak">Weak spots</h2>
+      {%- if p.weak %}
+      <ol class="weak">
+        {%- for t in p.weak %}
+        <li>
+          <a class="track" href="{{ feed_url(view='interview', track=t.track, tag=t.tag) }}">
+            <span class="track-head"><span class="track-name">{{ t.label }}</span><span class="track-rate">{{ t.track_label }}</span></span>
+            {{ split(t) }}
+            <span class="track-figs">{{ figures(t) }} of {{ cards(t.cards) }}</span>
+          </a>
+        </li>
+        {%- endfor %}
+      </ol>
+      {%- else %}
+      <p class="pg-empty">Nothing weak yet. Cards you grade Shaky or Missed show up here.</p>
+      {%- endif %}
+    </section>
+
+    <section class="pg" aria-labelledby="pg-week">
+      <h2 id="pg-week">Last 7 days</h2>
+      {{ legend(ungraded=False) }}
+      <ol class="week">
+        {%- for d in p.week %}
+        <li class="day" title="{{ d.label }}: {{ figures(d) or 'no grades' }}">
+          <span class="day-plot">
+            {%- if d.total %}
+            <span class="day-total">{{ d.total }}</span>
+            <span class="day-bar" style="height: {{ [3, (72 * d.total / p.week_max)|round|int]|max }}px" role="img" aria-label="{{ d.label }}: {{ figures(d) }}">
+              {%- for part, n in (("got", d.got), ("shaky", d.shaky), ("missed", d.missed)) if n -%}
+              <span class="seg seg-{{ part }}" style="flex-grow: {{ n }}"></span>
+              {%- endfor -%}
+            </span>
+            {%- endif %}
+          </span>
+          <span class="day-name{% if loop.last %} is-today{% endif %}">{{ "Today" if loop.last else d.day.strftime('%a') }}</span>
+        </li>
+        {%- endfor %}
+      </ol>
+      {%- if not p.week_max %}
+      <p class="pg-empty">No grades this week. Grade cards in the <a href="{{ feed_url(view='interview') }}">Interview tab</a>.</p>
+      {%- endif %}
+    </section>
+  </main>
+</body>
+</html>

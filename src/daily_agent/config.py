@@ -64,6 +64,15 @@ class Settings(BaseSettings):
     insights_feed_max_per_run: int = 2
     feed_quiet_start: int = 22
     feed_quiet_end: int = 8
+    # Interview prep drill and progress page (#136). The bot sends one DSA and
+    # one design card at prep_drill_hour and their answers at prep_answer_hour,
+    # in this time zone (quiet hours apply), from whichever `daily-agent web`
+    # has Telegram. /progress counts down to interview_date (YYYY-MM-DD).
+    timezone: str = "Asia/Kolkata"
+    prep_drill_telegram: bool = True
+    prep_drill_hour: int = 9
+    prep_answer_hour: int = 20
+    interview_date: str = ""
 
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""

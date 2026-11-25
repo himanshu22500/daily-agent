@@ -282,7 +282,8 @@ section after the prompt. Grading a card Got it, Shaky or Missed
 (`feed/prep_grades.py`) reschedules it: tomorrow, in 3 days, or in 7, 21 and
 then 60 days.
 
-Everything stays in the web feed; none of it goes to Telegram. The Sources page
+Everything stays in the web feed; only the morning drill (below) goes to
+Telegram. The Sources page
 shows how many explainers are left to write.
 
 ### Practice packs and talk-track notes
@@ -355,6 +356,35 @@ either.
   sessions" and the session yields no coding insights; `insight:` notes are
   still captured. The same question studied twice stays one card. Work
   sessions are unchanged.
+
+### Morning prep drill and the Progress page
+
+A daily rhythm for the DSA and System design rounds (#136). No model is
+called.
+
+- **Morning drill on Telegram:** at `DAILY_AGENT_PREP_DRILL_HOUR` (default 9)
+  the bot sends one DSA card and one design card, prompt only, each with a
+  link to the card in the feed (`DAILY_AGENT_FEED_URL`). Due or unseen cards
+  on your weak tags come first, and the same card never comes two days
+  running.
+- **Answers in the evening:** at `DAILY_AGENT_PREP_ANSWER_HOUR` (default 20)
+  it sends the answers to the same two cards: a DSA card's Pattern and Key
+  idea, a design card's 30-second recap (else its first step). Grade them in
+  the feed.
+- **Where it runs:** inside `daily-agent web`, on whichever machine has
+  Telegram configured. Each slot goes out once a day, even if the Mac and the
+  server both run it. A Mac that slept through 9 am sends the drill when it
+  wakes, until the evening hour, and the answers only follow a drill. Hours
+  are in `DAILY_AGENT_TIMEZONE` (default `Asia/Kolkata`), and the feed's
+  quiet hours apply. Turn it off with `DAILY_AGENT_PREP_DRILL_TELEGRAM=false`.
+- **`/progress`** (the **Progress** link in the Interview tab's header): a
+  countdown to `DAILY_AGENT_INTERVIEW_DATE` (e.g. `2026-12-18`; hidden when
+  unset), your streak of days with a grade, and today's grades. Per track, it
+  shows cards, seen, graded and the got-it rate. A grid has a tile per DSA
+  pattern (gaps where there are no cards yet) and per design topic, each
+  opening that pattern in the Interview tab. Then your 5 weakest tags and the
+  last 7 days as bars. It only reads the shared database, so the server shows
+  it too.
 
 ### Rate items: 👍 / 👎
 
