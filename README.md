@@ -322,6 +322,40 @@ uv run daily-agent prep import-notes ~/path/to/rate_limiter_notes.md \
   is replaced only by its own import; the defaults are `dsa-<folder>` and
   `notes-<file>`.
 
+### Practice cards from videos and study sessions
+
+Interview-prep videos and study sessions with Claude Code add practice cards
+to the DSA and System design tracks (#139). No extra model call is made for
+either.
+
+- **Videos.** When Claude writes a video's story, it also writes 0–5 cards,
+  and none at all for a video that isn't about interview prep, DSA or system
+  design. A card is a question that tests recall or understanding, with
+  **Answer** and, when useful, **Why it matters** revealed one tap at a time.
+  DSA cards are pattern drills tagged with `DSA_PATTERNS` slugs; design cards
+  are tagged with topics such as `caching` or `sharding`. The channel is the
+  source ("▶ Hello Interview"). Writing a video again replaces its cards
+  rather than adding more.
+- **Videos written before this** get their cards from the stored story. No
+  captions are fetched, and videos already done are skipped. Run it on the
+  Mac, since the cards are written by Claude Code (`DAILY_AGENT_VIDEO_MODEL`):
+
+  ```bash
+  uv run daily-agent prep cards-from-videos --limit 5             # newest first
+  uv run daily-agent prep cards-from-videos --channel "hello interview"
+  ```
+
+- **Study sessions.** A Claude Code session is interview study when it runs
+  in a study folder (`DAILY_AGENT_PREP_STUDY_PATHS`, comma-separated folder
+  names or paths, default `interview-prep`), or when the extractor recognises
+  one from the conversation: a mock interview, working through an interview
+  question, or learning DSA patterns or design concepts for interviews. Such
+  a session yields Q&A cards, plus a step-by-step walkthrough card when a
+  whole design was worked through. They appear under "From your study
+  sessions" and the session yields no coding insights; `insight:` notes are
+  still captured. The same question studied twice stays one card. Work
+  sessions are unchanged.
+
 ### Rate items: 👍 / 👎
 
 Every card has a 👎, and every item ends with "Was this worth reading? 👍

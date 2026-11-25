@@ -8,6 +8,11 @@ The personal insight feed has two capture lanes over the same transcript reader:
   the same new transcript messages.
 
 Both lanes persist through ``InsightStore.add``, so exact-key dedup is shared.
+
+A batch the extractor marks as interview study (issue #139) is the exception:
+its practice cards go to the Interview tab (``practice_cards``) and its coding
+insights are dropped, so a study session adds no insight noise. The marker
+lane still captures what the reader marked by hand.
 """
 
 from __future__ import annotations
@@ -19,12 +24,15 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..models import Insight, InsightCandidate
+from ..models import Insight, InsightCandidate, InsightExtraction
 from .insights_store import InsightStore
+from .practice_cards import PracticeCards
 from .transcripts import TranscriptMessage, parse_line, read_lines, session_files
 
+# Returns the full extraction, or just the candidates (a work session).
 InsightExtractor = Callable[
-    [list[TranscriptMessage]], Awaitable[Iterable[InsightCandidate]]
+    [list[TranscriptMessage]],
+    Awaitable[InsightExtraction | Iterable[InsightCandidate]],
 ]
 
 
@@ -34,6 +42,7 @@ class CollectResult:
     scanned: int
     marked: int
     extracted: int
+    cards: int = 0  # practice cards from study sessions (issue #139)
 
     def __add__(self, other: "CollectResult") -> "CollectResult":
         return CollectResult(
@@ -41,6 +50,7 @@ class CollectResult:
             scanned=self.scanned + other.scanned,
             marked=self.marked + other.marked,
             extracted=self.extracted + other.extracted,
+            cards=self.cards + other.cards,
         )
 
 
@@ -186,11 +196,12 @@ async def collect_file(
 
     The cursor advances only after both lanes succeed; if the extractor raises,
     the exception propagates and the same lines are read again next time
-    (marker-lane insights dedup on their key).
+    (marker-lane insights dedup on their key). A study batch stores practice
+    cards instead of extracted insights.
     """
     read_at = datetime.now(timezone.utc)
     lines, start = unread_lines(store, path)
-    new = marked = extracted = 0
+    new = marked = extracted = cards = 0
     messages: list[TranscriptMessage] = []
     for raw in lines[start:]:
         msg = parse_line(raw)
@@ -202,12 +213,26 @@ async def collect_file(
             new += 1
             marked += 1
     if extractor is not None and messages:
-        for candidate in await extractor(messages):
+        found = await extractor(messages)
+        candidates: Iterable[InsightCandidate] = found
+        if isinstance(found, InsightExtraction):
+            candidates = [] if found.study_session else found.candidates
+            if found.study_session and found.prep_cards:
+                cards = (
+                    PracticeCards(store.db_path)
+                    .put_study(found.prep_cards, captured_at=_latest_ts(messages))
+                    .added
+                )
+        for candidate in candidates:
             insight = insight_from_candidate(candidate, messages)
             if insight is not None and store.add(insight):
                 new += 1
                 extracted += 1
     store.set_cursor(str(path), len(lines), read_at=read_at)
     return CollectResult(
-        new=new, scanned=len(lines) - start, marked=marked, extracted=extracted
+        new=new,
+        scanned=len(lines) - start,
+        marked=marked,
+        extracted=extracted,
+        cards=cards,
     )

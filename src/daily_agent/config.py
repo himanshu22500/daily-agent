@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # On a day a followed channel brings no new video, queue its next older one
     # (the 6th, then the 7th, ...; issue #124).
     video_backfill: bool = True
+    # Practice cards from videos and study sessions (#139): Claude Code
+    # sessions run in these folders (names or paths, comma-separated) are
+    # interview study, as are sessions the extractor recognises as study.
+    prep_study_paths: str = "interview-prep"
     # Instagram (issue #107), set by `daily-agent instagram connect`: a Facebook
     # Page token (doesn't expire) and the id of your own Instagram professional
     # account, which Business Discovery reads other accounts through.

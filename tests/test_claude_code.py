@@ -226,7 +226,8 @@ async def test_extraction_runs_through_claude_code(monkeypatch):
     monkeypatch.setattr("daily_agent.agents.insight_extractor.run_claude", fake_run)
     message = TranscriptMessage("s", "main", "2026-11-11T10:00:00Z", "user", "hello")
     found = await extract_insights("claude-code:sonnet", [message])
-    assert [c.canonical_key for c in found] == ["use-x"]
+    assert [c.canonical_key for c in found.candidates] == ["use-x"]
+    assert not found.study_session and found.prep_cards == []
     assert seen["model"] == "claude-code:sonnet" and "hello" in seen["prompt"]
     assert "candidates" in json.dumps(seen["json_schema"])
 
