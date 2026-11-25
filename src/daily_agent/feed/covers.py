@@ -45,8 +45,10 @@ def cover_slug(key: str) -> str | None:
     return slug if _SLUG.fullmatch(slug) else None
 
 
-def validate_cover(data: bytes) -> list[str]:
-    """Reasons ``data`` is not an acceptable cover (empty list = acceptable)."""
+def validate_cover(data: bytes, *, viewbox: str = VIEWBOX) -> list[str]:
+    """Reasons ``data`` is not an acceptable cover (empty list = acceptable).
+
+    Slide stories (#158) reuse it with a portrait ``viewbox``."""
     if not MIN_BYTES <= len(data) <= MAX_BYTES:
         return [f"size {len(data)} bytes (allowed {MIN_BYTES}-{MAX_BYTES})"]
     lowered = data.lower()
@@ -61,8 +63,8 @@ def validate_cover(data: bytes) -> list[str]:
     problems: list[str] = []
     if root.tag != f"{{{SVG_NS}}}svg":
         problems.append("root element is not <svg> in the SVG namespace")
-    if " ".join((root.get("viewBox") or "").split()) != VIEWBOX:
-        problems.append(f'viewBox must be "{VIEWBOX}"')
+    if " ".join((root.get("viewBox") or "").split()) != viewbox:
+        problems.append(f'viewBox must be "{viewbox}"')
     for element in root.iter():
         namespace, _, tag = element.tag.rpartition("}")
         if namespace != "{" + SVG_NS or tag not in ALLOWED_TAGS:

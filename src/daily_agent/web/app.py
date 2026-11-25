@@ -36,6 +36,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
+from ..feed.slides import SlideStore
 from ..feed.covers import CoverStore, cover_slug
 from ..feed.instagram_posts import InstagramStore, InstagramSync, shortcode_of
 from ..feed.mock_interviews import DEFAULT_QUESTIONS, InterviewError, InterviewStore
@@ -203,6 +204,7 @@ def create_app(
     """
     feed = WebFeed(db_path)
     covers = CoverStore(db_path)
+    slide_store = SlideStore(db_path)
     video_store = videos.store if videos is not None else VideoStore(db_path)
     ig_store = instagram.store if instagram is not None else InstagramStore(db_path)
     prep_store = prep.store if prep is not None else PrepStore(db_path)
@@ -228,6 +230,18 @@ def create_app(
     def post_slides(post) -> list[dict[str, str]]:
         """An Instagram carousel's images as card slides (#157)."""
         return [{"src": post.image_url(n), "caption": ""} for n in range(post.images)]
+
+    def slides_of(key: str) -> list[dict[str, str]]:
+        """A slide story's slides for its card (#158); [] if it has none."""
+        found = slide_store.summary(key)
+        if found is None:
+            return []
+        version, captions = found
+        ref, v = quote(key, safe=""), quote(version, safe="")
+        return [
+            {"src": f"/slides/{n}/{ref}?v={v}", "caption": caption}
+            for n, caption in enumerate(captions)
+        ]
 
     def cover_url(key: str) -> str:
         """URL of the insight's illustrated cover, or "" if it has none."""
@@ -273,6 +287,7 @@ def create_app(
         cover_url=cover_url,
         post_media=post_media,
         post_slides=post_slides,
+        slides_of=slides_of,
         questions_for=question_store.thread,
         rating_of=ratings.get,
         source_hue=source_hue,
@@ -869,6 +884,22 @@ def create_app(
             },
         )
 
+    def slide_image(request: Request) -> Response:
+        """One slide of a slide story: model-drawn SVG, served locked down."""
+        slides = slide_store.get(request.path_params["key"])
+        n = request.path_params["n"]
+        if not 0 <= n < len(slides):
+            return PlainTextResponse("No such slide.", status_code=404)
+        return Response(
+            slides[n].svg,
+            media_type="image/svg+xml",
+            headers={
+                "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+                "X-Content-Type-Options": "nosniff",
+                "Cache-Control": "private, max-age=31536000, immutable",
+            },
+        )
+
     def _sources_page(
         request: Request, *, error: str = "", link: str = "", status_code: int = 200
     ) -> Response:
@@ -1010,6 +1041,7 @@ def create_app(
             Route("/items/{key:path}/{action}", act, methods=["POST"]),
             Route("/card/{key:path}", card),
             Route("/covers/{name}.svg", cover),
+            Route("/slides/{n:int}/{key:path}", slide_image),
             Route("/ig/{shortcode}/{n:int}.jpg", post_image),
             Route("/i/{key:path}", reader),
             Mount(

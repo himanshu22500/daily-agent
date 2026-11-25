@@ -5,7 +5,8 @@
    question is the card. Step cards carry a kicker ("DSA · Sliding window"). #}
 <article class="story t-{{ entry.type|type_class }}{% if entry.new %} is-new{% endif %}{% if entry.flashcard or entry.stepped %} is-flashcard{% endif %}{% if entry.kicker %} has-kicker{% endif %}" data-card data-swap data-key="{{ entry.key }}">
   <a class="story-open" href="/i/{{ quote(entry.key) }}" data-open>
-    {% if not (entry.flashcard or entry.stepped) %}{% include "_cover.html" %}{% endif %}
+    {# A step card has no picture, unless it was told as a slide story (#158): its slides set the problem up, never answer it. #}
+    {% if not entry.flashcard and (not entry.stepped or slides_of(entry.key)) %}{% include "_cover.html" %}{% endif %}
     {% if entry.kicker %}<p class="kicker k-{{ entry.track }}">{{ entry.kicker }}</p>{% endif %}
     <h2 class="headline">{{ entry.headline }}</h2>
     {% if entry.snippet %}<p class="snippet">{{ entry.snippet }}</p>{% endif %}

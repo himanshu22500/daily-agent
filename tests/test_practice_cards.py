@@ -608,6 +608,8 @@ def test_the_sweep_reports_study_cards(monkeypatch, tmp_path):
         "0",
         "--max-covers",
         "0",
+        "--max-slides",
+        "0",
     )
     assert result.exit_code == 0, result.output
     assert "captured 0 new (0 marker, 0 extracted) and 1 study card(s)" in result.output
