@@ -100,7 +100,10 @@ async def test_cards_show_the_stored_image_and_the_reader_the_slides(client, syn
     await _written(sync)
     page = client.get("/?view=latest").text
     assert 'src="/ig/Cpost000001/0.jpg"' in page
-    assert 'class="cover has-art is-post"' in page and "1/3" in page
+    # A carousel is a swipeable strip in the card (#157): every slide, a counter, dots.
+    assert 'class="cover has-art is-slides fit-contain"' in page
+    assert all(f'src="/ig/Cpost000001/{n}.jpg"' in page for n in range(3))
+    assert "data-slide-count>1/3<" in page
     assert "@bytebytego" in page and ">Instagram</a>" in page  # badge and type chip
     # The reel's card has a play mark.
     assert 'class="cover has-art is-post is-video"' in page
@@ -112,6 +115,19 @@ async def test_cards_show_the_stored_image_and_the_reader_the_slides(client, syn
     assert "From <strong>ByteByteGo</strong> (@bytebytego) on Instagram" in reader
     assert "Learned in" not in reader
     assert "Watch on Instagram" in client.get("/i/ig:Cpost000002").text
+
+
+async def test_carousel_strip_has_one_dot_per_slide_and_lazy_later_slides(client, sync):
+    await _written(sync, 1)
+    page = client.get("/?view=latest").text
+    strip = re.search(
+        r'<div class="slides" data-slides>(.*?)</div>\s*<span', page, re.S
+    )
+    assert strip and strip.group(1).count('class="slide"') == 3
+    assert strip.group(1).count('loading="lazy"') == 2  # the first loads at once
+    dots = re.search(r'<div class="slide-dots"[^>]*>(.*?)</div>', page).group(1)
+    assert dots.count("<span") == 3 and dots.count('class="on"') == 1
+    assert "@bytebytego" in page
 
 
 async def test_stored_images_are_served_locked_down(client, sync):

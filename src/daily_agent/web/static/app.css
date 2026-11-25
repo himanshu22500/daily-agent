@@ -580,6 +580,47 @@ html.reading, html.reading body { overflow: hidden; }
   font-variant-numeric: tabular-nums;
 }
 
+/* Slide strips in cards (#157): a news-style carousel in a taller 4:5 frame.
+   Sideways scrolling with snap; the feed's tab swipe leaves it alone. */
+.cover.is-slides { aspect-ratio: 4 / 5; max-height: 78vh; background: #000000; }
+.slides {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.slides::-webkit-scrollbar { display: none; }
+.slide { position: relative; flex: 0 0 100%; height: 100%; scroll-snap-align: start; scroll-snap-stop: always; }
+.cover.has-art .slide img { width: 100%; height: 100%; object-fit: cover; }
+.cover.fit-contain .slide img { object-fit: contain; }
+.slide-caption {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  margin: 0;
+  padding: 56px 22px 26px;
+  background: linear-gradient(transparent, rgb(0 0 0 / 0.78) 42%);
+  color: #ffffff;
+  font-size: clamp(1.35rem, 6.6vw, 2.1rem);
+  font-stretch: condensed;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.08;
+  text-align: center;
+  text-transform: uppercase;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.cover.is-slides .cover-count { top: 10px; right: 12px; bottom: auto; }
+.cover.is-slides .cover-badge { right: auto; left: 12px; }
+.slide-dots { display: flex; justify-content: center; gap: 6px; padding: 10px 0 2px; }
+.slide-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); opacity: 0.35; transition: opacity 0.15s ease; }
+.slide-dots span.on { opacity: 1; }
+
 .post-media { display: flex; overflow-x: auto; background: var(--chip); scroll-snap-type: x mandatory; scrollbar-width: none; }
 .post-media::-webkit-scrollbar { display: none; }
 .post-slide { position: relative; flex: 0 0 100%; scroll-snap-align: start; }

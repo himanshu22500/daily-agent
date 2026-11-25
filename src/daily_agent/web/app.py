@@ -225,6 +225,10 @@ def create_app(
         shortcode = shortcode_of(key)
         return ig_store.media(shortcode) if shortcode else None
 
+    def post_slides(post) -> list[dict[str, str]]:
+        """An Instagram carousel's images as card slides (#157)."""
+        return [{"src": post.image_url(n), "caption": ""} for n in range(post.images)]
+
     def cover_url(key: str) -> str:
         """URL of the insight's illustrated cover, or "" if it has none."""
         slug = cover_slug(key)
@@ -268,6 +272,7 @@ def create_app(
         cover_style=cover_style,
         cover_url=cover_url,
         post_media=post_media,
+        post_slides=post_slides,
         questions_for=question_store.thread,
         rating_of=ratings.get,
         source_hue=source_hue,
