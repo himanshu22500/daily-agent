@@ -692,4 +692,114 @@
     setInterval(poll, 60_000);
     document.addEventListener("visibilitychange", poll);
   }
+
+  // --- Swipe between tabs (#152) ------------------------------------------------------
+  // A sideways swipe on the page moves to the next or previous tab, as in the
+  // YouTube app: the feed follows the finger a little, then slides out. Swipes
+  // that start on something that scrolls sideways (chips, code, tables), in the
+  // reader or a sheet, in a text field, or at a screen edge (the browser's own
+  // back gesture) are left alone, and so is anything mostly vertical.
+  const tabLinks = [...document.querySelectorAll(".tabs .tab")];
+  const tabIndex = tabLinks.findIndex((tab) => tab.classList.contains("on"));
+  if (feed && tabIndex >= 0 && "ontouchstart" in window) {
+    const EDGE = 24; // px from either side left to the browser
+    const LOCK = 12; // px before deciding sideways or vertical
+    const COMMIT = 70; // px sideways that switches the tab
+    const RATIO = 1.5; // sideways must beat vertical by this much
+    const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let swipe = null;
+
+    const scrollsSideways = (el) => {
+      for (; el && el !== document.body; el = el.parentElement) {
+        if (el.scrollWidth > el.clientWidth + 1) {
+          const { overflowX } = getComputedStyle(el);
+          if (overflowX === "auto" || overflowX === "scroll") return true;
+        }
+      }
+      return false;
+    };
+    const neighbour = (dx) => tabLinks[tabIndex + (dx < 0 ? 1 : -1)] || null;
+    const settle = () => {
+      feed.style.transition = "transform .18s ease, opacity .18s ease";
+      feed.style.transform = "";
+      feed.style.opacity = "";
+    };
+
+    document.addEventListener(
+      "touchstart",
+      (event) => {
+        swipe = null;
+        if (event.touches.length !== 1 || (overlay && !overlay.hidden) || whySheet) return;
+        const touch = event.touches[0];
+        if (touch.clientX < EDGE || touch.clientX > innerWidth - EDGE) return;
+        const target = event.target;
+        if (target.closest("input, textarea, select, details.menu[open], .sheet")) return;
+        if (scrollsSideways(target)) return;
+        swipe = { x: touch.clientX, y: touch.clientY, axis: null };
+      },
+      { passive: true },
+    );
+
+    document.addEventListener(
+      "touchmove",
+      (event) => {
+        if (!swipe || swipe.axis === "y") return;
+        const touch = event.touches[0];
+        const dx = touch.clientX - swipe.x;
+        const dy = touch.clientY - swipe.y;
+        if (!swipe.axis) {
+          if (Math.abs(dx) < LOCK && Math.abs(dy) < LOCK) return;
+          swipe.axis = Math.abs(dx) > RATIO * Math.abs(dy) ? "x" : "y";
+          if (swipe.axis === "y") return;
+        }
+        if (calm || !neighbour(dx)) return; // nothing that way: no drag
+        feed.style.transition = "none";
+        feed.style.transform = `translateX(${dx * 0.35}px)`;
+        feed.style.opacity = String(1 - Math.min(Math.abs(dx) / 900, 0.25));
+      },
+      { passive: true },
+    );
+
+    document.addEventListener(
+      "touchend",
+      (event) => {
+        if (!swipe) return;
+        const { axis, x, y } = swipe;
+        swipe = null;
+        if (axis !== "x") return;
+        const touch = event.changedTouches[0];
+        const dx = touch.clientX - x;
+        const dy = touch.clientY - y;
+        const next = neighbour(dx);
+        if (!next || Math.abs(dx) < COMMIT || Math.abs(dx) < RATIO * Math.abs(dy)) {
+          settle();
+          return;
+        }
+        tabLinks.forEach((tab) => tab.classList.toggle("on", tab === next));
+        if (calm) {
+          location.href = next.href;
+          return;
+        }
+        feed.style.transition = "transform .16s ease-in, opacity .16s ease-in";
+        feed.style.transform = `translateX(${dx < 0 ? -40 : 40}%)`;
+        feed.style.opacity = "0";
+        setTimeout(() => (location.href = next.href), 140);
+      },
+      { passive: true },
+    );
+    document.addEventListener("touchcancel", () => {
+      swipe = null;
+      settle();
+    });
+
+    // Back to this page from the next tab (the browser's page cache): show it
+    // as it was, not mid-slide.
+    addEventListener("pageshow", (event) => {
+      if (!event.persisted) return;
+      feed.style.transition = "none";
+      feed.style.transform = "";
+      feed.style.opacity = "";
+      tabLinks.forEach((tab, i) => tab.classList.toggle("on", i === tabIndex));
+    });
+  }
 })();

@@ -127,6 +127,11 @@ uv run daily-agent web            # http://127.0.0.1:8765/
 scripts/install-web-launchd.sh    # keep it running in the background (macOS)
 ```
 
+On a phone, swipe left or right anywhere on the feed to move to the next or
+previous tab (For you, Latest, Interview, Saved, Hidden), as in the YouTube
+app (#152). Rows that scroll sideways (chips, code, tables) keep their own
+swipe, and the screen edges are left to the browser's Back gesture.
+
 **For you** (the default) is different every time you open it. It leads with
 unseen insights from the last few days, then the rest of your unseen backlog in
 a fresh random order. Higher-scored insights tend to come earlier, and there are

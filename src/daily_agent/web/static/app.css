@@ -218,6 +218,10 @@ code {
   margin: 0 auto;
   padding-bottom: 48px;
 }
+/* Swiping between tabs (#152) slides the feed sideways; clip it so the page
+   never pans (clip, unlike hidden, keeps the sticky tab bar working). */
+html, body { overflow-x: clip; }
+.feed { touch-action: pan-y pinch-zoom; }
 
 .story {
   padding: 0 0 6px;
