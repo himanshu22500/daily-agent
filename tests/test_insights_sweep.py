@@ -233,6 +233,10 @@ def test_extractor_has_a_request_timeout():
 
 
 def _cli(monkeypatch, tmp_path, *args):
+    async def no_slides(*_args, **_kwargs):  # never a real model call (#158)
+        raise AssertionError("slides not stubbed")
+
+    monkeypatch.setattr(cli, "write_slides", no_slides)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DAILY_AGENT_DB_PATH", str(tmp_path / "cli.db"))
     monkeypatch.setenv("DAILY_AGENT_INSIGHTS_PROJECTS_DIR", str(tmp_path / "projects"))

@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     # Feed headlines (Claude Code only) and cover illustrations.
     headline_model: str = "claude-code:claude-opus-5-5"
     cover_model: str = "claude-code:claude-opus-5-5"
+    # Slide stories in feed cards (#158): captions + illustrations, by Claude.
+    slide_model: str = "claude-code:claude-opus-5-5"
     # Stories from followed YouTube channels (Claude Code only), and how often
     # each followed channel is checked for new uploads.
     video_model: str = "claude-code:claude-opus-5-5"

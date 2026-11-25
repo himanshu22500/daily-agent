@@ -31,7 +31,9 @@ from .feed.channels import (
     TelegramError,
 )
 from .agents.cover_illustrator import draw_cover
+from .agents.slide_writer import write_slides
 from .feed.covers import CoverStore, generate_covers, import_covers
+from .feed.slides import SlideStore, generate_slides
 from .feed.headlines import apply_titles, export_for_titling, generate_headlines
 from .feed.insights_capture import collect_insights, collect_marked
 from .feed.insights_feed import (
@@ -325,13 +327,17 @@ def insights_sweep(
     max_covers: int = typer.Option(
         10, help="Draw at most N covers for insights without one (0 = none)."
     ),
+    max_slides: int = typer.Option(
+        3, help="Write at most N slide stories for picked items (0 = none)."
+    ),
 ) -> None:
     """Capture insights from every project's transcripts, ended sessions or not.
 
     For sessions that rarely end, such as Claude inside Zed over ACP. New
     insights reach the web feed at once and are queued for Telegram, which
     keeps its own pace (only `flush` delivers). Then headlines and covers are
-    written for insights that lack them, within per-run caps.
+    written for insights that lack them, and slide stories for the ~1 in 4
+    items picked for one, within per-run caps.
     """
     settings = get_settings()
     root = Path(settings.projects_path)
@@ -378,8 +384,8 @@ def insights_sweep(
             on_progress=lock.refresh,
         )
         if swept.stopped_early:  # most likely the same outage; try next sweep
-            return swept, None, None
-        titled = covered = None
+            return swept, None, None, None
+        titled = covered = storied = None
         if max_titles > 0:
             titled = await generate_headlines(
                 store,
@@ -401,10 +407,24 @@ def insights_sweep(
                 limit=max_covers,
                 concurrency=2,
             )
-        return swept, titled, covered
+        if max_slides > 0:
+
+            async def write(record: dict, feedback: list[str] | None) -> list:
+                lock.refresh()
+                return await write_slides(settings.slide_model, record, feedback)
+
+            storied = await generate_slides(
+                store,
+                SlideStore(settings.db),
+                write,
+                source=f"model:{settings.slide_model}",
+                limit=max_slides,
+                on_progress=lock.refresh,
+            )
+        return swept, titled, covered, storied
 
     try:
-        result, titled, covered = asyncio.run(background())
+        result, titled, covered, storied = asyncio.run(background())
         queued = enqueue_new_insights(store, Outbox(settings.db))
     finally:
         lock.release()
@@ -442,6 +462,17 @@ def insights_sweep(
         for key, problems in covered.failed.items():
             console.print(
                 f"    {key}: {'; '.join(problems)}", soft_wrap=True, markup=False
+            )
+    if storied is not None and (storied.written or storied.failed):
+        console.print(
+            f"  Slide stories: wrote {storied.written}"
+            + (f"; {len(storied.failed)} failed" if storied.failed else "")
+            + ".",
+            soft_wrap=True,
+        )
+        for key, problems in storied.failed.items():
+            console.print(
+                f"    {key}: {'; '.join(problems)[:300]}", soft_wrap=True, markup=False
             )
     if SPEND.calls:
         console.print(
@@ -592,6 +623,38 @@ def insights_covers_generate(
     )
     for key, problems in list(result.failed.items())[:20]:
         console.print(f"  [dim]{key}: {'; '.join(problems)}[/dim]")
+
+
+@insights_app.command("slides-generate")
+def insights_slides_generate(
+    limit: int = typer.Option(None, help="Write at most N slide stories."),
+    concurrency: int = typer.Option(2, help="Stories in flight at once."),
+    model: str = typer.Option(None, help="Model to write with (default: slide_model)."),
+) -> None:
+    """Write slide stories (#158) for the ~1 in 4 items picked for one."""
+    settings = get_settings()
+    chosen = model or settings.slide_model
+
+    async def write(record: dict, feedback: list[str] | None) -> list:
+        return await write_slides(chosen, record, feedback)
+
+    result = asyncio.run(
+        generate_slides(
+            InsightStore(settings.db),
+            SlideStore(settings.db),
+            write,
+            source=f"model:{chosen}",
+            limit=limit,
+            concurrency=concurrency,
+        )
+    )
+    console.print(
+        f"Wrote [bold]{result.written}[/bold] slide story(ies) with {chosen}"
+        + (f"; [yellow]{len(result.failed)} failed[/yellow]" if result.failed else "")
+        + "."
+    )
+    for key, problems in list(result.failed.items())[:20]:
+        console.print(f"  [dim]{key}: {'; '.join(problems)[:300]}[/dim]")
 
 
 @insights_app.command("status")

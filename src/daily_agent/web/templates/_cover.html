@@ -1,11 +1,17 @@
-{# The "photo" slot of a Discover card. Expects `entry`. A video story shows
+{# The "photo" slot of a Discover card. Expects `entry`. A slide story (#158)
+   shows its swipeable slides. A video story shows
    its YouTube thumbnail; an Instagram carousel a swipeable strip of its images
    (#157), any other post its first stored image; an insight
    its illustrated cover when one exists, otherwise a generated gradient with
    the topic. #}
+{% set story = slides_of(entry.key) if not entry.post_id else [] %}
 {% set art = cover_url(entry.key) %}
 {% set post = post_media(entry.key) if entry.post_id else none %}
-{% if entry.video_id %}
+{% if story %}
+{% from "_slides.html" import slide_strip %}
+{% set mark = "▶" if entry.video_id else ("✎" if entry.type in ("interview", "concept", "design") else "⌂") %}
+{{ slide_strip(story, badge=(mark ~ " " ~ entry.source) if entry.source else "") }}
+{% elif entry.video_id %}
 <div class="cover has-art is-video" aria-hidden="true">
   <img src="{{ entry.thumbnail }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
   <span class="play"></span>

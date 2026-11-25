@@ -1,5 +1,25 @@
 # Decisions
 
+## 2026-11-25 — About 1 in 4 feed items is a slide story
+
+Cards can be news-style carousels (#157, #158): 3-5 slides, each a bold
+caption over its own Claude-drawn illustration, swiped in the card; a tap opens
+the full story. Instagram carousels show their own images that way. Session
+insights, YouTube videos and concept explainers are told as a story (hook ->
+how -> why -> takeaway). System design practice cards only set the problem up
+and end on the question, so the slides never give the answer away.
+Flashcards, DSA problems and drills never get slides.
+
+- **Which items:** a stable hash of the key picks about 1 in 4 eligible items
+  with at least 200 characters of text, so the feed stays a mix and the cost
+  is bounded.
+- **Who writes them:** `slide_model` (Opus 5.5 through `claude -p`), one
+  structured call per story, a few per sweep (`--max-slides`, default 3),
+  newest first; `insights slides-generate` backfills.
+- **Safety:** every slide's SVG passes the cover validator (portrait viewBox
+  `0 0 800 1000`) before it's stored in `insight_slides`, and is served with
+  the covers' locked-down headers through `<img>`.
+
 ## 2026-11-25 — The phone app is an installable web app, not a native app
 
 The feed is installed from Chrome on Android as a web app (#154) instead of a

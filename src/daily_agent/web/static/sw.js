@@ -70,7 +70,7 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (request.mode === "navigate") {
     event.respondWith(networkFirst(request));
-  } else if (url.pathname.startsWith("/static/") || url.pathname.startsWith("/covers/")) {
+  } else if (url.pathname.startsWith("/static/") || url.pathname.startsWith("/covers/") || url.pathname.startsWith("/slides/")) {
     event.respondWith(cacheFirst(request));
   }
 });
