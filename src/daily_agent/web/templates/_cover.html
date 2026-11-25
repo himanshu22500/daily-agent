@@ -1,5 +1,6 @@
 {# The "photo" slot of a Discover card. Expects `entry`. A video story shows
-   its YouTube thumbnail; an Instagram story its first stored image; an insight
+   its YouTube thumbnail; an Instagram carousel a swipeable strip of its images
+   (#157), any other post its first stored image; an insight
    its illustrated cover when one exists, otherwise a generated gradient with
    the topic. #}
 {% set art = cover_url(entry.key) %}
@@ -10,6 +11,9 @@
   <span class="play"></span>
   {% if entry.source %}<span class="cover-badge">▶ {{ entry.source }}</span>{% endif %}
 </div>
+{% elif post and post.images > 1 and not post.is_video %}
+{% from "_slides.html" import slide_strip %}
+{{ slide_strip(post_slides(post), badge="@" ~ post.username, fit="contain") }}
 {% elif post and post.images %}
 <div class="cover has-art is-post{% if post.is_video %} is-video{% endif %}" aria-hidden="true">
   <img src="{{ post.image_url(0) }}" alt="" loading="lazy" decoding="async">

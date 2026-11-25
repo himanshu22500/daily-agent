@@ -1,0 +1,21 @@
+{# A swipeable strip of slides in a card's photo slot (#157), like a news
+   carousel: each slide an image with an optional bold caption, an n/N counter
+   and dots that follow the swipe (app.js). The strip scrolls sideways, so a
+   swipe on it moves slides, never feed tabs (#152); a tap opens the story.
+   `slides`: [{src, caption}]. `fit`: "cover" (drawn 4:5 slides) or "contain"
+   (photos of any shape, on black). #}
+{% macro slide_strip(slides, badge="", fit="cover") %}
+<div class="cover has-art is-slides fit-{{ fit }}" aria-hidden="true">
+  <div class="slides" data-slides>
+    {% for slide in slides %}
+    <div class="slide">
+      <img src="{{ slide.src }}" alt=""{% if not loop.first %} loading="lazy"{% endif %} decoding="async">
+      {% if slide.caption %}<p class="slide-caption">{{ slide.caption }}</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <span class="cover-count" data-slide-count>1/{{ slides|length }}</span>
+  {% if badge %}<span class="cover-badge">{{ badge }}</span>{% endif %}
+</div>
+<div class="slide-dots" aria-hidden="true">{% for slide in slides %}<span{% if loop.first %} class="on"{% endif %}></span>{% endfor %}</div>
+{% endmacro %}

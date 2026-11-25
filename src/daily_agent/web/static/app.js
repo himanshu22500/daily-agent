@@ -804,6 +804,31 @@
   }
 })();
 
+// --- Slide strips in cards (#157) ---------------------------------------------
+// Keep each strip's n/N counter and dots in step with the swipe. Scroll events
+// don't bubble, so one capturing listener covers cards added by "load more".
+document.addEventListener(
+  "scroll",
+  (event) => {
+    const strip = event.target;
+    if (!(strip instanceof Element) || !strip.matches("[data-slides]")) return;
+    if (strip._slideFrame) return;
+    strip._slideFrame = requestAnimationFrame(() => {
+      strip._slideFrame = 0;
+      const total = strip.children.length;
+      const index = Math.min(total - 1, Math.max(0, Math.round(strip.scrollLeft / (strip.clientWidth || 1))));
+      const cover = strip.parentElement;
+      const count = cover.querySelector("[data-slide-count]");
+      if (count) count.textContent = `${index + 1}/${total}`;
+      const dots = cover.nextElementSibling;
+      if (dots && dots.classList.contains("slide-dots")) {
+        [...dots.children].forEach((dot, n) => dot.classList.toggle("on", n === index));
+      }
+    });
+  },
+  { capture: true, passive: true },
+);
+
 // --- Installed app (#154) ------------------------------------------------------
 // The service worker makes the feed installable from Chrome on Android and lets
 // it open offline. Browsers only allow it over HTTPS (or localhost), so on the
