@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     instagram_check_hours: float = 3.0
     # Concept explainers for interview prep (`daily-agent prep import`).
     prep_model: str = "claude-code:claude-opus-5-5"
+    # Daily system design cards (#134), also written with prep_model: case
+    # studies and building blocks queued per local day, written in the
+    # background by `daily-agent web` (else: `daily-agent prep design write`).
+    prep_design_per_day: int = 1
+    prep_blocks_per_day: int = 1
+    web_prep_design_sync: bool = True
     # Answers to questions asked under a feed item (issue #119), and the mock
     # interviewer on prep cards (issue #133).
     ask_model: str = "claude-code:claude-opus-5-5"

@@ -640,6 +640,10 @@ def web(
             "the background (the Mac does that).",
             markup=False,
         )
+    # Daily system design cards (#134): a loop around the feed app writes them
+    # (web/app.py needs nothing for it). Same gate as the other writers.
+    if settings.web_prep_design_sync and writes:
+        create_app = _with_design_loop(create_app, settings)
     uvicorn.run(
         create_app(
             settings.db,
@@ -1178,6 +1182,110 @@ def prep_write(
     report = asyncio.run(_prep_sync(settings, model).run_once(limit=limit))
     console.print(
         f"Wrote {report.written} explainer(s)"
+        + (f", {report.remaining} still queued" if report.remaining else "")
+        + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
+        + "."
+    )
+    for error in report.errors:
+        console.print(f"  [dim]{error}[/dim]", markup=False)
+
+
+# --- daily system design cards (#134) ---------------------------------------- #
+design_app = typer.Typer(
+    no_args_is_help=True,
+    help="A daily system design card: a case study and a building block.",
+)
+prep_app.add_typer(design_app, name="design")
+
+
+def _with_design_loop(create_app, settings):
+    """``create_app``, but the app it makes also writes the daily design cards
+    in the background while it runs."""
+    from .feed.design_daily import WithBackground
+
+    sync = _design_sync(settings)
+
+    def create(*args, **kwargs):
+        return WithBackground(create_app(*args, **kwargs), sync)
+
+    return create
+
+
+def _design_sync(settings, model: str | None = None):
+    from .agents.design_writer import write_card
+    from .feed.design_daily import DesignSync
+
+    chosen = model or settings.prep_model
+    return DesignSync(
+        settings.db,
+        lambda topic: write_card(chosen, topic),
+        cases_per_day=settings.prep_design_per_day,
+        blocks_per_day=settings.prep_blocks_per_day,
+    )
+
+
+@design_app.command("status")
+def prep_design_status(
+    all_topics: bool = typer.Option(
+        False, "--all", help="List every topic and its state."
+    ),
+) -> None:
+    """How many topics are written, today's picks, and what comes next."""
+    sync = _design_sync(get_settings())
+    progress = sync.progress()
+    console.print(
+        f"System design: {progress.written} of {progress.topics} topic(s) written, "
+        f"{progress.queued} queued, {len(progress.failed)} failed. "
+        f"Today: {progress.today['case']} of {sync.per_day['case']} case "
+        f"study(ies), {progress.today['block']} of {sync.per_day['block']} "
+        "building block(s).",
+        markup=False,
+    )
+    if progress.weak:
+        console.print(f"Weak spots first: {', '.join(progress.weak)}", markup=False)
+    if progress.next_up:
+        console.print("Next up:", markup=False)
+    for topic in progress.next_up:
+        console.print(f"  {topic.slug:<22} {topic.title}", markup=False)
+    for slug, error in progress.failed:
+        console.print(f"  failed: {slug}: {error}", markup=False)
+    if all_topics:
+        for topic in sync.topics:
+            state = progress.states.get(topic.slug, "-")
+            console.print(
+                f"  {state:<8} {topic.kind:<6} {topic.slug:<22} {topic.title}",
+                markup=False,
+            )
+
+
+@design_app.command("write")
+def prep_design_write(
+    limit: int = typer.Option(
+        None,
+        help="Write up to N cards now: today's first, then the next topics "
+        "ahead of the daily pace.",
+    ),
+    topic: str = typer.Option(
+        None, help="Write this topic (a slug from `status --all`), even if written."
+    ),
+    model: str = typer.Option(None, help="Claude Code model (default: prep_model)."),
+) -> None:
+    """Write today's system design cards now (or more, or one topic)."""
+    sync = _design_sync(get_settings(), model)
+    if topic:
+        try:
+            report = asyncio.run(sync.write_topic(topic))
+        except KeyError:
+            console.print(
+                f"No topic {topic!r}; see `daily-agent prep design status --all`.",
+                style="red",
+                markup=False,
+            )
+            raise typer.Exit(1)
+    else:
+        report = asyncio.run(sync.run_once(limit=limit, ahead=limit is not None))
+    console.print(
+        f"Wrote {report.written} card(s)"
         + (f", {report.remaining} still queued" if report.remaining else "")
         + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
         + "."

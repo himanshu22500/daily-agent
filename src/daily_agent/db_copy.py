@@ -26,6 +26,7 @@ from .db import make_engine
 STORE_MODULES = (
     "channel_registry",
     "covers",
+    "design_daily",
     "insights_store",
     "instagram_posts",
     "mock_interviews",
