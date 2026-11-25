@@ -1,11 +1,22 @@
 {# "Ask about this" under an item (issues #119, #121): the thread as a chat,
-   then the composer. #}
+   then the composer. On interview prep, "Interview me" starts a mock
+   interview in the same thread (#133); while one runs, the composer answers
+   the interviewer. #}
 {% set thread = questions_for(entry.key) %}
+{% set mocks = interviews_for(entry.key) %}
+{% set current = mocks[-1] if mocks and mocks[-1].active else none %}
+{% set grading = mocks and mocks[-1].grading %}
 {% set ask_url = "/items/" ~ quote(entry.key) ~ "/ask" %}
-<section class="ask" id="ask" data-ask{% if thread|selectattr("is_open")|list %} data-ask-poll="{{ ask_url }}"{% endif %} aria-label="Ask about this">
+{% set mock_url = "/items/" ~ quote(entry.key) ~ "/interview" %}
+{% set waiting = thread|selectattr("is_open")|list or mocks|selectattr("waiting")|list %}
+<section class="ask" id="ask" data-ask{% if current %} data-ask-mode="mock"{% elif grading %} data-ask-mode="grading"{% endif %}{% if waiting %} data-ask-poll="{{ ask_url }}"{% endif %} aria-label="Ask about this">
   <h2>Ask about this</h2>
   <div class="qa-thread" data-ask-thread>
-    {% for q in thread %}
+    {% for kind, item in ask_thread(thread, mocks) %}
+    {% if kind == "mock" %}
+    {% with iv = item %}{% include "_mock.html" %}{% endwith %}
+    {% else %}
+    {% set q = item %}
     <div class="qa" id="ask-{{ q.id }}">
       <p class="qa-q">{{ q.question }}</p>
       {% if q.answered %}
@@ -34,12 +45,37 @@
       </div>
       {% endif %}
     </div>
+    {% endif %}
     {% endfor %}
   </div>
+  {% if current %}
+  <form class="mock-form" method="post" action="{{ mock_url }}" data-ask-form>
+    <input type="hidden" name="interview" value="{{ current.id }}">
+    <div class="composer">
+      <textarea name="answer" rows="1" maxlength="2000" placeholder="{{ 'Answer when the question arrives…' if current.waiting else 'Your answer…' }}" aria-label="Your answer" required data-ask-box>{{ ask_text or "" }}</textarea>
+      <button type="submit" class="send" name="do" value="reply" aria-label="Send answer" data-toast="Sent. The interviewer is thinking."><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 4l7 7-1.4 1.4L13 7.8V20h-2V7.8l-4.6 4.6L5 11z"/></svg></button>
+    </div>
+    <div class="mock-actions">
+      <button type="submit" class="mock-btn is-end" name="do" value="end" formnovalidate data-toast="Grading. Telegram pings you with the verdict.">End &amp; grade</button>
+      <button type="submit" class="mock-btn" name="do" value="start" formnovalidate data-toast="New interview. The first question is on its way.">Start over</button>
+    </div>
+  </form>
+  {% else %}
   <form class="composer" method="post" action="{{ ask_url }}" data-ask-form>
     <textarea name="question" rows="1" maxlength="1000" placeholder="{{ 'Ask Claude about this question…' if entry.flashcard else 'Ask Claude about this…' }}" aria-label="Your question" required data-ask-box>{{ ask_text or "" }}</textarea>
     <button type="submit" class="send" aria-label="Ask"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 4l7 7-1.4 1.4L13 7.8V20h-2V7.8l-4.6 4.6L5 11z"/></svg></button>
   </form>
+  {% if can_interview(entry) and not grading %}
+  <form class="mock-start" method="post" action="{{ mock_url }}" data-ask-form>
+    <button type="submit" class="mock-go" name="do" value="start" data-toast="Interview started. The first question is on its way."><span class="spark" aria-hidden="true">✦</span> Interview me</button>
+    <span class="mock-hint">Claude plays the interviewer: {{ interview_questions }} question{{ "s" if interview_questions != 1 }}, then a mid-level verdict</span>
+  </form>
+  {% endif %}
+  {% endif %}
   {% if ask_error %}<p class="form-error" role="alert">{{ ask_error }}</p>{% endif %}
+  {% if current %}
+  <p class="ask-note">Your Mac plays the interviewer · Telegram pings you with the verdict</p>
+  {% else %}
   <p class="ask-note">Answered on your Mac · Telegram pings you when it's ready</p>
+  {% endif %}
 </section>

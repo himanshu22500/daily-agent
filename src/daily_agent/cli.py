@@ -1179,14 +1179,25 @@ def _telegram_notifier(settings):
 
 
 def _question_sync(settings, model: str | None = None) -> QuestionSync:
+    """Answers to Ask questions, plus mock-interview turns (issue #133)."""
+    from .agents.mock_interviewer import interview_turn
     from .agents.question_answerer import answer_question
+    from .feed.mock_interviews import InterviewSync
 
     chosen = model or settings.ask_model
+    notify = _telegram_notifier(settings)
     return QuestionSync(
         settings.db,
         lambda request: answer_question(chosen, request),
-        notify=_telegram_notifier(settings),
+        notify=notify,
         feed_url=settings.feed_url,
+        interviews=InterviewSync(
+            settings.db,
+            lambda request: interview_turn(chosen, request),
+            notify=notify,
+            feed_url=settings.feed_url,
+            questions=settings.interview_questions,
+        ),
     )
 
 
@@ -1216,7 +1227,8 @@ def questions_answer(
     limit: int = typer.Option(None, help="Answer at most N questions (default 3)."),
     model: str = typer.Option(None, help="Claude Code model (default: ask_model)."),
 ) -> None:
-    """Answer waiting questions now (and send their Telegram messages)."""
+    """Answer waiting questions and mock-interview turns now (and send their
+    Telegram messages)."""
     settings = get_settings()
     report = asyncio.run(_question_sync(settings, model).run_once(limit=limit))
     console.print(

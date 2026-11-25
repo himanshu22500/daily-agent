@@ -1,0 +1,52 @@
+{# One mock interview in the Ask thread (#133): the interviewer's questions and
+   the reader's answers as a chat, ending in the verdict. Needs ``iv``. #}
+<div class="mock{% if iv.active %} is-live{% endif %}" id="mock-{{ iv.id }}">
+  <p class="mock-head">
+    <span class="mock-badge">Mock interview</span>
+    <span class="mock-count">{{ iv.progress }}</span>
+    {% if iv.active %}<span class="mock-dots" aria-hidden="true">{% for i in range(iv.questions) %}<i{% if i < iv.number %} class="on"{% endif %}></i>{% endfor %}</span>{% endif %}
+  </p>
+  {% for t in iv.turns %}
+  <div class="qa" id="turn-{{ t.id }}">
+    {% if t.said %}
+    <p class="qa-q">{{ t.said }}</p>
+    {% elif t.kind == "grade" %}
+    <p class="mock-sys">You ended the interview</p>
+    {% endif %}
+    {% if t.done and t.kind == "grade" %}
+    <div class="qa-a mock-verdict">
+      <p class="qa-head"><span class="spark" aria-hidden="true">✦</span> Verdict <span class="dim">· against the mid-level bar</span></p>
+      <p class="grade-chip g-{{ t.grade }}">Suggested self-grade: <strong>{{ t.grade_label }}</strong></p>
+      <div class="reader-text">{{ t.reply|md }}</div>
+    </div>
+    {% elif t.done %}
+    <div class="qa-a">
+      <p class="qa-head"><span class="spark" aria-hidden="true">✦</span> Interviewer <span class="dim">· {{ t.answered_at|ago_long }}</span></p>
+      {% if t.feedback %}<div class="mock-feedback">{{ t.feedback|md }}</div>{% endif %}
+      <div class="reader-text">{{ t.reply|md }}</div>
+    </div>
+    {% elif t.failed %}
+    <div class="qa-a is-failed" role="status">
+      <p class="qa-head"><span class="spark" aria-hidden="true">✦</span> The interviewer couldn't reply</p>
+      <p class="qa-note">{{ t.error[:1]|upper }}{{ t.error[1:] }}.{% if loop.last and t.kind == "open" %} Start a new interview.{% elif loop.last and iv.active %} Send your answer again, or end &amp; grade.{% endif %}</p>
+    </div>
+    {% elif t.skipped %}
+    <p class="mock-sys">Stopped before the interviewer replied</p>
+    {% elif t.retrying %}
+    <div class="qa-a" role="status">
+      <p class="qa-head"><span class="spark" aria-hidden="true">✦</span> Couldn't reply yet <span class="dim">· trying again {{ t.retry_at|until }}</span></p>
+      <p class="qa-note">{{ t.error[:1]|upper }}{{ t.error[1:] }}</p>
+    </div>
+    {% else %}
+    <div class="qa-a is-waiting" role="status">
+      {% if t.writing %}
+      <p class="qa-head"><span class="spark pulse" aria-hidden="true">✦</span> {{ "Grading your interview…" if t.kind == "grade" else "The interviewer is thinking…" }}</p>
+      {% else %}
+      <p class="qa-head"><span class="spark pulse" aria-hidden="true">✦</span> Waiting for your Mac <span class="dim">· {{ "Telegram pings you with the verdict" if t.kind == "grade" else "Telegram pings you if it's slow" }}</span></p>
+      {% endif %}
+      <div class="skeleton" aria-hidden="true"><i></i><i></i><i></i></div>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>

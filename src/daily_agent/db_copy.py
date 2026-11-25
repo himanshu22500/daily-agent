@@ -28,6 +28,7 @@ STORE_MODULES = (
     "covers",
     "insights_store",
     "instagram_posts",
+    "mock_interviews",
     "outbox",
     "preferences",
     "practice_cards",
