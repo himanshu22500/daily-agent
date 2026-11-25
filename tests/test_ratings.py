@@ -159,7 +159,7 @@ async def test_the_cli_extractor_knows_each_sessions_project(db, tmp_path, monke
     Ratings(db).rate("insight:curl", DOWN)
     seen = []
 
-    async def fake_extract(model, messages, *, feedback, project, study):
+    async def fake_extract(model, messages, *, feedback, project, study, work):
         seen.append((project, feedback))
         return []
 
@@ -168,7 +168,9 @@ async def test_the_cli_extractor_knows_each_sessions_project(db, tmp_path, monke
         tmp_path / "-Users-me-daily-agent" / "s1.jsonl",
         tmp_path / "-Users-me-tz-repotring" / "s2.jsonl",
     ]
-    extract = _extractor(Settings(db_path=db, database_url=""), files)
+    extract = _extractor(
+        Settings(db_path=db, database_url="", work_insights=True), files
+    )
     await extract(_messages("s2"))
     await extract(_messages("unknown"))
     (project, feedback), (none, _) = seen
@@ -183,12 +185,13 @@ async def test_the_cli_extractor_goes_on_without_ratings(tmp_path, monkeypatch):
     monkeypatch.setattr("daily_agent.cli.extraction_feedback", broken)
     seen = []
 
-    async def fake_extract(model, messages, *, feedback, project, study):
+    async def fake_extract(model, messages, *, feedback, project, study, work):
         seen.append(feedback)
         return []
 
     monkeypatch.setattr("daily_agent.cli.extract_insights", fake_extract)
-    await _extractor(Settings(db_path=str(tmp_path / "x.db"), database_url=""), [])(
-        _messages()
+    settings = Settings(
+        db_path=str(tmp_path / "x.db"), database_url="", work_insights=True
     )
+    await _extractor(settings, [])(_messages())
     assert seen == [""]

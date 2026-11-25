@@ -11,7 +11,8 @@ it reads new lines from every ``<project>/<session>.jsonl`` that
   pauses rather than mid-reply.
 
 It shares the flush's per-file cursors, so a transcript is never read twice
-whichever path gets to it first.
+whichever path gets to it first. With work insights off (#162) it still reads
+every transcript, for interview study, and stores only practice cards.
 """
 
 from __future__ import annotations
@@ -89,6 +90,7 @@ async def sweep_insights(
     max_consecutive_failures: int = 3,
     on_progress: Callable[[], None] | None = None,
     now: float | None = None,
+    work: bool = True,
 ) -> SweepResult:
     """Capture insights from every settled transcript with unread lines.
 
@@ -96,6 +98,7 @@ async def sweep_insights(
     never stops the rest, but ``max_consecutive_failures`` in a row ends the
     run early — that's a provider outage, not a bad transcript. ``on_progress``
     runs before each transcript (the CLI uses it to keep its lock fresh).
+    ``work=False``: store study cards only, no insights (``collect_file``).
     """
     pending = pending_transcripts(
         store, projects_dir, settle_seconds=settle_seconds, now=now
@@ -108,7 +111,9 @@ async def sweep_insights(
         if on_progress is not None:
             on_progress()
         try:
-            captured = await collect_file(store, item.path, marker, extractor)
+            captured = await collect_file(
+                store, item.path, marker, extractor, work=work
+            )
         except Exception as exc:  # noqa: BLE001 - one transcript never stops the sweep
             result.failed[str(item.path)] = (
                 str(exc).splitlines() or [type(exc).__name__]

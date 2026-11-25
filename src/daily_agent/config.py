@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     # and stamp files still live next to db_path because they are per-machine.
     database_url: str = ""
 
+    # Work insights from coding sessions (issue #162). Off: capture stores
+    # none (the sweep still reads every session for interview study, #139),
+    # the feed hides the ones already stored, and no headlines, covers or
+    # slides are written for them. On: as before, nothing was deleted.
+    work_insights: bool = False
     insights_marker: str = "insight:"
     insights_transcripts_dir: str = ""
     # Root the timed sweep reads (every <project>/<session>.jsonl under it).
@@ -95,6 +100,9 @@ class Settings(BaseSettings):
     web_host: str = "127.0.0.1"
     web_port: int = 8765
     web_page_size: int = 20
+    # The tab `/` opens (and the installed app starts on): interview, for-you,
+    # latest, saved or hidden (issue #162).
+    web_home: str = "interview"
     # Prep mode (issue #132): while its switch on For you is on, this share of
     # each For you edition is interview prep (0.5: every other card).
     prep_mix: float = 0.5

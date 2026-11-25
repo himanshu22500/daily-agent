@@ -27,7 +27,7 @@ from ..db import conflict_insert, create_tables, make_engine, session_scope
 from ..models import Insight
 from .covers import validate_cover
 from .headlines import plain
-from .insights_store import InsightStore
+from .insights_store import InsightStore, is_work_insight
 from .prep_tracks import CONCEPT_TYPE, DESIGN_TYPE
 from .videos import video_id_of
 
@@ -45,7 +45,6 @@ MIN_TEXT = 200
 # never the answer (system design cards reveal their answer in steps).
 # Flashcards, DSA problems and drills never get slides: their answers stay
 # hidden. Instagram carousels already have their own slides (#157).
-_INSIGHT_PREFIX = "insight:"
 _STORY_TYPES = {"video", CONCEPT_TYPE}
 _PRACTICE_TYPES = {DESIGN_TYPE}
 
@@ -56,7 +55,7 @@ def slide_mode(insight: Insight) -> str | None:
         return "practice"
     if insight.type in _STORY_TYPES or video_id_of(insight.key):
         return "story"
-    if insight.key.startswith(_INSIGHT_PREFIX):
+    if is_work_insight(insight.key):
         return "story"
     return None
 
@@ -209,16 +208,24 @@ async def generate_slides(
     concurrency: int = 2,
     tries: int = 2,
     on_progress: Callable[[], None] | None = None,
+    work: bool = True,
 ) -> SlideGeneration:
     """Write slide stories for picked items without one, newest first.
 
     Only what validates is stored. A rejected reply is retried with the
     validator's reasons, up to ``tries`` replies per item; a failing item never
-    stops the rest and is tried again on a later run.
+    stops the rest and is tried again on a later run. ``work=False`` (#162):
+    work insights are hidden, so they get none.
     """
     have = slides.keys()
     todo = sorted(
-        (i for i in store.all() if i.key not in have and wants_slides(i)),
+        (
+            i
+            for i in store.all()
+            if i.key not in have
+            and wants_slides(i)
+            and (work or not is_work_insight(i.key))
+        ),
         key=_newest_first,
     )
     if limit is not None:
