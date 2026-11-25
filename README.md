@@ -386,6 +386,48 @@ called.
   last 7 days as bars. It only reads the shared database, so the server shows
   it too.
 
+### Daily system design cards
+
+Each day, Claude writes one system design **case study** and one **building
+block** for the System design track (#134), pitched at a mid-level interview.
+They come from a curated list of about 45 topics in `feed/design_topics.py`:
+quick-commerce case studies (dark-store inventory, rider dispatch, delivery
+ETA, flash sale, ...), the classics (URL shortener, rate limiter, news feed,
+chat, ...) and building blocks (caching, sharding, Kafka, idempotency, ...).
+A hand-written latency and throughput cheat sheet goes in once, with no model
+call.
+
+```bash
+uv run daily-agent prep design status          # written, today's picks, next up (--all: every topic)
+uv run daily-agent prep design write           # write today's cards now
+uv run daily-agent prep design write --limit 3 # ...plus the next topics, ahead of the daily pace
+uv run daily-agent prep design write --topic url-shortener   # one topic, again if written
+```
+
+- **A case study** ("Design a URL shortener") opens with the interviewer's
+  question, what a mid-level answer must cover and "Try it for 10 minutes
+  before revealing". Then it reveals in steps: Requirements, Core entities,
+  API, High-level design, Deep dives, Senior extras (optional) and a
+  30-second recap.
+- **A building block** ("Consistent hashing") asks an interview question,
+  then reveals Answer, How it works, Trade-offs and Where it comes up in
+  interviews.
+- **Order:** quick-commerce topics and topics that touch your weak design tags
+  (cards you graded Missed or Shaky) come first, then the classics, then the
+  rest. A written topic never comes back unless you ask with `--topic`.
+- **Pace:** `DAILY_AGENT_PREP_DESIGN_PER_DAY` case studies and
+  `DAILY_AGENT_PREP_BLOCKS_PER_DAY` building blocks (1 each) per local day.
+  `daily-agent web` writes them in the background on the Mac. It checks every
+  15 minutes, so after the Mac sleeps it writes today's cards on waking;
+  missed days aren't made up. `--limit` and `--topic` are extras and don't use
+  up a day. Set `DAILY_AGENT_WEB_PREP_DESIGN_SYNC=false` to write them only
+  by hand. Hosts without the claude CLI (the feed server) never write them.
+- **Model:** `DAILY_AGENT_PREP_MODEL` through `claude -p`, with no tools. The
+  JSON schema carries the length limits. A failed card is retried after 1, 2
+  and 4 hours, then waits until every other topic is done.
+- Cards are `design` type, `web-only`, from the source "Daily system design",
+  tagged with the topic and the building blocks it uses.
+
 ### Rate items: 👍 / 👎
 
 Every card has a 👎, and every item ends with "Was this worth reading? 👍

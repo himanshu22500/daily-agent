@@ -189,6 +189,41 @@ model.
   Interview tab's header links to it.
 - A bad `DAILY_AGENT_TIMEZONE` falls back to UTC with a warning instead of
   stopping the feed server.
+## 2026-11-25 — A daily system design writer: one case study and one building block
+
+The maintainer is preparing for a mid-level system design round, using Hello
+Interview's Delivery Framework. #134 has Claude write system design cards from
+a curated topic list, a little every day.
+
+- **A topic list in code, not open-ended generation.** About 45 topics in
+  `feed/design_topics.py`. Each topic has a brief that fixes its scope, so a
+  rewrite answers the same question. Building-block slugs are the tag
+  vocabulary: a case study is tagged with the blocks it uses. That way a weak
+  block pulls the case studies built on it forward, and the reverse. The
+  topics are generic and public. Quick-commerce topics get a short public
+  description of the business model as context, never interview notes.
+- **Mid level, with senior material marked optional.** The Delivery
+  Framework's sections are the steps. Senior-only depth sits in "Senior
+  extras (optional)", so the core stays what a mid-level answer must cover.
+- **Limits live in the JSON schema** (lengths and item counts), as #102
+  learned. A case study is asked for in 700-900 words, and the schema keeps
+  it to about 5k characters, a few minutes per step on a phone. Headings and code fences in model text are flattened, so
+  only our own `### ` lines start steps. A diagram too wide or too tall for a
+  phone is dropped.
+- **A daily pace, not a backlog.** Each local day queues
+  `prep_design_per_day` case studies and `prep_blocks_per_day` building blocks
+  (1 each). The loop in `daily-agent web` checks every 15 minutes. After the
+  Mac sleeps, it writes today's cards and skips the missed days. Cards asked
+  for by hand (`--limit`, `--topic`) don't use up a day. A topic is written
+  once. Failures use `StoryQueue`'s backoff, then wait behind every untried
+  topic.
+- **The loop wraps the app instead of living in `web/app.py`.** `daily-agent
+  web` puts an ASGI wrapper around the feed. The wrapper runs `sync_forever`
+  for the app's lifespan, so the web app needs no new parameters. It runs only
+  where `claude_available()` and `DAILY_AGENT_WEB_PREP_DESIGN_SYNC` allow,
+  which means never on the feed server.
+- **The cheat sheet is hand-written.** Latency and throughput numbers are
+  checked once in code, so they never drift between model runs.
 
 ## 2026-11-25 — Practice packs and talk-track notes become prep cards as written
 
