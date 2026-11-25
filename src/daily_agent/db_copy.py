@@ -27,6 +27,7 @@ STORE_MODULES = (
     "channel_registry",
     "covers",
     "design_daily",
+    "dsa_daily",
     "insights_store",
     "instagram_posts",
     "mock_interviews",

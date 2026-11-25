@@ -1,5 +1,50 @@
 # Decisions
 
+## 2026-11-25 — Daily DSA problems are run before they're shown; drills have one fixed format
+
+The DSA track gets a new problem and a few "which pattern?" drills every day
+(#138), written by `prep_model` through `claude -p` (no tools, JSON schemas
+with the limits in them).
+
+- **Aimed by grades.** A problem goes to the weakest pattern (`weak_tags` over
+  `dsa` and `drill` cards; source tags such as `blinkit`, `must-do`, `daily`
+  and `drill` never count as weak). With nothing weak, it goes to the pattern
+  with the fewest `dsa` cards, and vocabulary order breaks ties. A second
+  problem on the same day takes another pattern. About two thirds of a drill
+  batch goes to patterns missed in the last 14 days, then weak ones. The rest
+  go to the least-drilled patterns, so the whole `DSA_PATTERNS` vocabulary
+  comes up over time.
+- **Correct or nothing.** A model-written solution that's wrong teaches the
+  wrong thing, so the reply carries 4-8 test cases and the optimal solution
+  must pass them before the card is stored. A failure goes back to Claude once
+  with the failing tests; a second failure rejects the problem, and the job
+  is retried with the usual backoff. Titles already in the feed are sent back
+  the same way.
+- **The check runs out of process.** `feed/dsa_check.py` runs the solution in
+  `sys.executable -I -S -B` with an empty temp directory, an empty
+  environment, a timeout, CPU and memory limits, and an audit hook that
+  refuses sockets, subprocesses, file writes and reads outside the standard
+  library. It keeps a careless solution from doing harm; it is not a sandbox
+  for hostile code. That's acceptable because the code comes from our own
+  tool-less call on a prompt we control. The comparison happens in the parent,
+  on JSON values.
+- **One drill format, shared with the Interview tab (#137).** The prompt is
+  2-4 scenario lines, a question line ending in `?`, then exactly four lines
+  `A) `..`D) ` naming patterns. `### Answer` starts with the correct option as
+  listed, then why; `### Why not the others` has one line per wrong option.
+  The correct option's letter is random. `check_drill_card` validates every
+  card before it's stored, and a drill that fails is dropped.
+- **Problem cards reveal like pack cards**, with the practice pack's step
+  names (Pattern, Key idea, Brute force, Optimal solution, Walkthrough, Edge
+  cases & follow-ups), so the UI treats both sources the same way.
+- **Paced by day, on the Mac.** Jobs live in `prep_dsa_jobs` on `StoryQueue`
+  (claim, backoff, give up). The first pass of a local day queues that day's
+  jobs and skips any still pending from earlier days, so a Mac that slept for
+  a week writes one day's worth. The loop runs on its own daemon thread,
+  started by `daily-agent web` only where the claude CLI exists and
+  `DAILY_AGENT_WEB_PREP_DSA_SYNC` is on. It lives outside the web app's
+  lifespan so the feature doesn't touch `web/app.py`.
+
 ## 2026-11-25 — The Interview tab reads prep cards step by step and grades them
 
 #137 is the UI on top of the prep tracks and grades from #130.

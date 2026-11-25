@@ -428,6 +428,44 @@ uv run daily-agent prep design write --topic url-shortener   # one topic, again 
 - Cards are `design` type, `web-only`, from the source "Daily system design",
   tagged with the topic and the building blocks it uses.
 
+### Daily DSA problems and "which pattern?" drills
+
+Every local day Claude (`prep_model`) adds new cards to the DSA track (#138):
+one Blinkit-flavoured, LeetCode-medium problem (source "Daily DSA") and three
+"which pattern?" drills (source "Pattern drills").
+
+```bash
+uv run daily-agent prep dsa status                  # written so far, today's jobs, next pattern
+uv run daily-agent prep dsa write                   # today's cards now, if not written yet
+uv run daily-agent prep dsa write --pattern heap    # one extra problem on a pattern
+uv run daily-agent prep dsa write --limit 2 --drills 5   # extra problems and drills
+```
+
+- **Aimed at weak spots:** the problem goes to your weakest pattern from your
+  grades (tags like `blinkit` or `must-do` don't count). With nothing weak yet,
+  it goes to the pattern with the fewest problems. About two thirds of the
+  drills go to patterns you missed lately or are weak on, and the rest to the
+  least-drilled ones, so every pattern comes up over time.
+- **A problem card** reveals like a practice-pack card: the prompt (scenario,
+  task, signature, constraints, examples, questions to ask), then **Pattern**,
+  **Key idea**, **Brute force**, **Optimal solution**, **Walkthrough** and
+  **Edge cases & follow-ups**. Claude is told the titles you already have on
+  that pattern, and a title already in the feed is sent back.
+- **The solution is run before you see it.** It must pass the test cases
+  written with it. They run in a separate Python with no site-packages, no
+  network and no files outside the standard library. A failure goes back to
+  Claude once, with the failing tests. A second failure rejects the problem,
+  and the day's job is retried later.
+- **A drill** is 2-4 scenario lines, a question, and options `A)` to `D)`;
+  **Answer** reveals the right option and why, then **Why not the others**.
+  It's tagged with the right pattern and `drill`.
+- **Pacing:** `daily-agent web` on the Mac writes them in the background (it
+  needs the claude CLI; the feed server never does). After the Mac sleeps, it
+  writes one day's worth, not one per missed day. Set
+  `DAILY_AGENT_PREP_DSA_PER_DAY` / `DAILY_AGENT_PREP_DRILLS_PER_DAY` to change
+  the counts, or `DAILY_AGENT_WEB_PREP_DSA_SYNC=false` to write only with
+  `prep dsa write`.
+
 ### Rate items: 👍 / 👎
 
 Every card has a 👎, and every item ends with "Was this worth reading? 👍

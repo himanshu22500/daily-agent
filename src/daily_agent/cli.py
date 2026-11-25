@@ -628,6 +628,9 @@ def web(
     extra = [h.strip() for h in settings.web_allowed_hosts.split(",") if h.strip()]
     allowed = list(dict.fromkeys(["127.0.0.1", "localhost", bind, *extra]))
     console.print(f"Insight feed at [bold]http://{bind}:{listen}/[/bold]")
+    # Daily DSA problems and pattern drills (#138): written on the Mac only.
+    if settings.web_prep_dsa_sync and claude_available():
+        _start_dsa_loop(settings)
     # Stories and explainers are written with `claude -p`. A host without it
     # (the always-on feed server, #111) must not claim queued work from the
     # shared database only to fail it.
@@ -1287,6 +1290,104 @@ def prep_design_write(
     console.print(
         f"Wrote {report.written} card(s)"
         + (f", {report.remaining} still queued" if report.remaining else "")
+        + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
+        + "."
+    )
+    for error in report.errors:
+        console.print(f"  [dim]{error}[/dim]", markup=False)
+
+
+# --- Daily DSA problems and "which pattern?" drills (#138) ----------------- #
+prep_dsa_app = typer.Typer(
+    no_args_is_help=True,
+    help='A new DSA problem and "which pattern?" drills every day.',
+)
+prep_app.add_typer(prep_dsa_app, name="dsa")
+
+
+def _dsa_sync(settings, model: str | None = None):
+    from .agents.dsa_writer import write_drills, write_problem
+    from .feed.dsa_daily import DsaSync
+
+    chosen = model or settings.prep_model
+    return DsaSync(
+        settings.db,
+        lambda request: write_problem(chosen, request),
+        lambda request: write_drills(chosen, request),
+        per_day=settings.prep_dsa_per_day,
+        drills_per_day=settings.prep_drills_per_day,
+    )
+
+
+def _start_dsa_loop(settings) -> None:
+    from .feed.dsa_daily import run_in_background
+
+    run_in_background(_dsa_sync(settings))
+
+
+@prep_dsa_app.command("status")
+def prep_dsa_status() -> None:
+    """Problems and drills written, today's progress, and what comes next."""
+    from .sources.practice_pack import DSA_PATTERNS
+
+    status = _dsa_sync(get_settings()).status()
+    today = (
+        ", ".join(f"{job.kind} {job.state}" for job in status.today) or "nothing yet"
+    )
+    console.print(
+        f"{status.problems} daily problem(s) and {status.drills} drill(s) in the "
+        f"feed. Today ({status.day}): {today}.",
+        markup=False,
+    )
+    console.print(
+        f"Next problem: {DSA_PATTERNS[status.next_pattern]} ({status.next_reason})."
+        + (f" Weak: {', '.join(status.weak)}." if status.weak else ""),
+        markup=False,
+    )
+    if status.uncovered:
+        console.print(
+            f"No problem yet on: {', '.join(status.uncovered)}.", markup=False
+        )
+    for job in status.failed:
+        console.print(f"  failed: {job.id}: {job.error}", markup=False)
+
+
+@prep_dsa_app.command("write")
+def prep_dsa_write(
+    limit: int = typer.Option(
+        None, help="Write N more problems now (default: today's, if not written)."
+    ),
+    pattern: str = typer.Option(
+        None, help="Pattern slug for the extra problems (e.g. heap)."
+    ),
+    drills: int = typer.Option(None, help="Write N more drills now."),
+    model: str = typer.Option(None, help="Claude Code model (default: prep_model)."),
+) -> None:
+    """Write today's DSA problem and drills now, or extra ones.
+
+    With no options: what the background loop does, today's cards if they
+    aren't written yet. With --limit, --pattern or --drills: just those, now.
+    """
+    from .sources.practice_pack import DSA_PATTERNS
+
+    if pattern and pattern not in DSA_PATTERNS:
+        console.print(
+            f"Unknown pattern {pattern!r}. Patterns: {', '.join(DSA_PATTERNS)}.",
+            style="red",
+            markup=False,
+        )
+        raise typer.Exit(1)
+    sync = _dsa_sync(get_settings(), model)
+    if limit is None and pattern is None and drills is None:
+        report = asyncio.run(sync.run_once())
+    else:
+        problems = limit if limit is not None else (1 if pattern else 0)
+        report = asyncio.run(
+            sync.write_now(problems=problems, pattern=pattern or "", drills=drills or 0)
+        )
+    console.print(
+        f"Wrote {report.problems} problem(s) and {report.drills} drill(s)"
+        + (f", {report.remaining} job(s) still queued" if report.remaining else "")
         + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
         + "."
     )
