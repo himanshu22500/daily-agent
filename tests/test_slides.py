@@ -273,6 +273,24 @@ def test_a_design_card_with_slides_shows_them_and_one_without_stays_text(tmp_pat
     assert 'class="cover' not in by_key["prep:design-daily:queues"]
 
 
+def test_a_youtube_fed_source_keeps_a_single_mark_on_the_slide_badge(
+    tmp_path, monkeypatch
+):
+    from daily_agent.feed import web_feed
+
+    db = str(tmp_path / "b.db")
+    card = insight("prep:yt-chan:vid-1", type="design")
+    card.source_session = "yt-chan"
+    InsightStore(db).add(card)
+    SlideStore(db).put("prep:yt-chan:vid-1", story(3))
+    monkeypatch.setattr(
+        web_feed.WebFeed, "_sources", lambda self: {"yt-chan": "▶ TechPrep"}
+    )
+    page = TestClient(create_app(db)).get("/?view=interview").text
+    badge = re.search(r'<span class="cover-badge">([^<]*)</span>', page).group(1)
+    assert badge == "▶ TechPrep"
+
+
 def test_the_reader_shows_the_slides_too(feed):
     _db, client = feed
     reader = client.get("/i/insight:with-slides").text

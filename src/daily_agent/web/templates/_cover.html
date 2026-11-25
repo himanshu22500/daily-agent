@@ -10,7 +10,8 @@
 {% if story %}
 {% from "_slides.html" import slide_strip %}
 {% set mark = "▶" if entry.video_id else ("✎" if entry.type in ("interview", "concept", "design") else "⌂") %}
-{{ slide_strip(story, badge=(mark ~ " " ~ entry.source) if entry.source else "") }}
+{# A YouTube-fed source is already named "▶ Channel": no second mark. #}
+{{ slide_strip(story, badge=(entry.source if entry.source.startswith("▶") else mark ~ " " ~ entry.source) if entry.source else "") }}
 {% elif entry.video_id %}
 <div class="cover has-art is-video" aria-hidden="true">
   <img src="{{ entry.thumbnail }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
