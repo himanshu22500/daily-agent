@@ -165,10 +165,16 @@ async def test_interview_tab_is_a_rotating_practice_deck(mixed, db):
     # A new deck on every visit: the order changes.
     orders = {tuple(_deck(mixed)) for _ in range(8)}
     assert len(orders) > 1
-    # Chips still pick one resume point, in the tracker's order.
+    # Chips still pick one resume point, in the tracker's order; since #137
+    # they sit under the Resume track chip.
     first = mixed.get("/?view=interview").text
     chips = re.findall(r'class="chip[^"]*"[^>]*>([^<]+)</a>', first)
+    assert chips == ["All", "Resume"]
+    resume = mixed.get("/?view=interview&track=resume").text
+    chips = re.findall(r'class="chip[^"]*"[^>]*>([^<]+)</a>', resume)
     assert chips == [
+        "All",
+        "Resume",
         "All points",
         "T0 · Role overview",
         "T5 · MySQL 8 → PostgreSQL 18 on AWS DMS + UUIDv7",

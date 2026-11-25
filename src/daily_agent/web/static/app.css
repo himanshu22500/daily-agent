@@ -9,6 +9,11 @@
   --chip-on: #1f1f1f;
   --chip-on-text: #ffffff;
   --code: #f1f3f4;
+  /* Interview prep (#137): track kickers and grades. */
+  --track-dsa: #0b7a55;
+  --track-design: #7a3fc4;
+  --right: #188038;
+  --shaky: #b06000;
   --new: #1a73e8;
   --love: #d93025;
   /* Ask about this (#121): the reader's bubble, Claude's card and mark. */
@@ -33,6 +38,10 @@
     --chip-on: #e3e3e3;
     --chip-on-text: #1f1f1f;
     --code: #2d2e30;
+    --track-dsa: #6fd4a8;
+    --track-design: #c9a2f7;
+    --right: #81c995;
+    --shaky: #fdd663;
     --new: #8ab4f8;
     --love: #f28b82;
     --bubble: #8ab4f8;
@@ -145,6 +154,10 @@ code {
 .chip.on { background: var(--chip-on); color: var(--chip-on-text); }
 /* Interview tab: resume points ("T5 · MySQL 8 → PostgreSQL 18 ..."). */
 .chip-point { max-width: 15em; overflow: hidden; text-overflow: ellipsis; }
+/* Interview tab (#137): tracks, then points or a tag (✕ clears it). */
+.chips-sub { margin-top: 6px; }
+.chip-tag { display: inline-flex; align-items: center; gap: 6px; }
+.chip-x { font-size: 0.75em; opacity: 0.75; }
 
 /* --- Feed stories (Discover-style cards) ------------------------------------- */
 
@@ -165,6 +178,20 @@ code {
 
 /* Flashcards have no cover: the question is the card. */
 .story.is-flashcard .headline { margin-top: 18px; -webkit-line-clamp: 6; }
+
+/* Step cards (#137): "DSA · Sliding window" above the headline. */
+.kicker {
+  margin: 0;
+  color: var(--kicker, var(--muted));
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.k-dsa { --kicker: var(--track-dsa); }
+.k-design { --kicker: var(--track-design); }
+.story .kicker { margin: 16px 18px 0; }
+.story.has-kicker .headline { margin-top: 4px; }
 
 .headline {
   display: -webkit-box;
@@ -535,6 +562,168 @@ html.reading, html.reading body { overflow: hidden; }
 .answer[open] > summary { margin-bottom: 18px; color: var(--muted); font-weight: 500; }
 .answer .if-open, .answer[open] .if-closed { display: none; }
 .answer[open] .if-open { display: inline; }
+
+/* Step cards (#137): the prompt, then one tap per step. Each step sits inside
+   the one before it, so a closed step is the next hint's button. */
+.reader .kicker { margin: 4px 0 6px; }
+.steps .prompt { margin-bottom: 4px; }
+
+.steps-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 0 2px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.steps-all { color: var(--new); font-weight: 600; text-decoration: none; white-space: nowrap; }
+
+details.step > summary { list-style: none; cursor: pointer; }
+details.step > summary::-webkit-details-marker { display: none; }
+details.step:not([open]) > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  margin: 10px 0 12px;
+  padding: 0 20px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  font-weight: 600;
+}
+details.step[open] > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 18px 0 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+details.step .if-open, details.step[open] > summary .if-closed { display: none; }
+details.step[open] > summary .if-open { display: inline; }
+.step-count { color: var(--muted); font-size: 0.78rem; font-weight: 500; letter-spacing: 0; }
+details.step[open] > summary .step-count { margin-left: auto; }
+
+/* Drill options: tap one to answer. */
+.options { display: flex; flex-direction: column; gap: 10px; margin: 6px 0 16px; }
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.02rem;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+}
+.option:disabled { cursor: default; }
+.option:disabled:not(.is-right):not(.is-wrong) { opacity: 0.55; }
+.option-letter {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--chip);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.option-text { flex: 1; min-width: 0; padding-top: 2px; overflow-wrap: anywhere; }
+.option-mark { flex: none; padding-top: 2px; font-weight: 700; }
+.option.is-right { border-color: var(--right); background: color-mix(in srgb, var(--right) 10%, var(--surface)); }
+.option.is-right .option-letter { background: var(--right); color: var(--surface); }
+.option.is-right .option-mark { color: var(--right); }
+.option.is-wrong { border-color: var(--love); background: color-mix(in srgb, var(--love) 9%, var(--surface)); }
+.option.is-wrong .option-letter { background: var(--love); color: var(--surface); }
+.option.is-wrong .option-mark { color: var(--love); }
+
+/* Got it / Shaky / Missed, after the last step or the flashcard's answer. */
+.grade {
+  margin: 22px 0 8px;
+  padding: 16px;
+  border: 1px solid var(--card-line);
+  border-radius: 20px;
+  background: var(--card);
+  text-align: center;
+  scroll-margin-top: 72px;
+}
+.grade h2 { margin: 0 0 12px; font-size: 1.05rem; font-weight: 500; }
+.grade-row { display: flex; gap: 8px; margin: 0; }
+.grade-btn {
+  flex: 1;
+  min-height: 46px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.g-got { color: var(--right); }
+.g-shaky { color: var(--shaky); }
+.g-missed { color: var(--love); }
+.grade-btn:disabled { opacity: 0.5; cursor: default; }
+.grade-hint { margin: 10px 0 0; color: var(--muted); font-size: 0.8rem; }
+.grade.is-graded { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; text-align: left; }
+.grade-done { display: flex; flex: 1; flex-wrap: wrap; gap: 4px 8px; margin: 0; font-weight: 600; }
+.grade-done strong { color: var(--text); }
+.regrade > summary { padding: 6px 4px; color: var(--new); font-size: 0.9rem; font-weight: 600; cursor: pointer; list-style: none; }
+.regrade > summary::-webkit-details-marker { display: none; }
+.regrade[open] { flex-basis: 100%; }
+.regrade[open] > summary { display: none; }
+
+/* Markdown blocks in items (#137): code never wraps (it scrolls sideways),
+   and neither do wide tables. On a phone both run edge to edge. */
+.reader-text pre.code {
+  margin: 0 0 1em;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border-radius: 10px;
+  background: var(--code);
+  font: 0.76em/1.55 var(--mono);
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  tab-size: 4;
+  -webkit-overflow-scrolling: touch;
+}
+.reader-text pre.code code { padding: 0; border-radius: 0; background: none; font: inherit; }
+.tk-k { color: var(--track-design); font-weight: 600; }
+.tk-s { color: var(--track-dsa); }
+.tk-c { color: var(--muted); font-style: italic; }
+.tk-n { color: var(--shaky); }
+
+.table-wrap { margin: 0 0 1em; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.reader-text table { min-width: 100%; border-collapse: collapse; font-size: 0.84em; line-height: 1.45; }
+.reader-text th, .reader-text td { padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.reader-text th { font-weight: 700; white-space: nowrap; }
+.reader-text td { min-width: 6.5em; }
+.reader-text ul, .reader-text ol { margin: 0 0 1em; padding-left: 1.4em; }
+.reader-text li { margin: 0.25em 0; overflow-wrap: anywhere; }
+.reader-text .md-h { margin: 1.2em 0 0.4em; font-size: 1em; font-weight: 700; }
+
+@media (max-width: 679px) {
+  .reader-body .reader-text pre.code { margin-inline: -20px; padding-inline: 20px; border-radius: 0; }
+  .reader-body .table-wrap { margin-inline: -20px; padding-inline: 20px; }
+  /* Inside an Ask answer's card, stay inside the card. */
+  .reader-body .qa-a pre.code { margin-inline: 0; padding-inline: 14px; border-radius: 10px; }
+  .reader-body .qa-a .table-wrap { margin-inline: 0; padding-inline: 0; }
+}
 
 .reader-text { font-size: 1.12rem; line-height: 1.7; }
 .reader-text p { margin: 0 0 1em; overflow-wrap: anywhere; }

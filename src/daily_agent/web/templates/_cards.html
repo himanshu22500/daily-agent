@@ -1,12 +1,13 @@
 {% for entry in entries %}{% include "_card.html" %}{% endfor %}
+{% set deck_tag = " tagged " ~ (filters.tag|tag_label) if filters.tag else "" %}
 {% if more_url %}
 <a class="more" href="{{ more_url }}" data-more>Load more</a>
 {% elif filters.view == "interview" and (entries or not first_page or next_revisit) %}
 <div class="end">
-  <p><strong>You've been through every question that's due.</strong></p>
-  <p>Seen questions come back after 1 day, then 3 days, a week, 3 weeks and 2 months (sooner if saved).
+  <p><strong>You've been through every {{ deck_names[filters.track or ""] }}{{ deck_tag }} that's due.</strong></p>
+  <p>A graded card comes back when its grade says: Missed tomorrow, Shaky in 3 days, Got it in a week or more. Others come back after 1 day, then 3 days, a week, 3 weeks and 2 months (sooner if saved).
     {% if next_revisit %}The next one is due {{ next_revisit|until }}.{% endif %}</p>
-  {% if entries or not first_page %}<p><a href="{{ feed_url(view='interview', point=filters.point) }}">Shuffle a new deck →</a></p>{% endif %}
+  {% if entries or not first_page %}<p><a href="{{ feed_url(view='interview', track=filters.track, tag=filters.tag, point=filters.point) }}">Shuffle a new deck →</a></p>{% endif %}
 </div>
 {% elif filters.view == "for-you" %}
 <div class="end">
@@ -19,6 +20,10 @@
 <p class="empty">
   {%- if filters.view == "saved" %}Nothing saved yet.
   {%- elif filters.view == "hidden" %}Nothing hidden.
+  {%- elif filters.view == "interview" and filters.tag %}No {{ deck_names[filters.track or ""] }}s{{ deck_tag }} yet.
+    <a href="{{ feed_url(view='interview', track=filters.track, point=filters.point) }}">Practice every {{ deck_names[filters.track or ""] }} →</a>
+  {%- elif filters.view == "interview" and filters.track == "dsa" %}No DSA problems or drills yet. Problem packs and the daily DSA writer add them here.
+  {%- elif filters.view == "interview" and filters.track == "design" %}No system design cards yet. The daily walkthroughs and recall cards land here.
   {%- elif filters.view == "interview" %}No interview prep yet. On the Mac, run <code>daily-agent prep import &lt;deep-dive folder&gt;</code>.
   {%- elif filters.q %}No insights match “{{ filters.q }}”.
   {%- else %}No insights yet. They appear here as soon as a session is flushed.

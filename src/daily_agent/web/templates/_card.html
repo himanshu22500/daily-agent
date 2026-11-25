@@ -1,9 +1,12 @@
 {% from "_icons.html" import icon %}
 {% set base = "/items/" ~ quote(entry.key) %}
 {% set back = "&next=" ~ quote(next_url) ~ ("&v=" ~ filters.view if show_revisit and filters else "") %}
-<article class="story t-{{ entry.type|type_class }}{% if entry.new %} is-new{% endif %}{% if entry.flashcard %} is-flashcard{% endif %}" data-card data-swap data-key="{{ entry.key }}">
+{# Flashcards and step cards (DSA, drills, design; #137) have no cover: the
+   question is the card. Step cards carry a kicker ("DSA · Sliding window"). #}
+<article class="story t-{{ entry.type|type_class }}{% if entry.new %} is-new{% endif %}{% if entry.flashcard or entry.stepped %} is-flashcard{% endif %}{% if entry.kicker %} has-kicker{% endif %}" data-card data-swap data-key="{{ entry.key }}">
   <a class="story-open" href="/i/{{ quote(entry.key) }}" data-open>
-    {% if not entry.flashcard %}{% include "_cover.html" %}{% endif %}
+    {% if not (entry.flashcard or entry.stepped) %}{% include "_cover.html" %}{% endif %}
+    {% if entry.kicker %}<p class="kicker k-{{ entry.track }}">{{ entry.kicker }}</p>{% endif %}
     <h2 class="headline">{{ entry.headline }}</h2>
     {% if entry.snippet %}<p class="snippet">{{ entry.snippet }}</p>{% endif %}
   </a>
@@ -21,7 +24,7 @@
       <button type="submit" class="icon-btn{% if entry.saved %} on{% endif %}" aria-pressed="{{ 'true' if entry.saved else 'false' }}" aria-label="{{ 'Unsave' if entry.saved else 'Save' }}">{{ icon("heart", entry.saved) }}</button>
     </form>
     <button type="button" class="icon-btn" data-share data-title="{{ entry.headline }}" data-text="{{ entry.text }}" aria-label="Share">{{ icon("share") }}</button>
-    {% if not entry.hidden %}
+    {% if not entry.hidden and not entry.gradable %}{# prep cards grade in the reader instead (#137) #}
     <form method="post" action="{{ base }}/down?as=card{{ back }}" data-rate="down" data-source="{{ entry.source }}" data-kinds="{{ entry.type|kinds }}">
       <button type="submit" class="icon-btn" aria-label="Not useful">{{ icon("thumb-down") }}</button>
     </form>
