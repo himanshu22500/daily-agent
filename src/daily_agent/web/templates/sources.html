@@ -30,7 +30,7 @@
     {% for source in sources %}
     <section class="source">
       <div class="source-head">
-        <span class="src-icon" style="--sh:{{ source_hue(source.title) }}" aria-hidden="true">{{ source.title[:1]|upper }}</span>
+        <span class="src-icon" style="--sh:{{ source_hue(source.title) }}" aria-hidden="true">{{ source_initial(source.title) }}</span>
         <a class="source-title" href="{{ source.url }}" target="_blank" rel="noopener noreferrer">{{ source.title }}</a>
         <span class="source-platform">{{ "Instagram" if source.platform == "instagram" else "YouTube" }}</span>
         <form method="post" action="/sources/unfollow">

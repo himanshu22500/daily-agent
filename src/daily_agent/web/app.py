@@ -64,6 +64,7 @@ from .render import (
     label,
     longdate,
     source_hue,
+    source_initial,
     type_class,
     until,
 )
@@ -270,6 +271,7 @@ def create_app(
         questions_for=question_store.thread,
         rating_of=ratings.get,
         source_hue=source_hue,
+        source_initial=source_initial,
         asset_version=_asset_version(),
     )
 

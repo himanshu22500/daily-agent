@@ -179,10 +179,21 @@ class FeedEntry:
             level = self.prep_level
             return f"{level} question · tap to answer" if level else "Tap to answer"
         if self.stepped:  # the prompt only: never a step
-            return plain(teaser(self.type, self.text))
+            return _past_title(plain(teaser(self.type, self.text)), self.title)
         if self.title:
             return plain(self.text)
         return split_first_sentence(self.text)[1]
+
+
+def _past_title(snippet: str, title: str) -> str:
+    """``snippet`` without a leading copy of ``title``: a practice card whose
+    prompt is its question (#139) would otherwise say it twice. Nothing left
+    means the card is just the question: invite the tap instead."""
+    if title:
+        head = plain(title)
+        if snippet.casefold().startswith(head.casefold()):
+            snippet = snippet[len(head) :].strip()
+    return snippet or "Tap to answer"
 
 
 @dataclass(frozen=True)
