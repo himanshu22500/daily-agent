@@ -454,6 +454,13 @@
     tpl.innerHTML = html;
     const fresh = tpl.content.querySelector("[data-ask]");
     if (!fresh || !section.isConnected) return;
+    if (fresh.dataset.askMode !== section.dataset.askMode) {
+      // A mock interview ended or failed to start (#133): the composer changes
+      // too, so the whole box is swapped.
+      section.replaceWith(fresh);
+      askReady();
+      return;
+    }
     section.querySelector("[data-ask-thread]").replaceWith(fresh.querySelector("[data-ask-thread]"));
     if (fresh.dataset.askPoll) section.dataset.askPoll = fresh.dataset.askPoll;
     else delete section.dataset.askPoll;
@@ -499,33 +506,42 @@
     const box = event.target;
     if (box.matches("[data-ask-box]") && event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
-      box.form.requestSubmit();
+      box.form.requestSubmit(box.form.querySelector(".send"));
     }
   });
 
+  // Asking, and the mock interview's buttons (#133): the button pressed says
+  // what to do (its name/value is posted) and what to toast.
   document.addEventListener("submit", async (event) => {
     const form = event.target;
     if (!form.matches("form[data-ask-form]")) return;
     event.preventDefault();
     const section = form.closest("[data-ask]");
-    const button = form.querySelector("button");
-    if (form.dataset.sending || button.disabled) return;
+    const buttons = [...form.querySelectorAll("button")];
+    const submitter = event.submitter || buttons[0];
+    if (form.dataset.sending || (submitter && submitter.disabled)) return;
     form.dataset.sending = "1";
-    button.disabled = true;
+    buttons.forEach((b) => (b.disabled = true));
+    const body = new URLSearchParams(new FormData(form));
+    if (submitter && submitter.name) body.set(submitter.name, submitter.value);
     try {
       const res = await fetch(form.action, {
         method: "POST",
-        body: new URLSearchParams(new FormData(form)),
+        body,
         headers: { "X-Requested-With": "fetch" },
       });
-      if (!res.ok && res.status !== 400 && res.status !== 429) throw new Error(String(res.status));
-      section.outerHTML = await res.text(); // the thread with the new question, or the error
-      if (res.ok) toast("Asked. Telegram will ping you when it's answered.");
+      if (![200, 400, 409, 429].includes(res.status)) throw new Error(String(res.status));
+      section.outerHTML = await res.text(); // the thread with the new turn, or the error
+      if (res.ok) {
+        toast((submitter && submitter.dataset.toast) || "Asked. Telegram will ping you when it's answered.");
+      }
       askReady();
     } catch {
       delete form.dataset.sending;
-      fitComposer(form.querySelector("[data-ask-box]"));
-      toast("Couldn't send the question. Try again.");
+      buttons.forEach((b) => (b.disabled = false));
+      const box = form.querySelector("[data-ask-box]");
+      if (box) fitComposer(box);
+      toast("Couldn't send that. Try again.");
     }
   });
   askReady(); // a standalone reader page (maybe with an open question)

@@ -38,6 +38,7 @@ from starlette.templating import Jinja2Templates
 
 from ..feed.covers import CoverStore, cover_slug
 from ..feed.instagram_posts import InstagramStore, InstagramSync, shortcode_of
+from ..feed.mock_interviews import DEFAULT_QUESTIONS, InterviewError, InterviewStore
 from ..feed.preferences import Preferences
 from ..feed.prep import PrepStore, PrepSync
 from ..feed.prep_grades import GOT, GRADES, MISSED, GradeStore
@@ -185,7 +186,8 @@ def create_app(
     With ``prep`` and ``prep_loop`` it writes queued interview-prep concept
     explainers (issue #108). Questions asked under an item are always stored;
     with ``questions`` and ``question_loop`` the server also answers them,
-    checking for new ones every ``question_poll_seconds`` (issue #119).
+    checking for new ones every ``question_poll_seconds`` (issue #119). The
+    same loop runs mock-interview turns (``questions.interviews``, #133).
 
     ``prep_mix`` is the share of a For you edition that is interview prep
     while the reader's Prep mode switch is on (issue #132).
@@ -677,6 +679,44 @@ def create_app(
             return templates.TemplateResponse(request, "_reader.html", context)
         return templates.TemplateResponse(request, "reader_page.html", context)
 
+    # Mock interviews in the Ask box of interview-prep cards (issue #133).
+    interviews = questions.interviews if questions is not None else None
+    interview_store = (
+        interviews.store if interviews is not None else InterviewStore(db_path)
+    )
+    interview_questions = (
+        interviews.questions if interviews is not None else DEFAULT_QUESTIONS
+    )
+
+    def ask_thread(asked: list, mocks: list) -> list[tuple[str, object]]:
+        """Questions and mock interviews on an item, as one chat in time order."""
+        items = [(q.asked_at, "q", q) for q in asked]
+        items += [(iv.started_at, "mock", iv) for iv in mocks]
+        items.sort(key=lambda item: (item[0], item[1]))
+        return [(kind, item) for _, kind, item in items]
+
+    templates.env.globals.update(
+        interviews_for=interview_store.for_item,
+        can_interview=lambda entry: entry.type in PREP_TYPES,
+        interview_questions=interview_questions,
+        ask_thread=ask_thread,
+    )
+
+    def _ask_refused(request: Request, entry, error: Exception, text: str):
+        """The Ask box again with the error, and what was typed kept."""
+        status = getattr(error, "status", 400)
+        context = {"entry": entry, "ask_error": str(error), "ask_text": text}
+        if request.headers.get("x-requested-with") == "fetch":
+            return templates.TemplateResponse(
+                request, "_ask.html", context, status_code=status
+            )
+        return templates.TemplateResponse(
+            request,
+            "reader_page.html",
+            {**_reader_context(request, entry), **context},
+            status_code=status,
+        )
+
     async def ask(request: Request) -> Response:
         """The "Ask about this" box under an item: GET its thread, POST a
         question (Claude answers it on the Mac; issue #119)."""
@@ -694,23 +734,56 @@ def create_app(
                 question_store.ask, entry.key, text, now=datetime.now(timezone.utc)
             )
         except QuestionError as exc:
-            # Shown again with the question kept, so nothing typed is lost.
-            context = {"entry": entry, "ask_error": str(exc), "ask_text": text}
-            if fetched:
-                return templates.TemplateResponse(
-                    request, "_ask.html", context, status_code=exc.status
-                )
-            return templates.TemplateResponse(
-                request,
-                "reader_page.html",
-                {**_reader_context(request, entry), **context},
-                status_code=exc.status,
-            )
+            return _ask_refused(request, entry, exc, text)
         ask_wake.set()  # answered right away when this server is the Mac's
         if fetched:
             return templates.TemplateResponse(request, "_ask.html", {"entry": entry})
         return RedirectResponse(
             f"/i/{quote(entry.key, safe='')}#ask-{question.id}", status_code=303
+        )
+
+    async def interview(request: Request) -> Response:
+        """A mock interview on a prep card (issue #133). POST ``do=start``, or
+        ``do=reply`` / ``do=end`` ("End & grade") with the ``interview`` id
+        and the ``answer``. Claude's side runs on the Mac, like Ask."""
+        entry = feed.entry(request.path_params["key"])
+        if entry is None:
+            return PlainTextResponse("No such insight.", status_code=404)
+        if not _same_origin(request):
+            return PlainTextResponse("Cross-site request refused.", status_code=403)
+        form = await _form(request)
+        step = form.get("do") or ("reply" if form.get("interview") else "start")
+        text = form.get("answer", "")
+        now = datetime.now(timezone.utc)
+        try:
+            if entry.type not in PREP_TYPES:
+                raise InterviewError("Mock interviews are for interview-prep cards.")
+            if step == "start":
+                current = await run_in_threadpool(
+                    interview_store.start,
+                    entry.key,
+                    questions=interview_questions,
+                    now=now,
+                )
+            elif step in ("reply", "end"):
+                current = await run_in_threadpool(
+                    interview_store.answer,
+                    entry.key,
+                    form.get("interview", ""),
+                    text,
+                    end=step == "end",
+                    now=now,
+                )
+            else:
+                raise InterviewError("Unknown step.")
+        except InterviewError as exc:
+            return _ask_refused(request, entry, exc, text)
+        ask_wake.set()  # the Mac's own server starts on it right away
+        if request.headers.get("x-requested-with") == "fetch":
+            return templates.TemplateResponse(request, "_ask.html", {"entry": entry})
+        return RedirectResponse(
+            f"/i/{quote(entry.key, safe='')}#turn-{current.turns[-1].id}",
+            status_code=303,
         )
 
     def post_image(request: Request) -> Response:
@@ -879,6 +952,7 @@ def create_app(
             Route("/seen", seen, methods=["POST"]),
             Route("/items/{key:path}/grade", grade, methods=["POST"]),
             Route("/items/{key:path}/ask", ask, methods=["GET", "POST"]),
+            Route("/items/{key:path}/interview", interview, methods=["POST"]),
             Route("/items/{key:path}/reasons", rate_reasons, methods=["POST"]),
             Route("/items/{key:path}/{action}", act, methods=["POST"]),
             Route("/card/{key:path}", card),

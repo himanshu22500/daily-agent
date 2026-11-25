@@ -42,8 +42,11 @@ class Settings(BaseSettings):
     instagram_check_hours: float = 3.0
     # Concept explainers for interview prep (`daily-agent prep import`).
     prep_model: str = "claude-code:claude-opus-5-5"
-    # Answers to questions asked under a feed item (issue #119).
+    # Answers to questions asked under a feed item (issue #119), and the mock
+    # interviewer on prep cards (issue #133).
     ask_model: str = "claude-code:claude-opus-5-5"
+    # Questions a mock interview asks before Claude grades it (1-10).
+    interview_questions: int = 4
     # The feed's address on the phone, for links in Telegram messages, e.g.
     # http://daily-agent.<tailnet>.ts.net (a name with a dot, so Telegram
     # makes it a link).

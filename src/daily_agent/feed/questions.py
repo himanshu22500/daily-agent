@@ -12,6 +12,9 @@ wait.
 Questions are answered in the order they were asked, so a follow-up on the
 same item is answered with the earlier answer in view. A Telegram message that
 fails to send is tried again a few times; the answer is in the feed either way.
+
+Mock interviews on interview-prep cards (#133, ``mock_interviews``) live in
+the same Ask box, and the same loop works through their turns.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 from sqlmodel import Field, SQLModel, func, select
@@ -46,6 +50,9 @@ from .story_queue import (
     now_utc,
 )
 from .web_feed import FeedEntry, WebFeed
+
+if TYPE_CHECKING:  # mock_interviews imports this module
+    from .mock_interviews import InterviewSync
 
 _LOG = logging.getLogger(__name__)
 
@@ -325,7 +332,11 @@ Notifier = Callable[[str], None]  # sends one message; raises if it can't
 
 
 class QuestionSync:
-    """Answer queued questions with Claude and send the Telegram messages."""
+    """Answer queued questions with Claude and send the Telegram messages.
+
+    With ``interviews``, each pass also works through mock-interview turns
+    (#133), so one background loop serves the whole Ask box.
+    """
 
     def __init__(
         self,
@@ -336,6 +347,7 @@ class QuestionSync:
         feed_url: str = "",
         per_run: int = PER_RUN,
         clock: Callable[[], datetime] = now_utc,
+        interviews: InterviewSync | None = None,
     ) -> None:
         self.store = QuestionStore(db_path)
         self.feed = WebFeed(db_path)
@@ -346,9 +358,11 @@ class QuestionSync:
         self.feed_url = feed_url
         self.per_run = max(1, per_run)
         self.clock = clock
+        self.interviews = interviews
 
     async def run_once(self, *, limit: int | None = None) -> SyncReport:
-        """Send messages still owed, then answer up to ``limit`` questions."""
+        """Send messages still owed, then answer up to ``limit`` questions (and
+        up to ``limit`` mock-interview turns)."""
         report = SyncReport()
         if self.notify is not None:
             for question in self.store.to_notify(now=self.clock()):
@@ -356,6 +370,12 @@ class QuestionSync:
         for row in self.store.ready(now=self.clock(), limit=limit or self.per_run):
             await self._answer(row, report)
         report.remaining = self.store.ready_count(now=self.clock())
+        if self.interviews is not None:
+            turns = await self.interviews.run_once(limit=limit)
+            report.written += turns.written
+            report.failed += turns.failed
+            report.remaining += turns.remaining
+            report.errors.extend(turns.errors)
         return report
 
     def request_for(self, question: Question) -> AskRequest | None:

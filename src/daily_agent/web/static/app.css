@@ -890,6 +890,99 @@ details.step[open] > summary .step-count { margin-left: auto; }
 .ask .form-error { margin: 8px 6px 0; }
 .ask-note { margin: 8px 6px 0; color: var(--muted); font-size: 0.8rem; }
 
+/* Mock interview in the Ask box of prep cards (#133) */
+
+.mock { display: flex; flex-direction: column; gap: 12px; scroll-margin-top: 72px; }
+.qa + .mock, .mock + .qa, .mock + .mock { margin-top: 10px; }
+.mock-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0;
+  padding: 9px 14px;
+  border-radius: 14px;
+  background: rgba(217, 119, 87, 0.1);
+  font-size: 0.86rem;
+}
+.mock-badge {
+  color: var(--claude);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.mock-count { font-weight: 600; }
+.mock-dots { display: inline-flex; gap: 5px; margin-left: auto; }
+.mock-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--card-line); }
+.mock-dots i.on { background: var(--claude); }
+.mock-sys {
+  align-self: center;
+  margin: 0;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: var(--chip);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.mock-feedback {
+  margin: 0 0 10px;
+  padding-left: 10px;
+  border-left: 3px solid var(--claude);
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.5;
+}
+.mock-feedback p { margin: 0 0 0.4em; overflow-wrap: anywhere; }
+.mock-verdict { border-color: rgba(217, 119, 87, 0.5); }
+.grade-chip {
+  display: inline-block;
+  margin: 0 0 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--chip);
+  font-size: 0.86rem;
+}
+.grade-chip.g-got { background: #e6f4ea; color: #137333; }
+.grade-chip.g-shaky { background: #fef7e0; color: #b06000; }
+.grade-chip.g-missed { background: #fce8e6; color: #c5221f; }
+@media (prefers-color-scheme: dark) {
+  .grade-chip.g-got { background: rgba(129, 201, 149, 0.16); color: #81c995; }
+  .grade-chip.g-shaky { background: rgba(253, 214, 99, 0.16); color: #fdd663; }
+  .grade-chip.g-missed { background: rgba(242, 139, 130, 0.16); color: #f28b82; }
+}
+
+.mock-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 2px 0; }
+.mock-btn {
+  padding: 8px 15px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mock-btn.is-end { border-color: var(--claude); color: var(--claude); }
+.mock-btn:disabled, .mock-go:disabled { opacity: 0.5; cursor: default; }
+.mock-start { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 12px 2px 0; }
+.mock-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 17px;
+  border: 1px solid var(--claude);
+  border-radius: 999px;
+  background: rgba(217, 119, 87, 0.08);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.94rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mock-hint { flex: 1 1 180px; color: var(--muted); font-size: 0.8rem; line-height: 1.35; }
+
 /* Suggested topics + Read next (end of the reader) */
 
 .topics { margin-top: 32px; }

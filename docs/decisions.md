@@ -116,6 +116,41 @@ System design tracks through `PrepItems.put` (`feed/practice_cards.py`).
   are ignored, and ratings feedback (#127) reaches the extractor as before.
   Transcript messages now carry the session's `cwd` so the folder can be
   checked.
+## 2026-11-25 — The mock interviewer lives in the Ask box, one turn per row
+
+Reading prep cards is passive, and the maintainer wanted practice closer to a
+real round (#133). "Interview me" on a prep card starts a short mock interview
+with Claude as a mid-level interviewer.
+
+- **Built on Ask, stored apart.** Each turn is a row in a new
+  `feed_interview_turns` table, so `feed_questions` and old code during a
+  deploy are untouched. Turns share an interview id and a turn number. A
+  unique `(interview, n)` means two taps on "send" can't both become the next
+  turn. The table is a `StoryQueue` (claims and 1h/2h/4h retries), and the
+  Mac's existing Ask loop (`QuestionSync`) works through it after the
+  questions. That keeps it behind the same `claude_available()` gate and
+  needs no second loop.
+- **One `claude -p` call per turn, no tools.** Each call gets the card and
+  the transcript so far, with one of three tasks (open, next, verdict), each
+  with its own JSON schema. The verdict comes back as structured fields
+  (summary, strong, missing, beyond, outline, grade) and is stored as the
+  feed's small markdown subset. The suggested grade uses the self-grading
+  codes from #131. It is shown, not recorded: the reader still grades the
+  card themselves.
+- **Mid-level bar.** "Missing" lists only what a mid-level candidate is
+  expected to cover. Senior or staff points go under "Optional: beyond
+  mid-level" and don't count. Resume cards are the only source of facts
+  about the maintainer's work. The model asks for a missing fact instead of
+  inventing it.
+- **Quiet Telegram.** No message per turn. One goes out for the verdict, or
+  when a question took longer than 2 minutes (the reader has probably left).
+- **Length.** `interview_questions` (default 4, kept within 1 to 10) is the
+  number of questions before the verdict. "End & grade" stops sooner and
+  grades only what was answered. Each interview stores its own count.
+- **Start over never hangs.** A retried turn can wait hours (a usage limit),
+  so "Start over" drops a turn still queued for the Mac. It waits only while
+  Claude is writing a turn or a verdict is pending. A conditional update means
+  a claim that won the race is never dropped.
 
 ## 2026-11-25 — Practice packs and talk-track notes become prep cards as written
 

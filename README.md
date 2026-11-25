@@ -402,6 +402,31 @@ answer.
 - **Limits:** a question can be up to 1,000 characters, and at most 20 can be
   waiting at once.
 
+### Mock interview ("Interview me")
+
+Every interview-prep card (resume, DSA, system design) has **Interview me**
+under its Ask box. Claude plays a mid-level interviewer about that card, in the
+same chat:
+
+- **One question at a time.** System design starts with requirements, then the
+  design, then probes ("what happens when the cache node dies?"). DSA goes
+  clarify, approach, complexity, edge cases. A resume card gets a probing
+  follow-up on the claim; facts about your work come only from the card.
+- **After each answer:** a line or two of feedback, then the next question.
+- **The verdict:** after `DAILY_AGENT_INTERVIEW_QUESTIONS` questions (default
+  4), or when you tap **End & grade**: what was strong, what was missing, a
+  short model-answer outline, and a suggested self-grade (Got it / Shaky /
+  Missed). Senior-only points are listed as optional and don't count against
+  you.
+- **Where it runs:** like Ask, on the Mac (`DAILY_AGENT_ASK_MODEL`). The feed
+  server only stores each turn (`feed_interview_turns`). `questions answer`
+  works through waiting turns by hand too.
+- **Telegram stays quiet** while you're answering. It pings once the verdict is
+  ready, or when a question took more than 2 minutes to come (the Mac was
+  asleep).
+- **Start over** drops a turn still waiting for the Mac and opens a new
+  interview. It waits while Claude is writing a reply or grading.
+
 ### On your phone (Tailscale)
 
 Keep the server on loopback and let `tailscale serve` relay it to devices signed
