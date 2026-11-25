@@ -646,6 +646,10 @@ def web(
             page_size=settings.web_page_size,
             prep_mix=settings.prep_mix,
             allowed_hosts=allowed,
+            # Interview prep drill and progress page (#136).
+            drill=_prep_drill(settings),
+            local_tz=settings.timezone,
+            interview_date=settings.interview_date,
             videos=_video_sync(settings),
             instagram=_instagram_sync(settings),
             video_loop=settings.web_video_sync and writes,
@@ -658,6 +662,27 @@ def web(
         host=bind,
         port=listen,
         log_level="warning",
+    )
+
+
+def _prep_drill(settings):
+    """The Telegram prep drill (#136): only where Telegram is set up, so the
+    Mac sends it and a server without the bot's secrets doesn't."""
+    from .feed.prep_drill import PrepDrill
+    from .feed.prep_progress import local_zone
+
+    notify = _telegram_notifier(settings)
+    if notify is None or not settings.prep_drill_telegram:
+        return None
+    return PrepDrill(
+        settings.db,
+        notify,
+        zone=local_zone(settings.timezone),
+        feed_url=settings.feed_url,
+        drill_hour=settings.prep_drill_hour,
+        answer_hour=settings.prep_answer_hour,
+        quiet_start=settings.feed_quiet_start,
+        quiet_end=settings.feed_quiet_end,
     )
 
 

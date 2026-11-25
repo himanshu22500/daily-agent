@@ -151,6 +151,44 @@ with Claude as a mid-level interviewer.
   so "Start over" drops a turn still queued for the Mac. It waits only while
   Claude is writing a turn or a verdict is pending. A conditional update means
   a claim that won the race is never dropped.
+## 2026-11-25 — A morning prep drill on Telegram, and a /progress page
+
+#136 gives interview prep a daily rhythm and a view of how prepared the
+reader is. Both only read and write the shared database; neither calls a
+model.
+
+- **Drill in the morning, answers in the evening.** At
+  `DAILY_AGENT_PREP_DRILL_HOUR` (9) in `DAILY_AGENT_TIMEZONE` (Asia/Kolkata)
+  the bot sends one DSA card and one design card, prompt only, each linked to
+  `/i/<key>` in the feed. At `DAILY_AGENT_PREP_ANSWER_HOUR` (20) it sends
+  their answers: a DSA card's Pattern and Key idea, a design card's 30-second
+  recap (else its first step). Plain text with no `parse_mode`, so card
+  markdown can't break a send. Grading stays in the feed.
+- **Picking.** Due or never-seen cards come first. Then cards on the reader's
+  weakest tags (for DSA, canonical patterns only), then ones not drilled this
+  week, then must-do cards, then problems before pattern quizzes. Ties rotate
+  by day. A card drilled yesterday is never picked, and neither is a hidden
+  one. A track with nothing eligible sits the day out.
+- **Exactly once, from either machine.** The loop runs inside `daily-agent
+  web` wherever Telegram is configured (`DAILY_AGENT_PREP_DRILL_TELEGRAM=false`
+  turns it off). Each (local day, slot) is a `prep_drills` row, claimed with an
+  insert-once and RETURNING, so the Mac and the server can't both send. A
+  failed send is tried up to three times, 10 minutes apart. A runner that dies
+  mid-send is not retried, because a duplicate message is worse than a missing
+  one.
+- **Catch-up.** A machine that slept through the morning sends the drill
+  when it wakes, until the evening hour. Answers go out only after a drill
+  did. The feed's quiet hours hold both.
+- **`/progress`** reads only the shared database, so the server shows it too.
+  It has a countdown to `DAILY_AGENT_INTERVIEW_DATE` (hidden when unset), the
+  streak of local days with a grade, and per track the cards, seen, graded
+  and got-it rate. There is a tile per canonical DSA pattern (a pattern with
+  no cards shows as a gap) and per design topic; each links to the Interview
+  tab filtered by track and tag. Then the 5 weakest tags and the last 7 days
+  of grading as bars. Everything goes by each card's latest grade. The
+  Interview tab's header links to it.
+- A bad `DAILY_AGENT_TIMEZONE` falls back to UTC with a warning instead of
+  stopping the feed server.
 
 ## 2026-11-25 — Practice packs and talk-track notes become prep cards as written
 
