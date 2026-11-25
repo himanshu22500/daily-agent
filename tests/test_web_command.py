@@ -23,18 +23,22 @@ def started(monkeypatch, tmp_path):
 
     monkeypatch.setattr(web_app, "create_app", fake_create_app)
     monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: None)
+    # The daily DSA loop (#138) runs on its own thread: record, don't start it.
+    dsa_loops: list = []
+    monkeypatch.setattr(cli, "_start_dsa_loop", dsa_loops.append)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DAILY_AGENT_DB_PATH", str(tmp_path / "w.db"))
 
     def run() -> tuple[dict, str]:
         seen.clear()
+        dsa_loops.clear()
         cli.get_settings.cache_clear()
         try:
             result = CliRunner().invoke(cli.app, ["web"])
         finally:
             cli.get_settings.cache_clear()
         assert result.exit_code == 0, result.output
-        return dict(seen), result.output
+        return dict(seen, dsa_loop=bool(dsa_loops)), result.output
 
     return run
 
@@ -57,3 +61,17 @@ def test_with_claude_the_settings_decide(started, tmp_path, monkeypatch):
     monkeypatch.setenv("DAILY_AGENT_WEB_PREP_SYNC", "false")
     kwargs, _ = started()
     assert kwargs["video_loop"] is True and kwargs["prep_loop"] is False
+
+
+def test_daily_dsa_needs_claude_and_its_setting(started, tmp_path, monkeypatch):
+    kwargs, _ = started()
+    assert kwargs["dsa_loop"] is False  # no claude CLI (the feed server)
+    fake = tmp_path / "claude"
+    fake.write_text("#!/bin/sh\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("DAILY_AGENT_CLAUDE_BIN", str(fake))
+    kwargs, _ = started()
+    assert kwargs["dsa_loop"] is True
+    monkeypatch.setenv("DAILY_AGENT_WEB_PREP_DSA_SYNC", "false")
+    kwargs, _ = started()
+    assert kwargs["dsa_loop"] is False and kwargs["prep_loop"] is True

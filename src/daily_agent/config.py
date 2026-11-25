@@ -111,6 +111,11 @@ class Settings(BaseSettings):
     # asked on the feed server, so the Mac has to look for them.
     web_ask_sync: bool = True
     web_ask_poll_seconds: float = 15.0
+    # Daily DSA problems and "which pattern?" drills (#138): how many per local
+    # day, written by prep_model in the background (else: `prep dsa write`).
+    prep_dsa_per_day: int = 1
+    prep_drills_per_day: int = 3
+    web_prep_dsa_sync: bool = True
 
     @property
     def db(self) -> str:
