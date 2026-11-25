@@ -1,5 +1,17 @@
 # Decisions
 
+## 2026-11-25 — The phone app is an installable web app, not a native app
+
+The feed is installed from Chrome on Android as a web app (#154) instead of a
+native APK. A native app needs a new build installed for every UI change; the
+web app is the server's own pages, so deploy-on-merge reaches the phone with no
+reinstall. Capture, `claude -p` and the database stay on the Mac and server;
+only the reading UI is on the phone. Installing needs HTTPS, which comes from
+`tailscale serve --https=443` (tailnet-only, Tailscale-issued certificate). The
+service worker is network-first for pages and cache-first for versioned
+assets, and its cache name is the asset hash, so a deploy drops stale files.
+Web push for the prep pings is #155.
+
 ## 2026-11-25 — Daily DSA problems are run before they're shown; drills have one fixed format
 
 The DSA track gets a new problem and a few "which pattern?" drills every day

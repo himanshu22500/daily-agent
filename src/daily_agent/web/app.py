@@ -130,7 +130,7 @@ def _same_origin(request: Request) -> bool:
 def _asset_version() -> str:
     """Short hash of the static files, appended to their URLs (cache-busting)."""
     digest = hashlib.sha1()
-    for name in ("app.css", "app.js"):
+    for name in ("app.css", "app.js", "sw.js"):
         digest.update((HERE / "static" / name).read_bytes())
     return digest.hexdigest()[:10]
 
@@ -491,6 +491,22 @@ def create_app(
                     interview_date=interview_on,
                 )
             },
+        )
+
+    sw_body = (
+        (HERE / "static" / "sw.js")
+        .read_text()
+        .replace("__VERSION__", templates.env.globals["asset_version"])
+    )
+
+    def service_worker(request: Request) -> Response:
+        """The installed app's service worker (issue #154), served from the root
+        so it controls every page. no-cache: the browser checks for a new one on
+        each visit, so a deploy reaches the phone the next time it's opened."""
+        return Response(
+            sw_body,
+            media_type="text/javascript",
+            headers={"Cache-Control": "no-cache"},
         )
 
     def version(request: Request) -> Response:
@@ -979,6 +995,7 @@ def create_app(
             Route("/progress", progress),
             Route("/new-count", new_count),
             Route("/version", version),
+            Route("/sw.js", service_worker),
             Route("/prefs/prep-mode", prep_switch, methods=["POST"]),
             Route("/seen", seen, methods=["POST"]),
             Route("/items/{key:path}/grade", grade, methods=["POST"]),

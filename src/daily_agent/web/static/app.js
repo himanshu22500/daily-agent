@@ -803,3 +803,13 @@
     });
   }
 })();
+
+// --- Installed app (#154) ------------------------------------------------------
+// The service worker makes the feed installable from Chrome on Android and lets
+// it open offline. Browsers only allow it over HTTPS (or localhost), so on the
+// plain-HTTP address this quietly does nothing.
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}

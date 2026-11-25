@@ -8,11 +8,35 @@ Mac (when awake)                           Lightsail "daily-agent" (always on)
 transcripts -> claude -p -> insights ─┐    Postgres 16 (database daily_agent)
 YouTube/Instagram -> claude -p -> stories ├──▶   ▲
 Telegram delivery                     ┘    │    daily-agent web  ◀── phone
-                                                 (tailscale serve, port 80)
+                                                 (tailscale serve, ports 80 + 443)
 ```
 
 Both machines read and write the same Postgres database directly. Everything is
 reachable only over the tailnet; the Lightsail firewall has no public ports.
+
+## The phone app (HTTPS)
+
+The feed installs as an app from Chrome on Android (issue #154): open
+`https://daily-agent.<tailnet>.ts.net` → ⋮ → **Install app**. Chrome only
+installs (and only runs the service worker that makes it open offline) over
+HTTPS, so `deploy/server/update.sh` serves the feed on 443 as well as 80 with
+`tailscale serve --https=443`. Tailscale issues the certificate; the name is
+still reachable only on the tailnet.
+
+One-time: turn on **HTTPS Certificates** in the Tailscale admin console (DNS
+page). Until then the deploy warns and keeps serving plain HTTP. After turning
+it on, either wait for the next deploy or run on the server:
+
+```bash
+sudo tailscale serve --bg --https=443 http://127.0.0.1:8765
+```
+
+Then set `DAILY_AGENT_FEED_URL=https://daily-agent.<tailnet>.ts.net` in the
+Mac's and the server's `.env`, so links in Telegram open the app. Plain
+`http://daily-agent/` keeps working, as a website rather than the app.
+
+New features need no reinstall: pages are network-first and the service worker
+is fetched uncached, so a deploy reaches the phone the next time the app opens.
 
 | | Where |
 |---|---|
