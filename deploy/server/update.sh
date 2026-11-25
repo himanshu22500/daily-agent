@@ -34,6 +34,12 @@ sudo systemctl enable -q --now daily-agent-autodeploy.timer
 sudo systemctl restart daily-agent-web
 if tailscale status >/dev/null 2>&1; then
   sudo tailscale serve --bg --http=80 http://127.0.0.1:8765 >/dev/null
+  # HTTPS too, so Chrome can install the feed as an app (issue #154). Needs
+  # "HTTPS Certificates" on in the tailnet's DNS settings; until then this
+  # fails (or waits for it), so it's time-boxed and never fails the deploy.
+  if ! sudo timeout 30 tailscale serve --bg --https=443 http://127.0.0.1:8765 >/dev/null 2>&1; then
+    echo "HTTPS not served: turn on HTTPS Certificates at https://login.tailscale.com/admin/dns" >&2
+  fi
 else
   echo "tailscale is not up yet: run 'sudo tailscale up --hostname daily-agent', then this again" >&2
 fi
