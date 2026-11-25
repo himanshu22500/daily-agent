@@ -15,6 +15,10 @@ and Read next like everything else:
 - status ``web-only``: the Telegram outbox only queues ``new`` insights, so
   video stories never reach Telegram.
 
+The story call also returns interview practice cards (issue #139), stored
+through ``practice_cards`` under the channel; ``cards_from_videos`` writes them
+for stories written before that, from the stored story.
+
 ``VideoSync.run_once`` does one pass (check due sources, then write a few
 queued videos); the web server runs it in a background loop and ``daily-agent
 videos sync`` runs it by hand. Two runners never write the same video: a video
@@ -25,8 +29,9 @@ by a crashed runner expires.
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from contextlib import aclosing
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 
@@ -34,7 +39,7 @@ from sqlalchemy import update
 from sqlmodel import Field, SQLModel, func, select
 
 from ..db import conflict_insert, create_tables, make_engine, session_scope
-from ..models import Insight, VideoStory
+from ..models import Insight, PrepCard, VideoStory
 from ..sources.youtube import (
     VIDEO_ID,
     BadSourceLink,
@@ -47,7 +52,8 @@ from ..sources.youtube import (
     YouTubeError,
     uploads_list,
 )
-from .insights_store import InsightStore
+from .insights_store import InsightRow, InsightStore
+from .practice_cards import PracticeCards
 from .story_queue import (  # noqa: F401 - re-exported for callers and tests
     CLAIM_TTL,
     DONE,
@@ -343,6 +349,7 @@ class VideoSync:
     ) -> None:
         self.store = VideoStore(db_path)
         self.insights = InsightStore(db_path)
+        self.cards = PracticeCards(db_path)
         self.youtube = youtube
         self.write_story = write_story
         self.check_every = check_every
@@ -484,14 +491,7 @@ class VideoSync:
         now = self.clock()
         if not self.store.claim(row.video_id, now=now):
             return
-        video = Video(
-            video_id=row.video_id,
-            title=row.title,
-            published_at=_aware(row.published_at),
-            description=row.description,
-            channel_id=row.channel_id,
-            channel=row.channel,
-        )
+        video = _video(row)
         try:
             transcript: Transcript | None = await self.youtube.transcript(row.video_id)
         except NoCaptions as exc:
@@ -523,6 +523,14 @@ class VideoSync:
                 status=STORY_STATUS,
             )
         )
+        self.cards.put_video(
+            row.video_id,
+            row.channel_id or row.source_id,
+            row.channel,
+            story.cards,
+            captured_at=video.published_at,
+            now=self.clock(),
+        )
         self.store.finish(row.video_id)
         report.written += 1
 
@@ -532,3 +540,112 @@ class VideoSync:
         if gave_up:
             report.failed += 1
         _LOG.warning("Video %s: %s", row.video_id, error)
+
+
+def _video(row: VideoRow) -> Video:
+    return Video(
+        video_id=row.video_id,
+        title=row.title,
+        published_at=_aware(row.published_at),
+        description=row.description,
+        channel_id=row.channel_id,
+        channel=row.channel,
+    )
+
+
+# --- practice cards for stories written before cards (issue #139) ---------- #
+
+# (video, story headline, story text) -> the video's cards (maybe none)
+CardWriter = Callable[[Video, str, str], Awaitable[list[PrepCard]]]
+
+
+@dataclass
+class CardsReport:
+    videos: int = 0  # videos whose cards were written (some have none)
+    cards: int = 0  # cards added to the feed
+    remaining: int = 0  # videos still without cards
+    errors: list[str] = field(default_factory=list)
+    stopped_early: bool = False
+
+
+def _of_channel(row: VideoRow, channels: list[str]) -> bool:
+    """``channels``: names (any part, any case) or ids; empty = every channel."""
+    name = row.channel.lower()
+    return not channels or any(
+        c in (row.channel_id, row.source_id) or (c.strip() and c.lower() in name)
+        for c in channels
+    )
+
+
+async def cards_from_videos(
+    db_path: str | Path,
+    write_cards: CardWriter,
+    *,
+    limit: int | None = None,
+    channels: Iterable[str] = (),
+    max_consecutive_failures: int = 3,
+    clock: Callable[[], datetime] = _now,
+) -> CardsReport:
+    """Write practice cards for video stories that have none yet, newest first.
+
+    The stored story stands in for the captions, so nothing is fetched from
+    YouTube. A video is done once its cards are written, even when it isn't
+    interview prep and there are none; done videos are skipped. A failed
+    video stays to do; several failures in a row end the run (an outage).
+    """
+    store = VideoStore(db_path)
+    practice = PracticeCards(db_path)
+    done = practice.done_videos()
+    wanted = list(channels)
+    with session_scope(store._engine) as session:
+        rows = [
+            row
+            for row in session.exec(
+                select(VideoRow)
+                .where(VideoRow.state == DONE)
+                .order_by(VideoRow.published_at.desc(), VideoRow.video_id.desc())
+            ).all()
+            if row.video_id not in done and _of_channel(row, wanted)
+        ]
+        stories = {
+            story.key: story
+            for story in session.exec(
+                select(InsightRow).where(
+                    InsightRow.key.in_([video_key(row.video_id) for row in rows])
+                )
+            ).all()
+        }
+    todo = [
+        (row, stories[video_key(row.video_id)])
+        for row in rows
+        if video_key(row.video_id) in stories
+    ]
+    report = CardsReport()
+    streak = tried = 0
+    for row, story in todo:
+        if limit is not None and tried >= limit:
+            break
+        if streak >= max(1, max_consecutive_failures):
+            report.stopped_early = True
+            break
+        tried += 1
+        video = _video(row)
+        try:
+            cards = await write_cards(video, story.title or "", story.text)
+        except Exception as exc:  # noqa: BLE001 - one video never stops the rest
+            report.errors.append(f"{row.title or row.video_id}: {_first_line(exc)}")
+            streak += 1
+            continue
+        streak = 0
+        put = practice.put_video(
+            row.video_id,
+            row.channel_id or row.source_id,
+            row.channel,
+            cards,
+            captured_at=video.published_at,
+            now=clock(),
+        )
+        report.videos += 1
+        report.cards += put.added
+    report.remaining = len(todo) - report.videos
+    return report

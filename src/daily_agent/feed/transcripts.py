@@ -27,6 +27,7 @@ class TranscriptMessage:
     timestamp: str
     role: str  # "user" | "assistant"
     text: str
+    cwd: str = ""  # the session's working directory (study folders, #139)
 
 
 def _record_text(record: dict) -> tuple[str, str] | None:
@@ -69,6 +70,7 @@ def parse_line(line: str) -> TranscriptMessage | None:
         timestamp=record.get("timestamp", ""),
         role=role,
         text=text,
+        cwd=record.get("cwd", "") or "",
     )
 
 

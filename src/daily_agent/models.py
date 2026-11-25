@@ -47,8 +47,29 @@ class InsightCandidate(BaseModel):
     score: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
+class PrepStep(BaseModel):
+    title: str
+    body: str
+
+
+class PrepCard(BaseModel):
+    """An interview practice card Claude wrote from a video or a study session
+    (#139). Lenient on purpose: ``feed.practice_cards.clean_cards`` validates."""
+
+    track: str  # "dsa" | "design"
+    question: str
+    answer: str = ""
+    why_it_matters: str = ""
+    steps: list[PrepStep] = Field(default_factory=list)  # a design walkthrough
+    tags: list[str] = Field(default_factory=list)
+
+
 class InsightExtraction(BaseModel):
     candidates: list[InsightCandidate] = Field(default_factory=list)
+    # A session spent studying for interviews yields practice cards instead of
+    # coding insights (#139).
+    study_session: bool = False
+    prep_cards: list[PrepCard] = Field(default_factory=list)
 
 
 class VideoStory(BaseModel):
@@ -58,3 +79,5 @@ class VideoStory(BaseModel):
     headline: str
     text: str
     tags: list[str] = Field(default_factory=list)
+    # Practice cards from an interview-prep video (#139).
+    cards: list[PrepCard] = Field(default_factory=list)

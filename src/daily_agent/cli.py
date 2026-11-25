@@ -51,12 +51,13 @@ from .feed.insights_sweep import pending_transcripts, sweep_insights, unread_mes
 from .feed.outbox import Channel, Outbox
 from .feed.pacer import Pacer
 from .feed.instagram_posts import InstagramSync
+from .feed.practice_cards import is_study_session
 from .feed.prep import PrepSync
 from .feed.projects import session_projects
 from .feed.ratings import extraction_feedback
 from .feed.transcripts import all_session_files, session_files
 from .feed.questions import QuestionSync
-from .feed.videos import VideoSync
+from .feed.videos import VideoSync, cards_from_videos
 from .sources.instagram import (
     SCOPES,
     Instagram,
@@ -207,8 +208,9 @@ def insights_collect(
         )
         console.print(
             f"Captured [bold]{result.new}[/bold] new insight(s) "
-            f"({result.marked} marker, {result.extracted} extracted) from "
-            f"{result.scanned} new record(s)."
+            f"({result.marked} marker, {result.extracted} extracted) "
+            + (f"and {result.cards} study card(s) " if result.cards else "")
+            + f"from {result.scanned} new record(s)."
         )
         return
     new, scanned = collect_marked(store, path, settings.insights_marker)
@@ -279,7 +281,8 @@ def insights_flush(
             label = (
                 f"Insight flush captured {captured.new} new "
                 f"({captured.marked} marker, {captured.extracted} extracted) "
-                f"from {captured.scanned} records"
+                + (f"and {captured.cards} study card(s) " if captured.cards else "")
+                + f"from {captured.scanned} records"
             )
         else:
             new, scanned = collect_marked(store, path, settings.insights_marker)
@@ -410,7 +413,9 @@ def insights_sweep(
     console.print(
         f"{stamp} Sweep read {result.read} transcript(s): captured "
         f"[bold]{got.new}[/bold] new ({got.marked} marker, {got.extracted} "
-        f"extracted); queued {queued} for Telegram; {result.waiting} still being "
+        f"extracted)"
+        + (f" and {got.cards} study card(s)" if got.cards else "")
+        + f"; queued {queued} for Telegram; {result.waiting} still being "
         "written"
         + (f"; [red]{len(result.failed)} failed[/red]" if result.failed else "")
         + ".",
@@ -657,9 +662,10 @@ def web(
 
 
 def _extractor(settings, transcript_files):
-    """The extraction lane, told the reader's ratings (issue #126) and each
-    session's project. Ratings are read once per run; if they can't be read,
-    extraction goes ahead without them."""
+    """The extraction lane, told the reader's ratings (issue #126), each
+    session's project, and whether it ran in a study folder (issue #139).
+    Ratings are read once per run; if they can't be read, extraction goes
+    ahead without them."""
     try:
         feedback = extraction_feedback(settings.db)
     except Exception as exc:  # noqa: BLE001 - feedback is a hint, never a blocker
@@ -670,7 +676,11 @@ def _extractor(settings, transcript_files):
     def extract(messages):
         project = projects.get(messages[0].session_id, "") if messages else ""
         return extract_insights(
-            settings.model, messages, feedback=feedback, project=project
+            settings.model,
+            messages,
+            feedback=feedback,
+            project=project,
+            study=is_study_session(messages, settings.prep_study_paths),
         )
 
     return extract
@@ -753,6 +763,57 @@ def videos_sync(
     )
     for error in report.errors:
         console.print(f"  [dim]{error}[/dim]", markup=False)
+
+
+# --- Practice cards from videos and study sessions (#139) ------------------- #
+
+
+@prep_app.command("cards-from-videos")
+def prep_cards_from_videos(
+    limit: int = typer.Option(None, help="Write cards for at most N videos."),
+    channel: list[str] = typer.Option(
+        None, help="Only this channel (part of its name, or its id). Repeatable."
+    ),
+    model: str = typer.Option(None, help="Claude Code model (default: video_model)."),
+) -> None:
+    """Write practice cards for video stories written before videos had cards.
+
+    Reads each story as stored (no captions are fetched), newest first. Videos
+    already done, with or without cards, are skipped.
+    """
+    from .agents.video_writer import write_cards
+
+    if not claude_available():
+        console.print(
+            "No claude CLI here: the cards are written by Claude Code, so run "
+            "this on the Mac.",
+            style="red",
+            markup=False,
+        )
+        raise typer.Exit(1)
+    settings = get_settings()
+    chosen = model or settings.video_model
+    report = asyncio.run(
+        cards_from_videos(
+            settings.db,
+            lambda video, headline, text: write_cards(chosen, video, headline, text),
+            limit=limit,
+            channels=channel or (),
+        )
+    )
+    console.print(
+        f"Wrote cards for {report.videos} video(s): {report.cards} card(s) added"
+        + (f"; {report.remaining} video(s) still to do" if report.remaining else "")
+        + (f"; cost ${SPEND.cost_usd:.2f}" if SPEND.calls else "")
+        + ".",
+        markup=False,
+        soft_wrap=True,
+    )
+    for error in report.errors:
+        console.print(f"  {error}", style="dim", markup=False, soft_wrap=True)
+    if report.stopped_early:
+        console.print("Stopped after repeated failures.", style="red")
+        raise typer.Exit(1)
 
 
 def _instagram_sync(settings, model: str | None = None) -> InstagramSync | None:

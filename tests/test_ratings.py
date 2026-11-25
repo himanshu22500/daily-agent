@@ -159,7 +159,7 @@ async def test_the_cli_extractor_knows_each_sessions_project(db, tmp_path, monke
     Ratings(db).rate("insight:curl", DOWN)
     seen = []
 
-    async def fake_extract(model, messages, *, feedback, project):
+    async def fake_extract(model, messages, *, feedback, project, study):
         seen.append((project, feedback))
         return []
 
@@ -183,7 +183,7 @@ async def test_the_cli_extractor_goes_on_without_ratings(tmp_path, monkeypatch):
     monkeypatch.setattr("daily_agent.cli.extraction_feedback", broken)
     seen = []
 
-    async def fake_extract(model, messages, *, feedback, project):
+    async def fake_extract(model, messages, *, feedback, project, study):
         seen.append(feedback)
         return []
 

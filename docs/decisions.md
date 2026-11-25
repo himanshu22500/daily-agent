@@ -64,6 +64,58 @@ switch at the top of For you.
   waiting. The next revisit there includes prep. Code refers to `PREP_TYPES`,
   never a literal list, so new prep types (#130) join the blend without
   further changes.
+## 2026-11-25 — Practice cards from YouTube videos and from study sessions
+
+Two learning sources gave the maintainer nothing to practise from: YouTube
+videos became articles only, and study sessions with Claude Code were mined for
+coding insights as if they were work (#139). Both now add cards to the DSA and
+System design tracks through `PrepItems.put` (`feed/practice_cards.py`).
+
+- **No extra model calls.** The call that writes a video's story also returns
+  0–5 `interview_cards`, an empty list unless the video teaches interview
+  prep, DSA or system design. The insight extractor's existing schema gained
+  two optional fields, `study_session` and `prep_cards`, so it recognises
+  study and writes its cards in the same call. Only the backfill makes a call
+  of its own, and only for stories written before cards existed.
+- **One card shape.** A card is a question with tap-to-reveal steps: `###
+  Answer`, then `### Why it matters` when there is something to add. DSA
+  cards are `drill`s and design cards are `design`s. A study session that
+  worked through a whole design also yields a walkthrough card, whose steps
+  follow the session's order (Requirements, Core entities, API, ...) and
+  stand in for the answer. Cards must be correct even when the source or the
+  reader's mock answer wasn't. Every card is cleaned before it's stored:
+  unknown tracks, short questions and cards with nothing to reveal are
+  dropped, and a stray `### ` line becomes bold so it can't start a step.
+- **Tags that add up.** DSA tags are kept only if they're in `DSA_PATTERNS`
+  (`sources/practice_pack.py`), after the usual spellings are mapped to the
+  canonical slug ("hash-map" becomes `arrays-hashing`). That way grades add
+  up per pattern. Design tags are open slugs; the prompt gives examples, and
+  tags that only name a track ("system-design") are dropped.
+- **Video cards.** Their source is `yt-<channel id>`, labelled "▶ <channel>",
+  and their keys are `prep:yt-<channel>:<video id>-<n>`. The video id keeps
+  its case, because YouTube ids can differ only in case. Writing a video
+  again replaces its cards in place and removes the positions it no longer
+  has, so it never duplicates them. A new `video_cards` table records every
+  video whose cards were written, including those with none, so the backfill
+  skips it. The table is added; nothing is renamed or dropped.
+- **Backfill from the stored story.** `prep cards-from-videos` reads each
+  story as stored, newest first, and fetches no captions. A video that fails
+  stays to do, and three failures in a row end the run. It needs the claude
+  CLI, so it refuses to run on the feed server.
+- **Study sessions.** A batch is study when its session ran in a study
+  folder or when the extractor says so. Study folders come from
+  `DAILY_AGENT_PREP_STUDY_PATHS`, default `interview-prep`. A name matches a
+  whole folder on the path, so `interview-prep-tools` doesn't count; a path
+  (`~/prep`) matches what's under it. A study folder forces study whatever
+  the model says, and the prompt is told. A study batch stores up to 8 cards
+  under the `study` source ("From your study sessions") and drops the
+  extracted insights. The marker lane still captures `insight:` notes. Study
+  cards are keyed by their normalised question, so a question studied twice
+  is one card, updated in place.
+- **Work sessions are unchanged.** Cards the model returns for a work batch
+  are ignored, and ratings feedback (#127) reaches the extractor as before.
+  Transcript messages now carry the session's `cwd` so the folder can be
+  checked.
 
 ## 2026-11-25 — Practice packs and talk-track notes become prep cards as written
 

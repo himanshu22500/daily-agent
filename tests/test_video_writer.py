@@ -64,7 +64,13 @@ async def test_writes_a_clean_story(claude):
     assert story.tags == ["ai-models", "anthropic", "x" * 30, "a"]
     [call] = calls
     assert call["model"] == "claude-code:sonnet"
-    assert call["schema"]["required"] == ["headline", "article", "tags"]
+    assert call["schema"]["required"] == [
+        "headline",
+        "article",
+        "tags",
+        "interview_cards",
+    ]
+    assert story.cards == []  # not an interview video
     assert "untrusted data" in call["system"]
     payload = json.loads(call["prompt"])
     assert payload["transcript"] == "words" and payload["channel"] == "Fireship"
